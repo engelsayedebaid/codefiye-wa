@@ -1,0 +1,52 @@
+# api + worker against Neon (DATABASE_URL / DATABASE_URL_UNPOOLED from .env / .env.local).
+# Queues (BullMQ Postgres backend) and events (LISTEN/NOTIFY) run on Postgres — no Redis.
+# Local Postgres instead: `docker compose --profile local up` and point both URLs at
+#   postgres://wa:wa@postgres:5432/wa_platform
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["pnpm", "--filter", "@wa/api", "start"]
+    env_file:
+      - path: .env
+        required: false
+      - path: .env.local
+        required: false
+    ports:
+      - "${API_PORT:-4000}:4000"
+    environment:
+      API_PORT: "4000"
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["pnpm", "--filter", "@wa/worker", "start"]
+    env_file:
+      - path: .env
+        required: false
+      - path: .env.local
+        required: false
+    restart: unless-stopped
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+
+  postgres:
+    profiles: ["local"]
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: wa
+      POSTGRES_PASSWORD: wa
+      POSTGRES_DB: wa_platform
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

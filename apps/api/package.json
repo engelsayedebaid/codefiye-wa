@@ -1,0 +1,30 @@
+{
+  "name": "@wa/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../../.env --env-file-if-exists=../../.env.local src/index.ts",
+    "start": "tsx --env-file-if-exists=../../.env --env-file-if-exists=../../.env.local src/index.ts",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@fastify/cors": "11.3.0",
+    "@fastify/swagger": "9.8.2",
+    "@fastify/swagger-ui": "6.1.1",
+    "@wa/db": "workspace:*",
+    "@wa/provider": "workspace:*",
+    "@wa/shared": "workspace:*",
+    "bullmq": "6.3.8",
+    "fastify": "5.12.5",
+    "fastify-type-provider-zod": "7.0.0",
+    "jose": "6.2.12",
+    "pg": "8.23.0",
+    "qrcode": "1.5.4",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/qrcode": "1.5.6",
+    "openapi-types": "12.1.3"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "@wa/provider",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@hapi/boom": "10.0.1",
+    "@wa/db": "workspace:*",
+    "@wa/shared": "workspace:*",
+    "@whiskeysockets/baileys": "7.0.0-rc14",
+    "pino": "10.3.1"
+  }
+}
