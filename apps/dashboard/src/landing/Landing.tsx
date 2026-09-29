@@ -3,7 +3,7 @@ import { Brand, Icon, type IconName } from '../ui';
 import { codeSamples, egp, plans, nav } from './content';
 
 const APP = '/app';
-const DOCS = `${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/docs`;
+const DOCS = `${import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:4000' : '')}/docs`;
 
 /** Adds `.in` to `.reveal` elements when they scroll into view. */
 function useReveal() {

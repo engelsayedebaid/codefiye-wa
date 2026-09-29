@@ -58,7 +58,7 @@ function Login({ onLogin, theme }: { onLogin: (c: Creds) => void; theme: Theme }
   const [token, setToken] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
+  const baseUrl = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:4000' : '');
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();

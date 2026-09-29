@@ -18,7 +18,10 @@ export type Session = {
 };
 
 export type Creds = { baseUrl: string; token: string; mode?: 'pat' | 'neon'; getToken?: () => Promise<string> };
-export const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
+/** API base: dev defaults to localhost:4000; production falls back to same-origin (Vercel rewrite → api service). */
+export const API_BASE = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:4000' : '');
+/** Absolute API origin for display (docs links, copyable base URL). */
+export const API_PUBLIC = API_BASE || (typeof window !== 'undefined' ? window.location.origin : '');
 export type PlanInfo = { id: string; name: string; egp: number; sessions: number; dailyMessages: number | null; internal?: boolean; enabled?: boolean; sortOrder?: number };
 export type AdminPlan = { key: string; name: string; egp: number; sessions: number; dailyMessages: number | null; internal: boolean; enabled: boolean; sortOrder: number };
 export type Profile = {

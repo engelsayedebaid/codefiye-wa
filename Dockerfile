@@ -10,4 +10,10 @@ COPY packages/provider/package.json packages/provider/
 COPY packages/shared/package.json packages/shared/
 RUN pnpm install --frozen-lockfile
 COPY . .
+# Vite bakes these into the dashboard bundle at build time (empty VITE_API_URL = same-origin).
+ARG VITE_API_URL=""
+ARG VITE_NEON_AUTH_URL=""
+ENV VITE_API_URL=$VITE_API_URL VITE_NEON_AUTH_URL=$VITE_NEON_AUTH_URL
+RUN pnpm --filter @wa/dashboard build
 ENV NODE_ENV=production
+CMD ["pnpm", "--filter", "@wa/api", "start"]

@@ -1,4 +1,7 @@
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import cors from '@fastify/cors';
+import fastifyStatic from '@fastify/static';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import Fastify from 'fastify';
@@ -50,6 +53,11 @@ export async function buildApp() {
   });
   await app.register(swaggerUi, { routePrefix: '/docs' });
 
+  // Serve the built dashboard (landing at /, app at /app) when dist exists — Railway single-service deploy.
+  const dashDist = fileURLToPath(new URL('../../dashboard/dist', import.meta.url));
+  const serveDashboard = existsSync(dashDist);
+  if (serveDashboard) await app.register(fastifyStatic, { root: dashDist });
+
   app.setErrorHandler((err, req, reply) => {
     if (hasZodFastifySchemaValidationErrors(err)) {
       const errors: Record<string, string[]> = {};
@@ -64,7 +72,12 @@ export async function buildApp() {
     if (status >= 500) req.log.error({ err }, 'unhandled error');
     return reply.code(status).send(fail(status >= 500 ? 'Internal server error' : (err as Error).message));
   });
-  app.setNotFoundHandler((_req, reply) => reply.code(404).send(fail('Route not found')));
+  app.setNotFoundHandler((req, reply) => {
+    const url = req.raw.url ?? '';
+    const isApi = url.startsWith('/api') || url.startsWith('/docs') || url.startsWith('/health') || url.startsWith('/auth');
+    if (serveDashboard && req.method === 'GET' && !isApi) return reply.sendFile('index.html');
+    return reply.code(404).send(fail('Route not found'));
+  });
 
   app.addHook('onSend', async (_req, reply) => {
     reply.header('X-API-Version', API_VERSION);

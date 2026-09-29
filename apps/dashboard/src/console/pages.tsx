@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { API_PUBLIC } from '../api';
 import type { Billing, Client, KeyRow, MessagePage, Overview, Session } from '../api';
 import { date, Empty, Icon, number } from '../ui';
 import { messageStatusLabel, messageStatusTone, methodLabel } from '../status';
@@ -383,7 +384,7 @@ export function SettingsPage({ client, profile, onChanged }: { client: Client; p
           <div className="panel-heading"><div><h2>معلومات تقنية</h2></div></div>
           <div style={{ display: 'grid', gap: 14, fontSize: 12 }}>
             <div><small>معرّف مساحة العمل</small><div dir="ltr" className="font-mono">{profile.workspace.id}</div></div>
-            <div><small>وثائق الـ API</small><div><a href={`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000'}/docs`} target="_blank" rel="noreferrer" className="text-link" style={{ color: '#2b7350' }}>فتح Swagger /docs ↗</a></div></div>
+            <div><small>وثائق الـ API</small><div><a href={`${API_PUBLIC}/docs`} target="_blank" rel="noreferrer" className="text-link" style={{ color: '#2b7350' }}>فتح Swagger /docs ↗</a></div></div>
           </div>
         </div>
       </div>

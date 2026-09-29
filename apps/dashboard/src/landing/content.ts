@@ -1,5 +1,5 @@
 export const BRAND = 'wa-platform';
-export const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? 'https://api.example.com';
+export const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? (import.meta.env.DEV ? 'https://api.example.com' : typeof window !== 'undefined' ? window.location.origin : '');
 
 export const nav = [
   { href: '#features', label: 'المزايا' },

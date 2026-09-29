@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { API_BASE } from '../api';
+import { API_PUBLIC } from '../api';
 import { Icon } from '../ui';
 import { Page } from './pages';
 
-const BASE = API_BASE;
+const BASE = API_PUBLIC;
 
 const samples: Record<'cURL' | 'Node.js' | 'Python' | 'PHP', string> = {
   cURL: `curl -X POST ${BASE}/api/send-message \\
