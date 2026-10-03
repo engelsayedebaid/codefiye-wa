@@ -35,12 +35,19 @@ export function otpMatches(key: Buffer, verificationId: string, code: string, st
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
-const TEXTS = {
-  ar: (code: string, minutes: number) => `رمز التحقق الخاص بك في wa-platform هو: ${code}\nصالح لمدة ${minutes} دقائق. لا تشاركه مع أي شخص.`,
-  en: (code: string, minutes: number) => `Your wa-platform verification code is: ${code}\nIt expires in ${minutes} minutes. Don't share it with anyone.`,
-};
+/** Fallback texts; admins can override per language in `settings` (`otp_text`). `{{code}}` and `{{minutes}}` placeholders. */
+export const OTP_DEFAULT_TEXTS = {
+  ar: 'رمز التحقق الخاص بك في wa-platform هو: {{code}}\nصالح لمدة {{minutes}} دقائق. لا تشاركه مع أي شخص.',
+  en: "Your wa-platform verification code is: {{code}}\nIt expires in {{minutes}} minutes. Don't share it with anyone.",
+} as const;
 
-export const otpText = (code: string, lang: string) => (lang === 'en' ? TEXTS.en : TEXTS.ar)(code, OTP_POLICY.ttlSec / 60);
+const MINUTES_RE = /\{\{\s*minutes\s*\}\}/g;
+const CODE_RE = /\{\{\s*code\s*\}\}/g;
+
+export const otpText = (code: string, lang: string, custom?: string | null) => {
+  const template = custom?.trim() || (lang === 'en' ? OTP_DEFAULT_TEXTS.en : OTP_DEFAULT_TEXTS.ar);
+  return template.replace(CODE_RE, code).replace(MINUTES_RE, String(OTP_POLICY.ttlSec / 60));
+};
 
 /** Delivery failed. `recipient`: the number can't receive it (wrong number, not on WhatsApp); otherwise the channel is down. */
 export class OtpDeliveryError extends Error {

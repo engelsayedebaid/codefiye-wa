@@ -57,7 +57,7 @@ export function buildRpcServer(supervisor: Supervisor, secret: string, logger: L
 
   // The platform's verification codes: sent straight away, never queued or stored.
   app.post('/sessions/:id/send-text', async (req) => {
-    const { to, text } = z.object({ to: z.string().regex(/^[1-9]d{7,14}$/), text: z.string().min(1).max(1_000) }).parse(req.body);
+    const { to, text } = z.object({ to: z.string().regex(/^[1-9]\d{7,14}$/), text: z.string().min(1).max(1_000) }).parse(req.body);
     return runnerFor(req.params).sendDirect(to, text);
   });
 

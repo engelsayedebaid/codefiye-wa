@@ -18,6 +18,7 @@ export const qk = {
     requests: ['admin', 'requests'] as const,
     users: (params: { q: string; status: string; page: number }) => ['admin', 'users', params] as const,
     audit: (page: number) => ['admin', 'audit', page] as const,
+    otpText: ['admin', 'otp-text'] as const,
     broadcasts: ['admin', 'broadcasts'] as const,
     broadcast: (id: string) => ['admin', 'broadcasts', id] as const,
   },

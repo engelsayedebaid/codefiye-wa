@@ -232,7 +232,7 @@ export async function buildApp(deps: Deps, options: AppOptions) {
       await api.register(eventRoutes(deps));
       await api.register(accountRoutes(deps));
       await api.register(adminRoutes(deps), { prefix: '/admin' });
-      await api.register(broadcastRoutes(deps), { prefix: '/admin/broadcasts' });
+      await api.register(broadcastRoutes(deps), { prefix: '/broadcasts' });
       api.setNotFoundHandler(() => {
         throw notFound('Route not found', 'route_not_found');
       });

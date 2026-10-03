@@ -6,6 +6,7 @@ import { api, errorMessage } from '../api';
 import { useAccount } from '../app/account';
 import { useI18n } from '../i18n';
 import { qk } from '../queries';
+import { TemplatePreview } from './Templates';
 import { Badge, Button, Card, cx, delay, EmptyState, ErrorNote, Field, inputClass, Loading, LoadError, Modal, PageHeader, Pagination, Select, usePlanName } from '../ui';
 
 type Stats = {
@@ -501,6 +502,91 @@ function UsersTable({ selfId }: { selfId: string | null }) {
   );
 }
 
+type OtpTextResponse = { texts: { ar: string | null; en: string | null }; defaults: { ar: string; en: string } };
+
+/** The message sent for sign-up / phone-link codes — per language, empty falls back to the built-in text. */
+function OtpText() {
+  const { t } = useI18n();
+  const o = t.admin.otpText;
+  const queryClient = useQueryClient();
+  const texts = useQuery({ queryKey: qk.admin.otpText, queryFn: ({ signal }) => api<OtpTextResponse>('/api/admin/otp-text', { signal }) });
+  const [draft, setDraft] = useState<{ ar: string; en: string } | null>(null);
+  const [lang, setLang] = useState<'ar' | 'en'>('ar');
+
+  // Edit the stored override; an empty box means the built-in text (shown as a hint inside it).
+  const current = draft ?? { ar: texts.data?.texts.ar ?? '', en: texts.data?.texts.en ?? '' };
+  const needsCode = (v: string) => v.trim() !== '' && !/\{\{\s*code\s*\}\}/.test(v);
+  const invalid = needsCode(current.ar) || needsCode(current.en);
+  const dirty = draft !== null && (draft.ar !== (texts.data?.texts.ar ?? '') || draft.en !== (texts.data?.texts.en ?? ''));
+
+  const save = useMutation({
+    mutationFn: () => api('/api/admin/otp-text', { method: 'PUT', body: { ar: current.ar.trim() || null, en: current.en.trim() || null } }),
+    onSuccess: () => setDraft(null),
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: qk.admin.otpText }),
+  });
+  const reset = () => setDraft({ ar: '', en: '' });
+
+  return (
+    <Card
+      title={o.title}
+      description={o.text}
+      className="animate-fade-up"
+      style={delay(280)}
+      actions={
+        <div className="flex gap-1 rounded-lg border border-line p-1">
+          {(['ar', 'en'] as const).map((l) => (
+            <button
+              key={l}
+              type="button"
+              onClick={() => setLang(l)}
+              className={cx('h-7 rounded-md px-3 text-xs font-medium transition-colors', lang === l ? 'bg-raised text-ink' : 'text-muted hover:text-ink')}
+            >
+              {l === 'ar' ? 'عربي' : 'English'}
+            </button>
+          ))}
+        </div>
+      }
+    >
+      <div className="grid gap-6 md:grid-cols-2">
+        <div className="space-y-3">
+          <textarea
+            value={current[lang]}
+            onChange={(e) => setDraft({ ...current, [lang]: e.target.value })}
+            placeholder={texts.data?.defaults[lang]}
+            rows={6}
+            dir={lang === 'ar' ? 'rtl' : 'ltr'}
+            maxLength={1000}
+            aria-label={o.label(lang === 'ar' ? 'العربية' : 'الإنجليزية')}
+            className={cx(inputClass, 'h-auto min-h-36 py-2 leading-relaxed')}
+          />
+          <p className="text-xs text-muted">
+            {o.hint}{' '}
+            <code className="ltr rounded bg-raised px-1 font-mono">{'{{code}}'}</code> <code className="ltr rounded bg-raised px-1 font-mono">{'{{minutes}}'}</code>
+          </p>
+          {needsCode(current[lang]) && <p className="text-xs text-red-400">{o.missingCode}</p>}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="brand" loading={save.isPending} disabled={invalid || !dirty} onClick={() => save.mutate()}>
+              {o.save}
+            </Button>
+            <Button variant="ghost" onClick={reset}>
+              {o.reset}
+            </Button>
+          </div>
+          <ErrorNote>{save.isError ? errorMessage(save.error) : null}</ErrorNote>
+        </div>
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted">{o.preview}</p>
+          <TemplatePreview
+            template={{ body: current[lang].trim() || texts.data?.defaults[lang] || '' }}
+            values={{ code: '123456', minutes: '10' }}
+            className="min-h-44 rounded-xl p-4"
+          />
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 function AuditLog() {
   const { t, fmt } = useI18n();
   const a = t.admin.audit;
@@ -578,6 +664,7 @@ export function AdminPage() {
         <StatCard index={6} icon={Ban} label={a.stats.suspended} value={n(s?.suspended)} accent={s?.suspended ? 'danger' : undefined} />
       </div>
       <Requests />
+      <OtpText />
       <UsersTable selfId={account?.user?.id ?? null} />
       <AuditLog />
     </div>

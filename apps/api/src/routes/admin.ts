@@ -1,5 +1,5 @@
 import { and, eq, notify, planRequests, type Sql, type SqlFragment, type TxSql, type UserRole, type UserStatus, workspaces, type Db } from '@wa/db';
-import { CHANNELS, ok, PLANS, successSchema, TRIAL_DAYS } from '@wa/shared';
+import { CHANNELS, ok, type PlanFeature, PLANS, successSchema, TRIAL_DAYS } from '@wa/shared';
 import type { FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -7,6 +7,9 @@ import type { Deps } from '../deps';
 import { audit, auditIn } from '../lib/audit';
 import { requireAdmin } from '../lib/auth';
 import { conflict, forbidden, notFound, unprocessable } from '../lib/errors';
+import { getFeatures, setFeature } from '../lib/features';
+import { OTP_DEFAULT_TEXTS } from '../lib/otp';
+import { getOtpTexts, setOtpTexts } from '../lib/otp-text';
 import { planRequestDto, toPlanRequestDto, toWorkspaceDto } from './account';
 
 // Operator endpoints: not part of the public API, so hidden from /docs.
@@ -502,6 +505,62 @@ export function adminRoutes({ sql, db, auth, workers }: Deps): FastifyPluginAsyn
         });
         await auth.revoke({ workspaceIds: [after.id] });
         return ok(toWorkspaceDto(after));
+      },
+    );
+
+    const featuresDto = z.object({ ads: z.boolean() });
+
+    app.get(
+      '/features',
+      {
+        schema: { ...schemaBase, summary: 'Runtime feature flags', response: { 200: successSchema(featuresDto) } },
+      },
+      async () => ok(await getFeatures(sql)),
+    );
+
+    app.put(
+      '/features',
+      {
+        schema: {
+          ...schemaBase,
+          summary: 'Toggle a feature flag (e.g. `ads` for eligible plans)',
+          body: featuresDto.partial().refine((b) => Object.keys(b).length > 0, 'Nothing to change'),
+          response: { 200: successSchema(featuresDto) },
+        },
+      },
+      async (req) => {
+        for (const [feature, enabled] of Object.entries(req.body) as [PlanFeature, boolean][]) {
+          await setFeature(sql, feature, enabled);
+          await audit(sql, req, { action: 'feature.update', targetType: 'feature', targetId: feature, details: { enabled } });
+        }
+        return ok(await getFeatures(sql));
+      },
+    );
+
+    const otpTextValue = z
+      .string()
+      .trim()
+      .min(1)
+      .max(1000)
+      .nullable()
+      .refine((v) => v === null || /\{\{\s*code\s*\}\}/.test(v), 'The text must include {{code}}');
+    const otpTextDto = z.object({ ar: otpTextValue, en: otpTextValue });
+    const otpTextsDto = z.object({ texts: otpTextDto, defaults: z.object({ ar: z.string(), en: z.string() }) });
+    const toOtpTexts = (texts: { ar: string | null; en: string | null }) => ({ texts, defaults: OTP_DEFAULT_TEXTS });
+
+    app.get(
+      '/otp-text',
+      { schema: { ...schemaBase, summary: 'Custom verification-code message per language (null = built-in)', response: { 200: successSchema(otpTextsDto) } } },
+      async () => ok(toOtpTexts(await getOtpTexts(sql))),
+    );
+
+    app.put(
+      '/otp-text',
+      { schema: { ...schemaBase, summary: 'Set or clear (null) the verification-code message per language', body: otpTextDto, response: { 200: successSchema(otpTextsDto) } } },
+      async (req) => {
+        const texts = await setOtpTexts(sql, req.body);
+        await audit(sql, req, { action: 'otp_text.update', targetType: 'feature', targetId: 'otp_text', details: { custom: Boolean(texts.ar || texts.en) } });
+        return ok(toOtpTexts(texts));
       },
     );
 

@@ -4,6 +4,7 @@ import { asciiDigits, maskPhoneNumber } from '@wa/shared';
 import type { Deps } from '../deps';
 import { notFound, tooMany, unavailable, unprocessable } from './errors';
 import { generateOtp, hashOtp, OTP_POLICY, OtpDeliveryError, otpMatches, otpText } from './otp';
+import { getOtpTexts } from './otp-text';
 import type { Rule } from './throttle';
 
 export type Lang = 'ar' | 'en';
@@ -57,8 +58,9 @@ export function createVerifications({ sql, otp, throttle }: Pick<Deps, 'sql' | '
   }
 
   async function deliver(phone: string, code: string, lang: string) {
+    const custom = (await getOtpTexts(sql))[lang === 'en' ? 'en' : 'ar'];
     try {
-      await sender().send(phone, otpText(code, lang));
+      await sender().send(phone, otpText(code, lang, custom));
     } catch (err) {
       if (err instanceof OtpDeliveryError && err.kind === 'recipient') {
         throw unprocessable('We could not send a code to this number', { phone: ['This number cannot receive the code. Check it and try again.'] }, { code: 'phone_unreachable' });

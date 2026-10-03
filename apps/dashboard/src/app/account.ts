@@ -8,6 +8,8 @@ export type Plan = {
   rpm: number;
   dailyMessages: number | null;
   retentionDays: number;
+  /** Features bundled with the plan (`ads` = bulk campaigns page). */
+  features: string[];
 };
 
 export type PlanRequest = {
@@ -35,6 +37,8 @@ export type Account = {
   workspace: { id: string; name: string; planId: string; trialEndsAt: string | null; planExpiresAt: string | null };
   plan: Plan;
   pendingRequest: PlanRequest | null;
+  /** Runtime feature flags from the admin; `ads` live only for plans that bundle it. */
+  features: { ads: boolean };
 };
 
 /** The signed-in account (loaded by the app gate before any page renders) and a way to refresh it. */

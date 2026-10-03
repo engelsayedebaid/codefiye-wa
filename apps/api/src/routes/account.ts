@@ -6,6 +6,7 @@ import { z } from 'zod';
 import type { Deps } from '../deps';
 import { clearSessionCookie, CONSOLE_TTL_SEC, requirePat, SESSION_COOKIE, setSessionCookie, suspendedError } from '../lib/auth';
 import { badRequest, conflict, forbidden, notFound, unprocessable } from '../lib/errors';
+import { getFeatures } from '../lib/features';
 import { generateKey, hashKey } from '../lib/keys';
 import { hashPassword, needsRehash, passwordProblems, verifyPassword } from '../lib/passwords';
 import { createVerifications, type Lang } from '../lib/verification';
@@ -38,6 +39,8 @@ export const planDto = z.object({
   rpm: z.number(),
   dailyMessages: z.number().nullable(),
   retentionDays: z.number(),
+  /** Features bundled with the plan (`ads` = bulk campaigns page). */
+  features: z.array(z.string()).readonly(),
 });
 /** Login and signup: the session itself travels in the HttpOnly cookie, never in the body. */
 const sessionResponse = z.object({ user: userDto, workspace: workspaceDto });
@@ -351,7 +354,14 @@ const RECENT = z.object({
   createdAt: z.string(),
 });
 
-const meResponse = z.object({ user: userDto.nullable(), workspace: workspaceDto, plan: planDto, pendingRequest: planRequestDto.nullable() });
+const meResponse = z.object({
+  user: userDto.nullable(),
+  workspace: workspaceDto,
+  plan: planDto,
+  pendingRequest: planRequestDto.nullable(),
+  /** Runtime feature flags (admin-controlled): `ads` live for plans that bundle it. */
+  features: z.object({ ads: z.boolean() }),
+});
 
 /** Authenticated account endpoints: who am I, session, password, phone, plan requests and the dashboard overview. */
 export function accountRoutes(deps: Deps): FastifyPluginAsyncZod {
@@ -400,6 +410,7 @@ export function accountRoutes(deps: Deps): FastifyPluginAsyncZod {
       workspace: workspaceRowDto(row),
       plan: getPlan(row.plan_id),
       pendingRequest: request,
+      features: { ads: (await getFeatures(sql)).ads },
     };
   }
 

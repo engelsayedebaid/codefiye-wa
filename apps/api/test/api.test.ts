@@ -929,22 +929,34 @@ describe.skipIf(!url)('api (integration)', () => {
       ...extra,
     });
 
-    it('is for admins only', async () => {
-      expect((await call('GET', '/api/admin/broadcasts', customerPat)).json().code).toBe('admin_only');
-      expect((await call('POST', '/api/admin/broadcasts', customerPat, body())).statusCode).toBe(403);
+    it('is gated by the plan feature and the admin flag', async () => {
+      // `pro` doesn't bundle campaigns → upgrade required whatever the flag says.
+      expect((await call('GET', '/api/broadcasts', customerPat)).statusCode).toBe(402);
+      expect((await call('GET', '/api/broadcasts', customerPat)).json().code).toBe('feature_not_in_plan');
+      // An eligible plan sees "coming soon" until the admin flips the flag on.
+      const plus = await createWorkspace('ads-plus-ws', 'plus', null);
+      expect((await call('GET', '/api/broadcasts', plus.pat)).statusCode).toBe(403);
+      expect((await call('GET', '/api/broadcasts', plus.pat)).json().code).toBe('feature_coming_soon');
+      expect((await call('PUT', '/api/admin/features', plus.pat, { ads: true })).statusCode).toBe(403);
+      expect((await call('PUT', '/api/admin/features', admin.pat, { ads: true })).json().data).toEqual({ ads: true });
+      expect((await call('GET', '/api/broadcasts', plus.pat)).statusCode).toBe(200);
+      // The /me response advertises the flag to the dashboard.
+      expect((await call('GET', '/api/me', plus.pat)).json().data.features).toEqual({ ads: true });
+      await call('PUT', '/api/admin/features', admin.pat, { ads: false });
+      await sql`delete from workspaces where id = ${plus.id}`;
     });
 
     it('refuses sessions that are offline or not the admin’s own', async () => {
-      const res = await call('POST', '/api/admin/broadcasts', admin.pat, body({ sessionIds: [online[0], offline] }));
+      const res = await call('POST', '/api/broadcasts', admin.pat, body({ sessionIds: [online[0], offline] }));
       expect(res.statusCode).toBe(409);
       expect(res.json().code).toBe('session_not_connected');
       const foreign = await addSession(ws.a.id, 'Not yours', 'connected');
-      expect((await call('POST', '/api/admin/broadcasts', admin.pat, body({ sessionIds: [foreign] }))).statusCode).toBe(404);
+      expect((await call('POST', '/api/broadcasts', admin.pat, body({ sessionIds: [foreign] }))).statusCode).toBe(404);
       await sql`delete from sessions where id = ${foreign}`;
     });
 
     it('queues one paced message per recipient, rotating between sessions', async () => {
-      const res = await call('POST', '/api/admin/broadcasts', admin.pat, body());
+      const res = await call('POST', '/api/broadcasts', admin.pat, body());
       expect(res.statusCode, res.body).toBe(201);
       const created = res.json().data;
       expect(created).toMatchObject({ recipients: 3, skippedCount: 2 });
@@ -964,7 +976,7 @@ describe.skipIf(!url)('api (integration)', () => {
       expect((await claimNextOutbound(sql, online[0]!))?.remote_jid).toBe('201000000001@s.whatsapp.net');
       expect(await claimNextOutbound(sql, online[0]!)).toBeNull();
 
-      const detail = (await call('GET', `/api/admin/broadcasts/${created.id}`, admin.pat)).json().data;
+      const detail = (await call('GET', `/api/broadcasts/${created.id}`, admin.pat)).json().data;
       expect(detail).toMatchObject({ name: 'Autumn sale', state: 'running', recipients: 3, stats: { queued: 2, sending: 1 } });
       expect(detail.sessions.map((s: { id: string; total: number }) => [s.id, s.total])).toEqual([
         [online[0], 2],
@@ -972,16 +984,16 @@ describe.skipIf(!url)('api (integration)', () => {
       ]);
       expect(detail.recent[0]).toMatchObject({ phone: '+201000000001', status: 'sending' });
 
-      const cancelled = (await call('POST', `/api/admin/broadcasts/${created.id}/cancel`, admin.pat)).json().data;
+      const cancelled = (await call('POST', `/api/broadcasts/${created.id}/cancel`, admin.pat)).json().data;
       expect(cancelled).toMatchObject({ cancelled: 2, state: 'cancelled', stats: { queued: 0, failed: 2, sending: 1 } });
-      const list = (await call('GET', '/api/admin/broadcasts', admin.pat)).json().data;
+      const list = (await call('GET', '/api/broadcasts', admin.pat)).json().data;
       expect(list[0]).toMatchObject({ id: created.id, state: 'cancelled' });
     });
 
     it('sends a card with its buttons poll, counted once per recipient', async () => {
       const res = await call(
         'POST',
-        '/api/admin/broadcasts',
+        '/api/broadcasts',
         admin.pat,
         body({ pace: 'fast', imageUrl: 'https://x.test/a.jpg', buttons: ['Yes', 'No'], buttonsTitle: 'Interested?', recipients: [{ to: '+201000000009', variables: { name: 'Ali' } }] }),
       );
@@ -991,9 +1003,9 @@ describe.skipIf(!url)('api (integration)', () => {
         { type: 'image', not_before: null },
         { type: 'poll', not_before: null },
       ]);
-      const detail = (await call('GET', `/api/admin/broadcasts/${res.json().data.id}`, admin.pat)).json().data;
+      const detail = (await call('GET', `/api/broadcasts/${res.json().data.id}`, admin.pat)).json().data;
       expect(detail.stats.queued).toBe(1);
-      await call('POST', `/api/admin/broadcasts/${res.json().data.id}/cancel`, admin.pat);
+      await call('POST', `/api/broadcasts/${res.json().data.id}/cancel`, admin.pat);
     });
   });
 

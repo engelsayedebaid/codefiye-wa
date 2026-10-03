@@ -9,6 +9,7 @@ import {
   MESSAGE_STATUSES,
   type MessageStatus,
   ok,
+  planHasFeature,
   POLL_LIMITS,
   successSchema,
   templateBody,
@@ -19,12 +20,13 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { Deps } from '../deps';
 import { audit } from '../lib/audit';
-import { requireAdmin } from '../lib/auth';
+import { requirePat } from '../lib/auth';
 import { planRecipients, scheduleBroadcast } from '../lib/broadcast';
-import { ApiError, conflict, notFound, unprocessable } from '../lib/errors';
+import { ApiError, conflict, forbidden, notFound, paymentRequired, unprocessable } from '../lib/errors';
+import { getFeatures } from '../lib/features';
 import { assertActive } from '../lib/limits';
 
-// Operator endpoints, like the rest of /api/admin: hidden from /docs.
+// Dashboard-only endpoints (used by /ads), hidden from /docs.
 const schemaBase = { tags: ['Admin'], hide: true };
 /** Statuses in which a session accepts new messages: connected, or briefly reconnecting. */
 const SENDABLE = new Set(['connected', 'connecting']);
@@ -112,7 +114,7 @@ const toBroadcastDto = (r: BroadcastRow): z.infer<typeof broadcastDto> => ({
 });
 
 /**
- * Bulk "ads" campaigns for admins (dashboard `/ads`): one message per recipient from the admin's own
+ * Bulk "ads" campaigns (dashboard `/ads`): one message per recipient from the workspace's own
  * sessions, rotating between them and paced per session so the numbers don't look automated.
  */
 export function broadcastRoutes({ sql }: Deps): FastifyPluginAsyncZod {
@@ -142,7 +144,15 @@ export function broadcastRoutes({ sql }: Deps): FastifyPluginAsyncZod {
   };
 
   return async (app) => {
-    app.addHook('preHandler', async (req) => requireAdmin(req));
+    // Admins always get in; customers need a plan that bundles `ads` and the flag switched on from /admin.
+    app.addHook('preHandler', async (req) => {
+      requirePat(req);
+      if (req.auth.isAdmin) return;
+      if (!planHasFeature(req.auth.planId, 'ads')) {
+        throw paymentRequired('Bulk campaigns are not included in your plan. Upgrade to unlock them.', 'feature_not_in_plan');
+      }
+      if (!(await getFeatures(sql)).ads) throw forbidden('Campaigns are not available yet', 'feature_coming_soon');
+    });
 
     app.post(
       '/',

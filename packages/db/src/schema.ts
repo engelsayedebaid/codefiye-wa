@@ -346,6 +346,13 @@ export const messageTemplates = pgTable(
 );
 
 /** Liveness of worker processes. A worker whose heartbeat is older than 30s loses its sessions. */
+/** Platform-wide key/value settings (feature flags like `features.ads`), toggled by admins at runtime. */
+export const settings = pgTable('settings', {
+  key: text().primaryKey(),
+  value: jsonb().notNull(),
+  updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});
+
 export const workers = pgTable('workers', {
   id: text().primaryKey(),
   /** Internal RPC base URL the API calls for live-socket operations. */

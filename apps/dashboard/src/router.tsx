@@ -37,8 +37,17 @@ export function afterLoginPath() {
 }
 
 export function useQuery() {
-  usePath();
-  return new URLSearchParams(location.search);
+  const [search, setSearch] = useState(() => location.search);
+  useEffect(() => {
+    const update = () => setSearch(location.search);
+    listeners.add(update);
+    window.addEventListener('popstate', update);
+    return () => {
+      listeners.delete(update);
+      window.removeEventListener('popstate', update);
+    };
+  }, []);
+  return new URLSearchParams(search);
 }
 
 /** `<a>` that navigates in-app for internal paths; external links, hashes and modified clicks behave normally. */

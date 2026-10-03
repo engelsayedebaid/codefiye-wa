@@ -1,11 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BROADCAST_LIMITS, BROADCAST_PACE_IDS, type BroadcastPace, estimateDuration, rotationSplit } from '@wa/shared/broadcasts';
+import { planHasFeature } from '@wa/shared/plans';
 import type { MessageStatus } from '@wa/shared/constants';
 import { POLL_LIMITS, type TemplateParts, templatePartsVariables } from '@wa/shared/template-text';
 import {
   ArrowLeft,
+  BadgePercent,
   Bold,
+  BookOpen,
   Building2,
+  CalendarCheck,
+  CalendarDays,
   ChartColumn,
   Check,
   CheckCheck,
@@ -13,13 +18,17 @@ import {
   Clock,
   Code,
   Copy,
+  Dumbbell,
   FileSpreadsheet,
   Gauge,
+  Gift,
   GraduationCap,
   HeartHandshake,
   Image as ImageIcon,
   Italic,
+  LayoutGrid,
   ListChecks,
+  Lock,
   type LucideIcon,
   Megaphone,
   Moon,
@@ -29,9 +38,13 @@ import {
   Rocket,
   Send,
   ShieldCheck,
+  ShoppingCart,
   Smartphone,
   Smile,
   Sparkles,
+  Star,
+  Stethoscope,
+  Store,
   Strikethrough,
   Ticket,
   Timer,
@@ -39,7 +52,9 @@ import {
   Trophy,
   Truck,
   Upload,
+  UserPlus,
   UserRound,
+  Users,
   UtensilsCrossed,
   X,
   XCircle,
@@ -123,24 +138,48 @@ let lastLaunch: Created | null = null;
 // --- ready-made ad templates -----------------------------------------------------------------------
 
 type AdId = keyof Dict['ads']['templates'];
-type AdStyle = { id: AdId; icon: LucideIcon; from: string; to: string; imageUrl?: string };
+type AdCat = Exclude<keyof Dict['ads']['gallery']['categories'], 'all'>;
+type AdStyle = { id: AdId; cat: AdCat; icon: LucideIcon; from: string; to: string; imageUrl?: string };
 
 const photo = (id: string) => `https://images.unsplash.com/${id}?w=800&q=80`;
 
-/** Display order and look; the copy lives in i18n (`ads.templates`). */
+/** Display order and look; the copy lives in i18n (`ads.templates`). Grouped by category for the gallery filter. */
 const ADS: AdStyle[] = [
-  { id: 'flash', icon: Zap, from: '#f97316', to: '#e11d48' },
-  { id: 'launch', icon: Rocket, from: '#8b5cf6', to: '#4338ca', imageUrl: photo('photo-1505740420928-5e560c06d30e') },
-  { id: 'coupon', icon: Ticket, from: '#10b981', to: '#0f766e' },
-  { id: 'event', icon: PartyPopper, from: '#ec4899', to: '#86198f', imageUrl: photo('photo-1492684223066-81342ee5ff30') },
-  { id: 'seasonal', icon: Moon, from: '#f59e0b', to: '#92400e' },
-  { id: 'restaurant', icon: UtensilsCrossed, from: '#ef4444', to: '#c2410c', imageUrl: photo('photo-1568901346375-23c9450c58cd') },
-  { id: 'winback', icon: HeartHandshake, from: '#0ea5e9', to: '#0e7490' },
-  { id: 'shipping', icon: Truck, from: '#84cc16', to: '#15803d' },
-  { id: 'giveaway', icon: Trophy, from: '#eab308', to: '#c2410c' },
-  { id: 'webinar', icon: GraduationCap, from: '#3b82f6', to: '#4f46e5' },
-  { id: 'realestate', icon: Building2, from: '#14b8a6', to: '#115e59', imageUrl: photo('photo-1600596542815-ffad4c1539a9') },
-  { id: 'survey', icon: ChartColumn, from: '#64748b', to: '#1e293b' },
+  // offers & products
+  { id: 'flash', cat: 'offers', icon: Zap, from: '#f97316', to: '#e11d48' },
+  { id: 'launch', cat: 'offers', icon: Rocket, from: '#8b5cf6', to: '#4338ca', imageUrl: photo('photo-1505740420928-5e560c06d30e') },
+  { id: 'coupon', cat: 'offers', icon: Ticket, from: '#10b981', to: '#0f766e' },
+  { id: 'shipping', cat: 'offers', icon: Truck, from: '#84cc16', to: '#15803d' },
+  { id: 'blackfriday', cat: 'offers', icon: BadgePercent, from: '#1f2937', to: '#b91c1c', imageUrl: photo('photo-1607083206869-4c7672e72a8a') },
+  { id: 'bundle', cat: 'offers', icon: Gift, from: '#d946ef', to: '#a21caf' },
+  { id: 'cart', cat: 'offers', icon: ShoppingCart, from: '#fbbf24', to: '#d97706', imageUrl: photo('photo-1556742049-0cfed4f6a45d') },
+  // events & occasions
+  { id: 'seasonal', cat: 'events', icon: Moon, from: '#f59e0b', to: '#92400e' },
+  { id: 'event', cat: 'events', icon: PartyPopper, from: '#ec4899', to: '#86198f', imageUrl: photo('photo-1492684223066-81342ee5ff30') },
+  { id: 'webinar', cat: 'events', icon: GraduationCap, from: '#3b82f6', to: '#4f46e5' },
+  { id: 'opening', cat: 'events', icon: Store, from: '#4ade80', to: '#15803d', imageUrl: photo('photo-1472851294608-062f824d29cc') },
+  { id: 'appointment', cat: 'events', icon: CalendarCheck, from: '#f43f5e', to: '#be123c' },
+  // customers & engagement
+  { id: 'winback', cat: 'customers', icon: HeartHandshake, from: '#0ea5e9', to: '#0e7490' },
+  { id: 'giveaway', cat: 'customers', icon: Trophy, from: '#eab308', to: '#c2410c' },
+  { id: 'survey', cat: 'customers', icon: ChartColumn, from: '#64748b', to: '#1e293b' },
+  { id: 'referral', cat: 'customers', icon: UserPlus, from: '#22d3ee', to: '#2563eb', imageUrl: photo('photo-1529156069898-49953e39b3ac') },
+  { id: 'review', cat: 'customers', icon: Star, from: '#fde047', to: '#ea580c' },
+  // business & services
+  { id: 'restaurant', cat: 'business', icon: UtensilsCrossed, from: '#ef4444', to: '#c2410c', imageUrl: photo('photo-1568901346375-23c9450c58cd') },
+  { id: 'realestate', cat: 'business', icon: Building2, from: '#14b8a6', to: '#115e59', imageUrl: photo('photo-1600596542815-ffad4c1539a9') },
+  { id: 'clinic', cat: 'business', icon: Stethoscope, from: '#60a5fa', to: '#0369a1', imageUrl: photo('photo-1576091160399-112ba8d25d1d') },
+  { id: 'gym', cat: 'business', icon: Dumbbell, from: '#f87171', to: '#991b1b', imageUrl: photo('photo-1534438327276-14e5300c3a48') },
+  { id: 'education', cat: 'business', icon: BookOpen, from: '#a78bfa', to: '#6d28d9', imageUrl: photo('photo-1503676260728-1c00da094a0b') },
+];
+
+/** Gallery filter chips (icon only; labels live in `ads.gallery.categories`). */
+const AD_CATS: { id: 'all' | AdCat; icon: LucideIcon }[] = [
+  { id: 'all', icon: LayoutGrid },
+  { id: 'offers', icon: BadgePercent },
+  { id: 'events', icon: CalendarDays },
+  { id: 'customers', icon: Users },
+  { id: 'business', icon: Store },
 ];
 
 const EMOJIS = ['🔥', '⚡', '🎁', '🎉', '✨', '✅', '👉', '👇', '🛒', '🛍️', '💥', '⏳', '⭐', '🚀', '💚', '😍', '💰', '🏷️', '📍', '📞'];
@@ -180,14 +219,18 @@ function Switch({ checked, onChange, disabled, label }: { checked: boolean; onCh
   );
 }
 
-function Step({ n, title, text, done, children, index }: { n: number; title: string; text: string; done: boolean; children: ReactNode; index: number }) {
+function Step({ n, title, text, done, current, children, index }: { n: number; title: string; text: string; done: boolean; current: boolean; children: ReactNode; index: number }) {
   return (
-    <section className="animate-fade-up rounded-xl border border-line bg-card shadow-sm" style={delay(index * 80)}>
+    <section id={`ads-step-${n}`} className="animate-fade-up relative scroll-mt-6 overflow-hidden rounded-xl border border-line bg-card shadow-sm" style={delay(index * 80)}>
+      <span
+        aria-hidden
+        className={cx('absolute inset-y-0 start-0 w-1 transition-colors duration-500', done ? 'bg-gradient-to-b from-[#3BE37F] to-[#0E9488]' : 'bg-transparent')}
+      />
       <header className="flex items-start gap-3 px-5 pt-5">
         <span
           className={cx(
-            'flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold transition-colors duration-300',
-            done ? 'bg-brand text-black shadow-[0_0_20px_-6px] shadow-brand' : 'bg-raised text-ink',
+            'flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold transition-all duration-300',
+            done ? 'bg-brand text-black shadow-[0_0_20px_-6px] shadow-brand' : current ? 'bg-raised text-ink ring-2 ring-brand/50' : 'bg-raised text-ink',
           )}
         >
           {done ? <Check className="animate-scale-in size-4" /> : n}
@@ -292,7 +335,7 @@ function AdCard({ ad, index, selected, onPick }: { ad: AdStyle; index: number; s
       aria-pressed={selected}
       className={cx(
         'lift group animate-fade-up relative flex flex-col overflow-hidden rounded-xl border bg-card text-start shadow-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
-        selected ? 'border-brand ring-2 ring-brand/40' : 'border-line',
+        selected ? 'border-brand ring-2 ring-brand/40' : 'border-line hover:border-line-strong',
       )}
       style={delay(index * 40)}
     >
@@ -317,9 +360,13 @@ function AdCard({ ad, index, selected, onPick }: { ad: AdStyle; index: number; s
             <WhatsAppText text={teaser(text.body, t.templates.samples.name ?? '')} />
           </span>
         </span>
-        {selected && (
+        {selected ? (
           <span className="animate-scale-in absolute start-3 top-3 flex size-6 items-center justify-center rounded-full bg-white text-black shadow">
             <Check className="size-4" />
+          </span>
+        ) : (
+          <span aria-hidden className="absolute start-3 top-3 flex size-6 items-center justify-center rounded-full border-2 border-white/60 text-white opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+            <Plus className="size-3.5" />
           </span>
         )}
       </span>
@@ -357,6 +404,7 @@ function MessageStep({
   const e = t.ads.editor;
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const [emoji, setEmoji] = useState(false);
+  const [cat, setCat] = useState<'all' | AdCat>('all');
   const saved = useQuery({ queryKey: qk.templates, queryFn: ({ signal }) => api<Template[]>('/api/templates', { signal }) });
 
   const originalBody = (source: Draft['source']) => (source && source !== 'blank' && source !== 'saved' ? t.ads.templates[source].body : '');
@@ -397,17 +445,43 @@ function MessageStep({
   const setButton = (i: number, value: string) => setDraft((d) => ({ ...d, buttons: d.buttons.map((b, j) => (j === i ? value : b)) }));
 
   if (draft.source === null) {
+    const shown = cat === 'all' ? ADS : ADS.filter((ad) => ad.cat === cat);
     return (
       <div className="space-y-4">
+        <div className="code-scroll -mx-1 flex gap-2 overflow-x-auto px-1 pb-1" role="tablist" aria-label={t.ads.gallery.categoriesLabel}>
+          {AD_CATS.map(({ id, icon: Icon }) => {
+            const active = cat === id;
+            const count = id === 'all' ? ADS.length : ADS.filter((ad) => ad.cat === id).length;
+            return (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setCat(id)}
+                className={cx(
+                  'flex h-9 shrink-0 items-center gap-2 rounded-full border ps-1 pe-3 text-sm whitespace-nowrap transition-all duration-200 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                  active ? 'border-brand/60 bg-brand/10 text-ink' : 'border-line text-ink-2 hover:border-line-strong hover:bg-raised/40',
+                )}
+              >
+                <span className={cx('flex size-7 items-center justify-center rounded-full', active ? 'bg-brand text-black' : 'bg-raised text-ink-2')}>
+                  <Icon className="size-3.5" />
+                </span>
+                {t.ads.gallery.categories[id]}
+                <span className={cx('rounded-full px-1.5 py-0.5 text-[11px] leading-none tabular-nums', active ? 'bg-brand/20 text-ink' : 'bg-raised text-muted')}>{count}</span>
+              </button>
+            );
+          })}
+        </div>
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {ADS.map((ad, i) => (
+          {shown.map((ad, i) => (
             <AdCard key={ad.id} ad={ad} index={i} selected={false} onPick={() => pickAd(ad)} />
           ))}
           <button
             type="button"
             onClick={() => pick({ ...EMPTY_DRAFT, source: 'blank' })}
             className="lift group animate-fade-up flex min-h-56 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-line-strong text-center outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            style={delay(ADS.length * 40)}
+            style={delay(shown.length * 40)}
           >
             <span className="flex size-12 items-center justify-center rounded-full border border-dashed border-white/25 text-white/60 transition-colors duration-200 group-hover:border-brand/70 group-hover:text-brand">
               <Plus className="size-5" />
@@ -1127,9 +1201,19 @@ function Composer({ onLaunched }: { onLaunched: (created: Created) => void }) {
   ].filter((x): x is string => Boolean(x));
   const ready = needs.length === 0;
 
+  const messageDone = Boolean(draft.body.trim()) && !buttonsInvalid && !imageBroken;
+  const audienceDone = recipients.length > 0;
+  const numbersDone = chosen.length > 0;
+  const currentStep = !messageDone ? 1 : !audienceDone ? 2 : !numbersDone ? 3 : 0;
+  const checklist = [
+    { n: 1, icon: PenLine, title: t.ads.steps.message.title, done: messageDone, missing: needs.find((x) => [s.needs.body, s.needs.buttons, t.templates.imageNotImage].includes(x)) },
+    { n: 2, icon: UserRound, title: t.ads.steps.audience.title, done: audienceDone, missing: s.needs.recipients },
+    { n: 3, icon: Smartphone, title: t.ads.steps.numbers.title, done: numbersDone, missing: s.needs.numbers },
+  ];
+
   const launch = useMutation({
     mutationFn: () =>
-      api<Created>('/api/admin/broadcasts', {
+      api<Created>('/api/broadcasts', {
         method: 'POST',
         timeoutMs: 60_000,
         body: {
@@ -1153,16 +1237,12 @@ function Composer({ onLaunched }: { onLaunched: (created: Created) => void }) {
   const first = recipients[0];
   const previewValues = first ? Object.fromEntries(variables.map((v) => [v, valueOf(first.variables, v)])) : defaults;
   const perRecipient = buttons.length ? 2 : 1;
-  const stat = (label: string, value: ReactNode, icon: LucideIcon) => {
-    const Icon = icon;
-    return (
-      <div className="flex items-center gap-3 py-2">
-        <Icon className="size-4 shrink-0 text-muted" />
-        <span className="flex-1 text-sm text-muted">{label}</span>
-        <span className="text-sm font-semibold tabular-nums">{value}</span>
-      </div>
-    );
-  };
+  const summaryStats = [
+    { icon: UserRound, label: s.recipients, value: fmt.number.format(recipients.length) },
+    { icon: Smartphone, label: s.numbers, value: fmt.number.format(chosen.length) },
+    { icon: Send, label: s.messages, value: fmt.number.format(recipients.length * perRecipient) },
+    { icon: Timer, label: s.duration, value: recipients.length ? t.ads.duration(estimateDuration(recipients.length, chosen.length, rotateEvery, pace)) : '—' },
+  ];
 
   return (
     <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
@@ -1175,11 +1255,11 @@ function Composer({ onLaunched }: { onLaunched: (created: Created) => void }) {
           </div>
         </div>
 
-        <Step n={1} index={0} title={t.ads.steps.message.title} text={t.ads.steps.message.text} done={Boolean(draft.body.trim()) && !buttonsInvalid && !imageBroken}>
+        <Step n={1} index={0} title={t.ads.steps.message.title} text={t.ads.steps.message.text} done={messageDone} current={currentStep === 1}>
           <MessageStep draft={draft} setDraft={setDraft} onImageStatus={onImageStatus} imageBroken={imageBroken} insertRef={insertRef} />
         </Step>
 
-        <Step n={2} index={1} title={t.ads.steps.audience.title} text={t.ads.steps.audience.text} done={recipients.length > 0}>
+        <Step n={2} index={1} title={t.ads.steps.audience.title} text={t.ads.steps.audience.text} done={audienceDone} current={currentStep === 2}>
           <AudienceStep
             manual={manual}
             setManual={setManual}
@@ -1196,7 +1276,7 @@ function Composer({ onLaunched }: { onLaunched: (created: Created) => void }) {
           />
         </Step>
 
-        <Step n={3} index={2} title={t.ads.steps.numbers.title} text={t.ads.steps.numbers.text} done={chosen.length > 0}>
+        <Step n={3} index={2} title={t.ads.steps.numbers.title} text={t.ads.steps.numbers.text} done={numbersDone} current={currentStep === 3}>
           <NumbersStep
             sessions={sessions}
             picked={picked}
@@ -1221,11 +1301,37 @@ function Composer({ onLaunched }: { onLaunched: (created: Created) => void }) {
           {draft.body.trim() || parts.imageUrl ? (
             <TemplatePreview template={parts} values={previewValues} onImageStatus={onImageStatus} className="max-h-[26rem] overflow-y-auto p-4" />
           ) : (
-            <div className="flex h-40 flex-col items-center justify-center gap-2 bg-[#0b141a] text-sm text-white/40">
+            <div
+              className="flex h-40 flex-col items-center justify-center gap-2 bg-[#0b141a] text-sm text-white/40"
+              style={{ backgroundImage: 'radial-gradient(rgb(255 255 255 / 0.07) 1px, transparent 1px)', backgroundSize: '16px 16px' }}
+            >
               <Megaphone className="animate-float size-7" />
               {s.needs.body}
             </div>
           )}
+        </div>
+
+        <div className="space-y-1.5 rounded-xl border border-line bg-card p-4 shadow-sm">
+          <p className="mb-1 font-semibold">{s.checklist}</p>
+          {checklist.map(({ n, icon: Icon, title, done, missing }) => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => document.getElementById(`ads-step-${n}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              className="group flex w-full items-center gap-3 rounded-lg px-2 py-2 text-start transition-colors hover:bg-raised/40"
+            >
+              <span
+                className={cx(
+                  'flex size-7 shrink-0 items-center justify-center rounded-full transition-colors duration-300',
+                  done ? 'bg-brand/15 text-brand' : 'bg-raised text-muted group-hover:text-ink-2',
+                )}
+              >
+                {done ? <Check className="size-4" /> : <Icon className="size-3.5" />}
+              </span>
+              <span className="flex-1 text-sm font-medium">{title}</span>
+              <span className={cx('text-xs', done ? 'font-medium text-brand' : 'text-muted')}>{done ? s.ready : missing}</span>
+            </button>
+          ))}
         </div>
 
         <div className="space-y-4 rounded-xl border border-line bg-card p-4 shadow-sm">
@@ -1234,11 +1340,15 @@ function Composer({ onLaunched }: { onLaunched: (created: Created) => void }) {
             <span className="text-xs text-muted">{s.name}</span>
             <input value={name} onChange={(ev) => setName(ev.target.value)} placeholder={defaultName} maxLength={120} className={inputClass} />
           </label>
-          <div className="divide-y divide-line">
-            {stat(s.recipients, fmt.number.format(recipients.length), UserRound)}
-            {stat(s.numbers, fmt.number.format(chosen.length), Smartphone)}
-            {stat(s.messages, fmt.number.format(recipients.length * perRecipient), Send)}
-            {stat(s.duration, recipients.length ? t.ads.duration(estimateDuration(recipients.length, chosen.length, rotateEvery, pace)) : '—', Timer)}
+          <div className="grid grid-cols-2 gap-2">
+            {summaryStats.map(({ icon: Icon, label, value }) => (
+              <div key={label} className="rounded-lg border border-line bg-raised/30 p-3">
+                <p className="flex items-center gap-1.5 text-xs text-muted">
+                  <Icon className="size-3.5" /> {label}
+                </p>
+                <p className="mt-1.5 text-lg leading-none font-semibold tabular-nums">{value}</p>
+              </div>
+            ))}
           </div>
           {willSkip > 0 && <p className="text-xs text-amber-300">{t.ads.audience.willSkip(willSkip)}</p>}
           {complete.length > BROADCAST_LIMITS.recipients && (
@@ -1261,15 +1371,6 @@ function Composer({ onLaunched }: { onLaunched: (created: Created) => void }) {
             <Send className={cx('size-5 transition-transform duration-300', ready && 'group-hover:translate-x-1 group-hover:-translate-y-1 rtl:-scale-x-100 rtl:group-hover:-translate-x-1')} />
             {s.launch}
           </button>
-          {needs.length > 0 && (
-            <ul className="space-y-1.5">
-              {needs.map((need) => (
-                <li key={need} className="flex items-center gap-2 text-xs text-muted">
-                  <span className="size-1.5 rounded-full bg-line-strong" /> {need}
-                </li>
-              ))}
-            </ul>
-          )}
         </div>
       </aside>
 
@@ -1431,7 +1532,7 @@ function LiveCampaign({ id }: { id: string }) {
   const [launched] = useState(() => (lastLaunch?.id === id ? lastLaunch : null));
   const query = useQuery({
     queryKey: qk.admin.broadcast(id),
-    queryFn: ({ signal }) => api<CampaignDetail>(`/api/admin/broadcasts/${id}`, { signal }),
+    queryFn: ({ signal }) => api<CampaignDetail>(`/api/broadcasts/${id}`, { signal }),
     refetchInterval: (q) => (q.state.data?.state === 'running' ? 4_000 : false),
   });
   const data = query.data;
@@ -1458,7 +1559,7 @@ function LiveCampaign({ id }: { id: string }) {
   }, [data]);
 
   const cancel = useMutation({
-    mutationFn: () => api<Campaign & { cancelled: number }>(`/api/admin/broadcasts/${id}/cancel`, { method: 'POST' }),
+    mutationFn: () => api<Campaign & { cancelled: number }>(`/api/broadcasts/${id}/cancel`, { method: 'POST' }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: qk.admin.broadcast(id) });
       void queryClient.invalidateQueries({ queryKey: qk.admin.broadcasts });
@@ -1665,7 +1766,7 @@ function History() {
   const h = t.ads.history;
   const query = useQuery({
     queryKey: qk.admin.broadcasts,
-    queryFn: ({ signal }) => api<Campaign[]>('/api/admin/broadcasts', { signal }),
+    queryFn: ({ signal }) => api<Campaign[]>('/api/broadcasts', { signal }),
     refetchInterval: (q) => (q.state.data?.some((c) => c.state === 'running') ? 5_000 : false),
   });
   if (query.error && !query.data) return <LoadError error={query.error} onRetry={() => void query.refetch()} retrying={query.isFetching} />;
@@ -1707,7 +1808,7 @@ function History() {
                     <StateBadge state={c.state} />
                   </p>
                   <p className="text-xs text-muted">
-                    {fmt.dateTime(c.createdAt)} · {t.ads.recipientsCount(c.recipients)} · {h.numbers(c.sessionIds.length)}
+                    {fmt.dateTime(c.createdAt)} · {t.ads.recipientsCount(c.recipients)} · {h.numbers(c.sessionIds.length)} · {t.ads.paces[c.pace]?.label}
                   </p>
                 </div>
                 <span className="text-sm text-muted tabular-nums">{Math.round((processed / total) * 100)}%</span>
@@ -1743,7 +1844,71 @@ function History() {
 
 // --- page ------------------------------------------------------------------------------------------
 
-/** Admin-only bulk "ads" campaigns: compose → choose numbers → launch → watch it go out live. */
+/** The locked/splash view for plans without `ads` (upgrade) or with it while the flag is off (soon). */
+function AdsGate({ kind }: { kind: 'soon' | 'upgrade' }) {
+  const { t } = useI18n();
+  const g = t.ads.gate;
+  const soon = kind === 'soon';
+  return (
+    <div className="mx-auto w-full max-w-2xl space-y-6">
+      <PageHeader title={t.ads.title} description={t.ads.description} />
+      <section className="animate-fade-up overflow-hidden rounded-xl border border-line bg-card shadow-sm">
+        <div className="relative flex flex-col items-center gap-3 px-6 py-10 text-center">
+          <span aria-hidden className="absolute -top-16 size-48 rounded-full bg-brand/15 blur-3xl" />
+          <span className={cx('relative flex size-14 items-center justify-center rounded-2xl shadow-lg', soon ? 'bg-gradient-to-br from-brand to-[#0E9488] text-black' : 'bg-raised text-muted')}>
+            {soon ? <Megaphone className="size-7" /> : <Lock className="size-7" />}
+            <span className="absolute -bottom-1 -end-1 flex size-6 items-center justify-center rounded-full bg-card ring-1 ring-line">
+              {soon ? <Clock className="size-3.5 text-brand" /> : <Lock className="size-3.5 text-muted" />}
+            </span>
+          </span>
+          <h2 className="relative text-lg font-semibold">{soon ? g.soonTitle : g.lockedTitle}</h2>
+          <p className="relative max-w-md text-sm text-muted">{soon ? g.soonText : g.lockedText}</p>
+          {!soon && (
+            <Link href="/subscription" className="relative mt-1">
+              <Button>{g.upgrade}</Button>
+            </Link>
+          )}
+        </div>
+        <div className="border-t border-line bg-raised/30 px-6 py-5 text-start">
+          <p className="mb-3 text-xs font-medium text-muted">{g.featuresTitle}</p>
+          <ul className="grid gap-2.5 sm:grid-cols-2">
+            {g.features.map((f) => (
+              <li key={f} className="flex items-start gap-2 text-sm text-ink-2">
+                <Check className="mt-0.5 size-4 shrink-0 text-brand" />
+                {f}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/** Admin-only switch that flips `features.ads` for every eligible plan, shown on top of the page. */
+function AdsFeatureSwitch({ enabled }: { enabled: boolean }) {
+  const { t } = useI18n();
+  const { reload } = useAccount();
+  const g = t.ads.gate;
+  const toggle = useMutation({
+    mutationFn: (ads: boolean) => api<{ ads: boolean }>('/api/admin/features', { method: 'PUT', body: { ads } }),
+    onSuccess: reload,
+  });
+  return (
+    <div className="animate-fade-up flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand/25 bg-brand/5 px-4 py-3">
+      <div className="min-w-0">
+        <p className="flex items-center gap-2 text-sm font-medium">
+          {g.adminLabel}
+          <Badge tone={enabled ? 'good' : 'warning'}>{enabled ? g.adminOn : g.adminOff}</Badge>
+        </p>
+        <p className="mt-0.5 text-xs text-muted">{g.adminHint}</p>
+      </div>
+      <Switch checked={enabled} onChange={(v) => toggle.mutate(v)} disabled={toggle.isPending} label={g.adminLabel} />
+    </div>
+  );
+}
+
+/** Bulk "ads" campaigns: compose → choose numbers → launch → watch it go out live. */
 export function AdsPage() {
   const { t } = useI18n();
   const { account } = useAccount();
@@ -1753,10 +1918,15 @@ export function AdsPage() {
   // Kept mounted while browsing campaigns, so a half-written campaign survives a look at the history.
   const [composerKey, setComposerKey] = useState(0);
 
-  if (account && !account.user?.isAdmin) return <ErrorNote>{t.admin.forbidden}</ErrorNote>;
+  const isAdmin = account?.user?.isAdmin === true;
+  if (account && !isAdmin) {
+    if (!planHasFeature(account.plan.id, 'ads')) return <AdsGate kind="upgrade" />;
+    if (!account.features.ads) return <AdsGate kind="soon" />;
+  }
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6">
+      {isAdmin && account && <AdsFeatureSwitch enabled={account.features.ads} />}
       <PageHeader
         title={t.ads.title}
         description={t.ads.description}

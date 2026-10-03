@@ -3,7 +3,7 @@ import type { FastifyRequest } from 'fastify';
 
 export type AuditEntry = {
   action: string;
-  targetType: 'user' | 'workspace' | 'plan_request' | 'broadcast';
+  targetType: 'user' | 'workspace' | 'plan_request' | 'broadcast' | 'feature';
   targetId?: string | null;
   /** What the target was called at the time (e.g. an email), since it may be deleted later. */
   targetLabel?: string | null;

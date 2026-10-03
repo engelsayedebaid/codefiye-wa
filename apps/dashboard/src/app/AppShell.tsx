@@ -21,7 +21,7 @@ import {
   Smartphone,
   X,
 } from 'lucide-react';
-import { getPlan } from '@wa/shared/plans';
+import { getPlan, planHasFeature } from '@wa/shared/plans';
 import { useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiRequestError, errorMessage } from '../api';
@@ -34,7 +34,7 @@ import { BRAND } from '../brand';
 import { useI18n } from '../i18n';
 import { Link, usePath } from '../router';
 import { Badge, Button, buttonClass, cx, ErrorNote, Field, flip, LangSwitch, Logo, LogoMark, Modal, SuccessNote, usePlanName } from '../ui';
-import { type Account, AccountContext, planState } from './account';
+import { type Account, AccountContext, planState, useAccount } from './account';
 
 const COLLAPSE_KEY = 'wa.sidebar.collapsed';
 const readCollapsed = () => {
@@ -45,21 +45,31 @@ const readCollapsed = () => {
   }
 };
 
+type NavItem = { href: string; label: string; icon: typeof LayoutGrid; badge?: 'lock' | 'soon' };
+
 function useNav() {
   const { t } = useI18n();
+  const { account } = useAccount();
   const n = t.app.nav;
+  // Ads is visible to everyone: locked when the plan doesn't bundle it, "soon" until the admin flips it on.
+  const isAdmin = account?.user?.isAdmin === true;
+  const adsBadge: NavItem['badge'] = isAdmin
+    ? undefined
+    : !account || !planHasFeature(account.plan.id, 'ads')
+      ? 'lock'
+      : account.features.ads
+        ? undefined
+        : 'soon';
   return {
     main: [
       { href: '/dashboard', label: n.dashboard, icon: LayoutGrid },
       { href: '/sessions', label: n.sessions, icon: PhoneCall },
       { href: '/templates', label: n.templates, icon: FileText },
       { href: '/keys', label: n.keys, icon: KeyRound },
+      { href: '/ads', label: n.ads, icon: Megaphone, badge: adsBadge },
       { href: '/subscription', label: n.subscription, icon: CircleDollarSign },
-    ],
-    admin: [
-      { href: '/admin', label: n.admin, icon: ShieldCheck },
-      { href: '/ads', label: n.ads, icon: Megaphone },
-    ],
+    ] as NavItem[],
+    admin: [{ href: '/admin', label: n.admin, icon: ShieldCheck }] as NavItem[],
     secondary: [
       { href: '/docs', label: t.app.secondary.docs, icon: BookOpen, newTab: true },
       { href: '/#faq', label: t.app.secondary.help, icon: CircleHelp, newTab: false },
@@ -252,11 +262,12 @@ function NavGroup({
   onNavigate,
 }: {
   label: string;
-  items: { href: string; label: string; icon: typeof LayoutGrid }[];
+  items: NavItem[];
   path: string;
   collapsed: boolean;
   onNavigate?: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="p-2">
       {!collapsed && <p className="flex h-8 items-center px-2 text-xs font-medium text-ink/70">{label}</p>}
@@ -275,6 +286,10 @@ function NavGroup({
                 {active && <span className="absolute inset-y-1.5 start-0 w-0.5 rounded-full bg-brand" />}
                 <item.icon />
                 {!collapsed && <span className="truncate">{item.label}</span>}
+                {!collapsed && item.badge === 'lock' && <LockKeyhole className="ms-auto size-3.5 shrink-0 text-muted" />}
+                {!collapsed && item.badge === 'soon' && (
+                  <span className="ms-auto shrink-0 rounded-full bg-brand/15 px-1.5 py-0.5 text-[10px] leading-none font-medium text-brand">{t.ads.gate.soon}</span>
+                )}
               </Link>
             </li>
           );
