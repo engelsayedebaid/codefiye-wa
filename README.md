@@ -398,11 +398,11 @@ curl -X POST localhost:3000/send -H 'Content-Type: application/json' -d '{"to":"
 
 ## 16. أول أسبوع — قائمة عمل
 
-- [ ] إنشاء المستودع بـ monorepo (pnpm): `apps/api`, `apps/worker`, `apps/dashboard`, `packages/provider`.
-- [ ] تشغيل النموذج الأولي وربط رقمك الاحتياطي (لا رقمك الأساسي).
-- [ ] كتابة واجهة `Provider`: `connect()`, `sendText()`, `sendMedia()`, `isOnWhatsApp()`, `on(event)`.
-- [ ] تنفيذ `usePostgresAuthState` مع التشفير واختبار إعادة التشغيل.
-- [ ] Docker Compose: Postgres + Redis + worker + api، ومتغيرات البيئة موثّقة في `.env.example`.
+- [x] إنشاء المستودع بـ monorepo (pnpm): `apps/api`, `apps/worker`, `apps/dashboard`, `packages/provider`.
+- [ ] تشغيل النموذج الأولي وربط رقمك الاحتياطي (لا رقمك الأساسي). — السكربت جاهز: `pnpm poc`.
+- [x] كتابة واجهة `Provider`: `connect()`, `send()` (نص ووسائط وموقع وجهة اتصال), `isOnWhatsApp()`, `on(event)`.
+- [x] تنفيذ `usePostgresAuthState` مع التشفير واختبار إعادة التشغيل (`useEncryptedAuthState`).
+- [x] Docker Compose: Postgres + worker + api (بدون Redis — انظر حالة التنفيذ أدناه)، ومتغيرات البيئة موثّقة في `.env.example`.
 - [ ] نقل وحدة المصادقة (تسجيل، دخول، 2FA، OTP واتساب/SMS) من CodeFiye إلى `apps/api`.
 - [ ] حجز الدومين وفتح حساب Stripe وبدء إجراءات التفعيل (تأخذ أسابيع).
 - [ ] تجربة تسجيل في WasenderAPI وEvolution API وWAHA لمدة ساعة لكل منها وتدوين ما يعجبك وما يزعجك — هذا هو مرجع التصميم.
@@ -422,6 +422,25 @@ wa-platform/
 ├── docker-compose.yml
 ├── .env.example
 └── README.md         # هذا الملف
+```
+
+### حالة التنفيذ (3 أكتوبر 2026)
+
+أُعيد بناء المشروع من هذه الخطة. المنجز: أسبوع العمل الأول + نواة المرحلة 1.
+
+- **محرّك الجلسات:** مشرف موزّع في كل عامل (نبض كل 5 ثوانٍ، استرداد جلسات العامل الساقط خلال 30 ثانية)، إعادة اتصال بتراجع أسّي حتى 20 محاولة ثم `needs_attention`، حالة دخول مشفّرة AES-256-GCM في `session_auth`، طابور إرسال متسلسل لكل جلسة مع تأخير عشوائي و"يكتب…"، فحص الرقم على واتساب قبل الإرسال، وتتبّع `sent → delivered → read`.
+- **الـ API:** المسارات المتوافقة مع WasenderAPI للجلسات والإرسال (`/api/send-message` بكل الأنواع، `on-whatsapp`، `status`، `messages/:id`، `resend`)، مفاتيح جلسات `was_` ورموز مساحة عمل `wap_`، Idempotency-Key، حدود الخطة (عدد الجلسات، الطلبات/دقيقة، رسائل التجربة اليومية، انتهاء التجربة → 402)، توثيق OpenAPI على `/docs`، وبثّ SSE على `/api/events`.
+- **لوحة التحكم:** دخول برمز مساحة العمل، الجلسات، QR حيّ ورمز ربط، إرسال تجريبي، سجل الرسائل، مفاتيح API.
+- **انحراف مقصود عن §3:** لا Redis/BullMQ حالياً — Postgres هو الطابور (`messages` + `SKIP LOCKED`) وقناة الأحداث (`LISTEN/NOTIFY`). يكفي لمرحلة الإطلاق ويقلّل البنية؛ يُعاد تقييمه عند الاقتراب من 1,000 جلسة.
+- **التالي (المرحلة 2):** Webhooks بالتوقيع وإعادة المحاولة، فك تشفير الوسائط الواردة ورفع الملفات (R2)، نقل وحدة المصادقة من CodeFiye، Stripe.
+
+التشغيل محلياً (التفاصيل في `AGENTS.md`):
+
+```bash
+pnpm install
+cp .env.example .env            # املأ DATABASE_URL و AUTH_ENCRYPTION_KEY و WORKER_SECRET
+pnpm bootstrap you@example.com "مساحتي"   # يطبع رمز wap_ للدخول
+pnpm dev                         # API :4000 · عامل · لوحة :5173 · التوثيق :4000/docs
 ```
 
 ---

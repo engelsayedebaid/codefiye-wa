@@ -11,28 +11,29 @@
     "dev:api": "pnpm --filter @wa/api dev",
     "dev:worker": "pnpm --filter @wa/worker dev",
     "dev:dashboard": "pnpm --filter @wa/dashboard dev",
-    "poc": "tsx --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/poc.ts",
+    "poc": "tsx scripts/poc.ts",
     "bootstrap": "tsx --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/bootstrap.ts",
+    "admin:create": "tsx --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/create-admin.ts",
     "db:generate": "pnpm --filter @wa/db generate",
     "db:migrate": "pnpm --filter @wa/db migrate",
     "typecheck": "pnpm -r typecheck && tsc -p .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "lint": "oxlint"
   },
   "devDependencies": {
-    "@types/node": "24.13.6",
+    "@types/node": "24.19.0",
     "@types/qrcode-terminal": "0.12.2",
+    "oxlint": "1.85.0",
     "tsx": "4.23.15",
-    "typescript": "5.9.3",
-    "vitest": "5.0.1"
+    "typescript": "7.0.2",
+    "vitest": "5.0.2"
   },
   "dependencies": {
     "@hapi/boom": "10.0.1",
-    "@neon/config": "1.8.2",
-    "@neon/env": "1.4.7",
     "@wa/db": "workspace:*",
-    "@wa/provider": "workspace:*",
     "@wa/shared": "workspace:*",
     "@whiskeysockets/baileys": "7.0.0-rc14",
+    "fastify": "5.12.5",
     "pino": "10.3.1",
     "qrcode-terminal": "0.12.0"
   }

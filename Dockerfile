@@ -1,7 +1,10 @@
-FROM node:22-alpine
-RUN apk add --no-cache git && corepack enable
+# One image for both services: the API (default CMD, also serves the dashboard) and the worker
+# (override the command with `pnpm --filter @wa/worker start`).
+FROM node:24-slim
+RUN corepack enable
 WORKDIR /app
-COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* ./
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/api/package.json apps/api/
 COPY apps/worker/package.json apps/worker/
 COPY apps/dashboard/package.json apps/dashboard/
@@ -9,11 +12,11 @@ COPY packages/db/package.json packages/db/
 COPY packages/provider/package.json packages/provider/
 COPY packages/shared/package.json packages/shared/
 RUN pnpm install --frozen-lockfile
+
 COPY . .
-# Vite bakes these into the dashboard bundle at build time (empty VITE_API_URL = same-origin).
-ARG VITE_API_URL=""
-ARG VITE_NEON_AUTH_URL=""
-ENV VITE_API_URL=$VITE_API_URL VITE_NEON_AUTH_URL=$VITE_NEON_AUTH_URL
 RUN pnpm --filter @wa/dashboard build
-ENV NODE_ENV=production
+
+ENV NODE_ENV=production \
+    DASHBOARD_DIST=/app/apps/dashboard/dist
+EXPOSE 4000
 CMD ["pnpm", "--filter", "@wa/api", "start"]

@@ -1,52 +1,45 @@
-# api + worker against Neon (DATABASE_URL / DATABASE_URL_UNPOOLED from .env / .env.local).
-# Queues (BullMQ Postgres backend) and events (LISTEN/NOTIFY) run on Postgres — no Redis.
-# Local Postgres instead: `docker compose --profile local up` and point both URLs at
-#   postgres://wa:wa@postgres:5432/wa_platform
+# Self-hosted stack (README §11 "launch" stage) with a local Postgres instead of Neon.
+# Not exercised on the dev machine (no Docker there) — verify before relying on it.
 services:
-  api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    command: ["pnpm", "--filter", "@wa/api", "start"]
-    env_file:
-      - path: .env
-        required: false
-      - path: .env.local
-        required: false
-    ports:
-      - "${API_PORT:-4000}:4000"
-    environment:
-      API_PORT: "4000"
-    restart: unless-stopped
-
-  worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    command: ["pnpm", "--filter", "@wa/worker", "start"]
-    env_file:
-      - path: .env
-        required: false
-      - path: .env.local
-        required: false
-    restart: unless-stopped
-    stop_grace_period: 30s
-    deploy:
-      resources:
-        limits:
-          memory: 4g
-
   postgres:
-    profiles: ["local"]
-    image: postgres:16-alpine
+    image: postgres:16
     environment:
       POSTGRES_USER: wa
       POSTGRES_PASSWORD: wa
-      POSTGRES_DB: wa_platform
-    ports:
-      - "5432:5432"
+      POSTGRES_DB: wa
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wa"]
+      interval: 5s
+      retries: 10
+
+  api:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: &env
+      DATABASE_URL: postgresql://wa:wa@postgres:5432/wa
+      AUTH_ENCRYPTION_KEY: ${AUTH_ENCRYPTION_KEY:?set AUTH_ENCRYPTION_KEY}
+      WORKER_SECRET: ${WORKER_SECRET:?set WORKER_SECRET}
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:4000}
+    ports:
+      - "4000:4000"
+
+  worker:
+    build: .
+    command: ["pnpm", "--filter", "@wa/worker", "start"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: *env
+      WORKER_ID: worker-1
+      WORKER_HOST: 0.0.0.0
+      WORKER_URL: http://worker:4100
+    # Give in-flight sends time to finish and sockets time to close.
+    stop_grace_period: 20s
 
 volumes:
   pgdata:

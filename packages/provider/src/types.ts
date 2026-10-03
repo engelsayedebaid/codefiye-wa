@@ -1,57 +1,74 @@
-import type { MessageStatus, SessionStatus } from '@wa/shared';
-
-export type OutboundContent =
-  | { type: 'text'; text: string }
-  | { type: 'image' | 'video' | 'sticker'; url: string; caption?: string; mimetype?: string }
-  | { type: 'audio'; url: string; mimetype?: string; ptt?: boolean }
-  | { type: 'document'; url: string; fileName?: string; mimetype?: string; caption?: string }
-  | { type: 'location'; latitude: number; longitude: number; name?: string; address?: string }
-  | { type: 'contact'; name: string; phone: string };
-
-export type OutboundMedia = Extract<OutboundContent, { url: string }>;
-
-export type SendResult = { waMessageId: string; remoteJid: string; timestamp: number };
+import type { MessageType, OutboundContent } from '@wa/shared';
 
 export type InboundMessage = {
   waMessageId: string;
-  remoteJid: string;
+  /** Chat the message belongs to (user, group or LID JID). */
+  chatJid: string;
+  /** Sender — phone-number JID when WhatsApp gives us one, otherwise the LID. */
   from: string;
-  fromMe: boolean;
-  pushName?: string | null;
-  type: string;
+  /** Group sender as addressed by WhatsApp (needed for read receipts); undefined in 1:1 chats. */
+  participant?: string;
+  pushName: string | null;
+  isGroup: boolean;
+  type: MessageType;
+  /** Text body, caption, or reaction emoji. */
   text: string | null;
   timestamp: number;
+  /** Full WAMessage, JSON-safe (BufferJSON), kept for media download/decrypt later. */
   raw: unknown;
 };
 
-export type StatusInfo = { reason?: string; phone?: string | null; statusCode?: number };
+export type CloseReason = 'logged_out' | 'restart_required' | 'connection_replaced' | 'qr_timeout' | 'error';
+
+export type ReceiptStatus = 'sent' | 'delivered' | 'read' | 'failed';
 
 export type ProviderEvents = {
-  status: [status: SessionStatus, info: StatusInfo];
-  qr: [qr: string];
-  message: [message: InboundMessage];
-  'message.status': [update: { waMessageId: string; remoteJid: string; status: MessageStatus }];
+  qr: { qr: string };
+  open: { jid: string; phone: string | null; name: string | null };
+  close: { reason: CloseReason; statusCode: number | null; message: string };
+  message: InboundMessage;
+  /** `error`: WhatsApp's code when it rejected the message (e.g. '463': may not start new chats). */
+  receipt: { waMessageId: string; chatJid: string; status: ReceiptStatus; error?: string };
+  /** Someone answered one of our polls. `selected` is their whole current choice (empty = withdrawn). */
+  pollVote: { waMessageId: string; chatJid: string; voter: string; voterPhone: string | null; selected: string[] };
 };
 
-export type ProviderEventName = keyof ProviderEvents;
+export type OnWhatsAppResult = { input: string; exists: boolean; jid: string | null };
+
+/** Outbound media kinds; the fetcher checks that a download really is one (not, say, a web page). */
+export type MediaKind = 'image' | 'video' | 'audio' | 'document' | 'sticker';
+
+/** Fetches outbound media. Injected so the caller controls SSRF protection and size limits. */
+export type MediaFetcher = (url: string, kind: MediaKind) => Promise<{ data: Buffer; mimetype: string | null }>;
 
 /**
- * Provider-agnostic WhatsApp transport. Baileys (unofficial, Multi-Device) today;
- * Meta Cloud API can implement the same contract later.
+ * README §1: the platform talks to WhatsApp only through this interface — Baileys today,
+ * Meta Cloud API as a second implementation later.
  */
 export interface Provider {
-  readonly sessionId: string;
-  readonly status: SessionStatus;
+  /** True once a device is linked (creds survive restarts; no QR needed). */
+  readonly linked: boolean;
+  readonly connected: boolean;
   connect(): Promise<void>;
-  /** Close the socket but keep credentials; `connect()` resumes without a new QR. */
-  disconnect(): Promise<void>;
-  /** Unlink the device and wipe credentials. */
+  /** Closes the socket but keeps the device linked. */
+  close(): Promise<void>;
+  /** Unlinks the device from the phone. Caller is responsible for wiping auth state. */
   logout(): Promise<void>;
   requestPairingCode(phone: string): Promise<string>;
-  send(to: string, content: OutboundContent): Promise<SendResult>;
-  sendText(to: string, text: string): Promise<SendResult>;
-  sendMedia(to: string, media: OutboundMedia): Promise<SendResult>;
-  isOnWhatsApp(to: string): Promise<{ exists: boolean; jid: string | null }>;
-  setPresence(to: string, presence: 'composing' | 'recording' | 'paused' | 'available'): Promise<void>;
-  on<E extends ProviderEventName>(event: E, listener: (...args: ProviderEvents[E]) => void): () => void;
+  /** `raw` is set for polls: the sent message, which must be kept to decrypt the votes later. */
+  send(jid: string, content: OutboundContent): Promise<{ waMessageId: string; raw?: unknown }>;
+  setTyping(jid: string, typing: boolean): Promise<void>;
+  isOnWhatsApp(phones: string[]): Promise<OnWhatsAppResult[]>;
+  markRead(messages: Pick<InboundMessage, 'chatJid' | 'waMessageId' | 'participant'>[]): Promise<void>;
+  on<E extends keyof ProviderEvents>(event: E, handler: (payload: ProviderEvents[E]) => void): () => void;
+}
+
+export class ProviderError extends Error {
+  constructor(
+    readonly code: 'not_connected' | 'already_linked' | 'invalid_input' | 'send_failed',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'ProviderError';
+  }
 }

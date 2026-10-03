@@ -1,21 +1,20 @@
-import type { MessageStatus, SessionStatus } from './contracts';
+import type { MessageStatus, MessageType, SessionStatus } from './constants';
 
-/** Events published by workers via Postgres NOTIFY; consumed by the API (SSE) and, later, the webhook dispatcher. */
-export type PlatformEvent =
-  | { event: 'session.status'; sessionId: string; timestamp: number; data: { status: SessionStatus; phone?: string | null; reason?: string } }
-  | { event: 'qrcode.updated'; sessionId: string; timestamp: number; data: { qr: string } }
-  | { event: 'pairing.updated'; sessionId: string; timestamp: number; data: { code: string } }
-  | { event: 'messages.received'; sessionId: string; timestamp: number; data: { id: string; from: string; text: string | null; type: string } }
-  | { event: 'messages.update'; sessionId: string; timestamp: number; data: { id: string; remoteJid: string; status: MessageStatus } };
+type Base<T extends string, D> = { type: T; workspaceId: string; sessionId: string; data: D };
 
-export type PlatformEventName = PlatformEvent['event'];
+/** Events published by workers on `wa_events`. Names follow the webhook event names (README §7). */
+export type WaEvent =
+  | Base<'session.status', { status: SessionStatus; phone: string | null; lastError: string | null }>
+  | Base<'qrcode.updated', { qr: string }>
+  | Base<'pairing.updated', { code: string }>
+  | Base<'messages.received', { id: number; from: string; type: MessageType; text: string | null }>
+  | Base<'messages.update', { id: number; status: MessageStatus; error: string | null }>
+  /** A recipient answered a poll we sent; `selected` is their current choice (empty = withdrawn). */
+  | Base<'poll.vote', { id: number; voter: string; selected: string[] }>;
 
-/** RPC commands the API sends to the worker that owns a session. */
-export type WorkerCommand =
-  | { op: 'connect'; sessionId: string }
-  | { op: 'disconnect'; sessionId: string }
-  | { op: 'logout'; sessionId: string }
-  | { op: 'pairing-code'; sessionId: string; phone: string }
-  | { op: 'on-whatsapp'; sessionId: string; jid: string };
+export type WaEventType = WaEvent['type'];
 
-export type SendJob = { messageId: string; sessionId: string };
+/** Messages sent by the API on `wa_control`. */
+export type ControlMessage =
+  | { type: 'session.changed'; sessionId: string }
+  | { type: 'message.queued'; sessionId: string };

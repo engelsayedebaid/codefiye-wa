@@ -1,88 +1,64 @@
-import { Worker, createPostgresBackend, setDefaultBackendFactory } from 'bullmq';
-import { and, createDb, createEventBus, eq, queueConnection, sessions, sql, workers } from '@wa/db';
-import { QUEUES, type SendJob, type WorkerCommand } from '@wa/shared';
-import { config, logger } from './config';
-import { SessionManager } from './session-manager';
+import { createDb, createListener, databaseUrls, runMigrations } from '@wa/db';
+import { parseKey } from '@wa/provider';
+import pino from 'pino';
+import { loadConfig } from './config';
+import { fetchMedia } from './media';
+import { buildRpcServer } from './rpc';
+import { Supervisor } from './supervisor';
 
-setDefaultBackendFactory(createPostgresBackend);
+const config = loadConfig();
+const logger = pino({
+  level: config.LOG_LEVEL,
+  base: { service: 'worker', workerId: config.WORKER_ID },
+  transport: process.stdout.isTTY ? { target: 'pino-pretty' } : undefined,
+});
 
-const db = createDb();
-const bus = createEventBus();
-const manager = new SessionManager(db, bus);
+const urls = databaseUrls();
+await runMigrations(urls.direct);
+const { sql } = createDb(urls.pooled);
+const listener = createListener(urls.direct);
 
-async function heartbeat() {
-  await db
-    .insert(workers)
-    .values({ id: config.workerId, sessions: manager.size, maxSessions: config.maxSessions, lastSeenAt: new Date() })
-    .onConflictDoUpdate({
-      target: workers.id,
-      set: { sessions: manager.size, maxSessions: config.maxSessions, lastSeenAt: sql`now()` },
-    });
-}
+const supervisor = new Supervisor({
+  sql,
+  listener,
+  workerId: config.WORKER_ID,
+  url: config.workerUrl,
+  capacity: config.WORKER_CAPACITY,
+  encryptionKey: parseKey(config.AUTH_ENCRYPTION_KEY),
+  logger,
+  baileysLogger: logger.child({ module: 'baileys' }, { level: config.BAILEYS_LOG_LEVEL }),
+  sendDelay: { min: config.SEND_DELAY_MIN_MS, max: Math.max(config.SEND_DELAY_MIN_MS, config.SEND_DELAY_MAX_MS) },
+  fetchMedia: (url, kind) => fetchMedia(url, { maxBytes: config.MEDIA_MAX_BYTES, kind }),
+});
 
-async function handle(cmd: WorkerCommand) {
-  switch (cmd.op) {
-    case 'connect':
-      await manager.start(cmd.sessionId);
-      return { status: manager.get(cmd.sessionId)?.status };
-    case 'disconnect':
-      await manager.stop(cmd.sessionId, 'disconnect');
-      return { status: 'disconnected' };
-    case 'logout':
-      await manager.stop(cmd.sessionId, 'logout');
-      return { status: 'logged_out' };
-    case 'pairing-code': {
-      const provider = manager.get(cmd.sessionId) ?? (await manager.start(cmd.sessionId));
-      return { code: await provider.requestPairingCode(cmd.phone) };
-    }
-    case 'on-whatsapp': {
-      const provider = manager.get(cmd.sessionId);
-      if (!provider) throw new Error('SESSION_NOT_CONNECTED');
-      return provider.isOnWhatsApp(cmd.jid);
-    }
+const rpc = buildRpcServer(supervisor, config.WORKER_SECRET, logger);
+await rpc.listen({ host: config.WORKER_HOST, port: config.WORKER_PORT });
+await supervisor.start();
+logger.info({ url: config.workerUrl, capacity: config.WORKER_CAPACITY }, 'worker started');
+
+let shuttingDown = false;
+async function shutdown(signal: string, code = 0) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.info({ signal }, 'shutting down');
+  const force = setTimeout(() => process.exit(1), 15_000);
+  force.unref();
+  try {
+    await supervisor.shutdown();
+    await rpc.close();
+    await listener.end();
+    await sql.end();
+  } catch (err) {
+    logger.error({ err }, 'error during shutdown');
   }
+  process.exit(code);
 }
-
-async function main() {
-  await heartbeat();
-  const hb = setInterval(() => void heartbeat().catch((err) => logger.error({ err }, 'heartbeat failed')), config.heartbeatMs);
-
-  const rpc = new Worker<WorkerCommand>(QUEUES.rpc(config.workerId), (job) => handle(job.data), {
-    connection: queueConnection(),
-    concurrency: 10,
-  });
-  rpc.on('failed', (job, err) => logger.warn({ op: job?.data.op, sessionId: job?.data.sessionId, err: err.message }, 'rpc failed'));
-
-  // High concurrency is cheap: slots mostly await per-session chains in SessionManager.
-  const send = new Worker<SendJob>(QUEUES.send(config.workerId), (job) => manager.processSend(job), {
-    connection: queueConnection(),
-    concurrency: Math.max(config.maxSessions * 2, 20),
-  });
-  send.on('failed', (job, err) => logger.warn({ sessionId: job?.data.sessionId, jobId: job?.id, err: err.message }, 'send failed'));
-
-  const owned = await db
-    .select({ id: sessions.id })
-    .from(sessions)
-    .where(and(eq(sessions.workerId, config.workerId), eq(sessions.autoConnect, true)));
-  logger.info({ count: owned.length }, 'resuming sessions');
-  for (const { id } of owned) await manager.start(id).catch((err) => logger.error({ err, sessionId: id }, 'resume failed'));
-
-  logger.info('worker ready');
-
-  const shutdown = async (signal: string) => {
-    logger.info({ signal }, 'shutting down');
-    clearInterval(hb);
-    await Promise.allSettled([rpc.close(), send.close()]);
-    await manager.stopAll();
-    await db.delete(workers).where(eq(workers.id, config.workerId)).catch(() => {});
-    await Promise.allSettled([bus.close(), db.close()]);
-    process.exit(0);
-  };
-  process.once('SIGINT', () => void shutdown('SIGINT'));
-  process.once('SIGTERM', () => void shutdown('SIGTERM'));
-}
-
-main().catch((err) => {
-  logger.fatal({ err }, 'worker failed to start');
-  process.exit(1);
+process.on('SIGINT', () => void shutdown('SIGINT'));
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
+// Baileys occasionally leaves a rejection unhandled; dropping every WhatsApp socket over it would be worse.
+process.on('unhandledRejection', (reason) => logger.error({ err: reason }, 'unhandled promise rejection'));
+// After an uncaught exception the state is unknown: release the sessions cleanly and let the platform restart us.
+process.on('uncaughtException', (err) => {
+  logger.fatal({ err }, 'uncaught exception');
+  void shutdown('uncaughtException', 1);
 });

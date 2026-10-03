@@ -7,5 +7,4 @@ allowBuilds:
   protobufjs: false
   '@whiskeysockets/baileys': false
   sharp: false
-  msgpackr-extract: false
   core-js: false

@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "sessions_workspace_name_unique" ON "sessions" USING btree ("workspace_id",lower("name"));

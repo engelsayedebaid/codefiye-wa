@@ -4,7 +4,7 @@ node_modules
 .env
 .env.*
 !.env.example
-.neon
-.git
+auth
 *.log
-nul
+.git
+.agents

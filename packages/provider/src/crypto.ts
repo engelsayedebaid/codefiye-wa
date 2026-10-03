@@ -1,34 +1,32 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 
-const VERSION = 1;
-const IV_LEN = 12;
-const TAG_LEN = 16;
+const IV_BYTES = 12;
+const TAG_BYTES = 16;
 
-export function parseKey(base64 = process.env.AUTH_ENCRYPTION_KEY): Buffer {
-  if (!base64) throw new Error('AUTH_ENCRYPTION_KEY is not set');
-  const key = Buffer.from(base64, 'base64');
-  if (key.length !== 32) throw new Error('AUTH_ENCRYPTION_KEY must be 32 bytes (base64-encoded)');
+/** Parses AUTH_ENCRYPTION_KEY (base64 or hex) and insists on exactly 32 bytes. */
+export function parseKey(value: string | undefined): Buffer {
+  if (!value) throw new Error('AUTH_ENCRYPTION_KEY is not set (32 bytes, base64 or hex)');
+  const key = /^[0-9a-f]{64}$/i.test(value) ? Buffer.from(value, 'hex') : Buffer.from(value, 'base64');
+  if (key.length !== 32) throw new Error(`AUTH_ENCRYPTION_KEY must decode to 32 bytes, got ${key.length}`);
   return key;
 }
 
 /**
- * AES-256-GCM. Layout: [version:1][iv:12][tag:16][ciphertext].
- * `aad` binds the ciphertext to its row (e.g. sessionId/type/id) so rows can't be swapped.
+ * AES-256-GCM. Output layout: iv (12) ‖ tag (16) ‖ ciphertext. `aad` binds the ciphertext to where
+ * it is stored, so a row copied to another session/key id fails to decrypt.
  */
 export function encrypt(key: Buffer, plaintext: Buffer, aad: string): Buffer {
-  const iv = randomBytes(IV_LEN);
+  const iv = randomBytes(IV_BYTES);
   const cipher = createCipheriv('aes-256-gcm', key, iv);
   cipher.setAAD(Buffer.from(aad));
-  const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
-  return Buffer.concat([Buffer.from([VERSION]), iv, cipher.getAuthTag(), ciphertext]);
+  const body = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+  return Buffer.concat([iv, cipher.getAuthTag(), body]);
 }
 
-export function decrypt(key: Buffer, payload: Buffer, aad: string): Buffer {
-  if (payload[0] !== VERSION) throw new Error(`Unsupported ciphertext version ${payload[0]}`);
-  const iv = payload.subarray(1, 1 + IV_LEN);
-  const tag = payload.subarray(1 + IV_LEN, 1 + IV_LEN + TAG_LEN);
-  const decipher = createDecipheriv('aes-256-gcm', key, iv);
+export function decrypt(key: Buffer, blob: Buffer, aad: string): Buffer {
+  if (blob.length < IV_BYTES + TAG_BYTES) throw new Error('ciphertext too short');
+  const decipher = createDecipheriv('aes-256-gcm', key, blob.subarray(0, IV_BYTES));
   decipher.setAAD(Buffer.from(aad));
-  decipher.setAuthTag(tag);
-  return Buffer.concat([decipher.update(payload.subarray(1 + IV_LEN + TAG_LEN)), decipher.final()]);
+  decipher.setAuthTag(blob.subarray(IV_BYTES, IV_BYTES + TAG_BYTES));
+  return Buffer.concat([decipher.update(blob.subarray(IV_BYTES + TAG_BYTES)), decipher.final()]);
 }

@@ -1,36 +1,44 @@
 # AGENTS.md
 
-pnpm monorepo (pnpm 12, Node 22+, TypeScript 5.9, ESM). Internal packages export TS sources directly (`exports: ./src/index.ts`) and are run with `tsx` — no build step. Use extensionless relative imports.
+WhatsApp REST API platform — the plan is `README.md` (Arabic). pnpm monorepo (pnpm 12, Node 22+, TypeScript 7, ESM).
+Internal packages export TS sources directly (`exports: ./src/index.ts`) and run with `tsx` — no build step except the dashboard. Use extensionless relative imports.
 
 ## Layout
-- `apps/api` — Fastify 5 + Zod (fastify-type-provider-zod), OpenAPI at `/docs`. Bearer auth via `api_keys` (SHA-256).
-- `apps/worker` — owns Baileys sessions. RPC queue `wa-rpc-{workerId}`, send queue `wa-send-{workerId}` (serialized per session in-process). Publishes events via Postgres NOTIFY.
-- `apps/dashboard` — React 19 + Vite 8 + Tailwind 4, Arabic RTL. Use Cairo for the site and dashboard UI (user preference); keep IBM Plex Mono for code.
-- `packages/provider` — `Provider` interface, `BaileysProvider`, `usePostgresAuthState` (AES-256-GCM, AAD = sessionId:type:id).
-- `packages/db` — Drizzle schema (snake_case casing), migrations in `packages/db/migrations`.
-- `packages/shared` — response contracts, Zod schemas, JID utils, event/queue names.
+- `apps/api` — Fastify 5 + Zod (`fastify-type-provider-zod`). OpenAPI + Scalar at `/docs`. Bearer auth on `api_keys` (SHA-256): `was_…` session keys, `wap_…` workspace tokens (+ `X-Session-Id`). Rate limit per plan. SSE at `/api/events`.
+- `apps/worker` — owns Baileys sockets. `Supervisor` (one per worker) heartbeats into `workers`, claims sessions with `desired_state = 'running'` via SKIP LOCKED, drops ones it no longer owns. `SessionRunner` = one session: reconnect backoff, serialized send queue with pacing, receipts, inbound. Internal RPC on `WORKER_PORT` (secret-protected) for live-socket calls (pairing code, on-whatsapp, logout).
+- `apps/dashboard` — React 19 + Vite 8 + Tailwind 4. Arabic (RTL, default) and English (LTR): all copy lives in `src/i18n/ar.ts` (source of truth, `Dict` type) and `en.ts`; components read it with `useI18n()` — never hardcode UI strings. Use logical utilities (`ms-`, `start-`, `ps-`) and `flip` for directional icons. Landing at `/`, email/password (or `wap_…` token) login, History-API routing (`src/router.tsx`). App pages: `/dashboard`, `/sessions`, `/templates`, `/keys`, `/subscription`, `/admin` (admins only) — never start a page path with `/api` or `/docs` (the Vite proxy and the API's SPA fallback send those to the API). Look follows the WasenderAPI site/dashboard (shadcn neutral dark tokens in `src/index.css`, inset sidebar shell); the scraped reference folder was removed. Use `Select` from `ui.tsx`, never a native `<select>` (its popup ignores the dark theme). Motion: `animate-fade-up` + `delay()`, `<Reveal>` for scroll-in, `.lift` for hover; all honor `prefers-reduced-motion`.
+- `packages/provider` — `Provider` interface (README §1), `BaileysProvider`, `useEncryptedAuthState` (AES-256-GCM, AAD = `sessionId:type:id`).
+- `packages/db` — Drizzle schema (snake_case casing), migrations in `packages/db/migrations`, queue helpers, `pgAuthStore`.
+- `packages/shared` — response contract, Zod `sendMessageBody`, JID utils, statuses, event types, plans.
+
+## Architecture notes
+- **No Redis.** Postgres is the queue and the bus: outbound `messages` rows are the per-session send queue (`queued → sending → sent → delivered → read`); `NOTIFY wa_control` (API → workers) and `NOTIFY wa_events` (workers → API → SSE). LISTEN uses `DATABASE_URL_UNPOOLED`.
+- Every session write from a worker is fenced on `worker_id = me`; a worker that lost ownership stops instead of clobbering.
+- A message stuck in `sending` after a crash is marked `failed` (never auto-resent → no duplicates); clients resend explicitly.
+- `createDb()` returns two postgres.js clients on purpose: drizzle rewrites the parsers of the client it wraps (timestamps → strings, `sql.json` stops serializing). Use `sql` for raw queries, `db` for drizzle.
+- Outbound media is downloaded by the worker (`apps/worker/src/media.ts`) with SSRF protection (private ranges blocked at DNS-lookup time), 64 MB cap, 30 s timeout.
 
 ## Commands
 - Install: `pnpm install`
 - Typecheck everything: `pnpm typecheck`
-- Tests: `pnpm test` (vitest; tests live in `packages/*/test`, `apps/*/test`)
-- Dashboard build: `pnpm --filter @wa/dashboard build`
-- Generate migration after schema change: `pnpm db:generate`; apply: `pnpm db:migrate`
-- Create workspace + PAT: `pnpm bootstrap [email] [name]`
-- Dev: `pnpm dev:api`, `pnpm dev:worker`, `pnpm dev:dashboard`
-- Baileys POC (file auth, port 3001): `pnpm poc`
+- Tests: `pnpm test` (vitest; DB integration suites need `TEST_DATABASE_URL`, otherwise skipped)
+- Dev: `pnpm dev` (api :4000, worker RPC :4100, dashboard :5173 proxying `/api` + `/docs`) or `pnpm dev:api|dev:worker|dev:dashboard`
+- Create workspace + token: `pnpm bootstrap <email> "<workspace>" [plan]`
+- Create/promote an admin (internal `unlimited` plan, no expiry; prints a generated password): `pnpm admin:create <email> ["Name"] [--reset-password]`
+- Schema change: edit `packages/db/src/schema.ts` → `pnpm db:generate` → `pnpm db:migrate` (API and worker also migrate on boot, under an advisory lock)
+- Baileys POC (file auth in `./auth`, port 3001): `pnpm poc`
 
-## Neon (Postgres)
-- Linked via `.neon` (project `floral-lake-67692203`, branch `production`). `neon.ts` is the Neon infra config (`@neon/config`).
-- `neon link` / `neon deploy` / `neon env pull` write `DATABASE_URL` (pooled) and `DATABASE_URL_UNPOOLED` to `.env.local`.
-- All scripts load `.env` then `.env.local` (later wins). Put non-Neon vars (`AUTH_ENCRYPTION_KEY`, …) in `.env`.
-- App traffic uses the pooled `DATABASE_URL`; drizzle-kit migrations, BullMQ and LISTEN/NOTIFY use `DATABASE_URL_UNPOOLED`.
-- No Redis: BullMQ runs on its Postgres backend (`bullmq` schema, auto-migrated), events use `NOTIFY wa_events`, worker heartbeat is the `workers` table, QR lives in `sessions.qr`.
-- Run everything: `npm run dev` (api :4000, worker, dashboard :5173 — landing `/`, console `/app`). Port 3000 is used by another local app (CodeFiye), don't use it.
-- Admin login (until real auth lands): `pnpm bootstrap <email> "<workspace>"` prints a workspace token (PAT); paste it at `/app`.
-- Preview Neon changes: `neon config plan`; apply: `neon deploy`. Test risky migrations on a branch: `neon checkout <name> --create`.
+## Environment
+- See `.env.example`. Secrets in `.env`, Neon URLs in `.env.local` (both git-ignored).
+- Dev database: Neon endpoint `ep-dark-queen-b53vybv7`, database `wa` (since 2026-10-03). `neondb` on the same endpoint holds the old MVP's data and schema — don't migrate or wipe it. Tests still use `wa_test` on Neon project `floral-lake-67692203` (branch `rebuild-dev`); don't point anything at its `production` branch.
+- Port 3000 is used by another local app (CodeFiye) — never use it.
+- No Docker/Redis on the dev machine; `Dockerfile`/`docker-compose.yml` are for deploy targets.
 
 ## Conventions
 - Pin exact dependency versions; prefer versions published ≥ 7 days ago.
 - Build scripts are gated via `allowBuilds` in `pnpm-workspace.yaml`.
-- API responses: `{ success: true, data }` / `{ success: false, message, errors? }`.
+- API responses: `{ success: true, data }` / `{ success: false, message, errors? }`. Validation → 422 with `errors: { field: [..] }`.
+- Paths and the send-message body/response follow WasenderAPI (`/api/send-message`, `msgId`); other payloads are camelCase.
+- Templates: `message_templates` per workspace with `{{var}}` placeholders (logic in `packages/shared/src/template-text.ts`, zod-free so the dashboard can import it). `POST /api/send-message` takes `template` + `variables` instead of `text`; `POST /api/send-otp` generates/sends/returns a code (template `otp` if present, else a built-in text). Templates may add `imageUrl` (sent as one image+caption "card") and `buttons` (2–12; queued as a second message, a WhatsApp poll titled `buttonsTitle`, in the same transaction; response has `pollMsgId`). WhatsApp Web (Baileys) cannot send real buttons/lists — those need the official Cloud API, so polls stand in. Poll votes need the poll's `messageSecret`: `markSent` stores the sent poll in `messages.raw`, the provider's `loadMessage` reads it back, and votes land in `content.votes` (voter → options) with a `poll.vote` event.
+- Plans: customers request a plan (`POST /api/plan-requests`); an admin approves it in `/admin`, which sets `plan_id` + `plan_expires_at`. An expired trial or paid plan returns 402 on connect/send (`assertActive`).
+- Dashboard UI fonts: Instrument Sans (Latin) + IBM Plex Sans Arabic; code: IBM Plex Mono. Wrap phone numbers/keys in `.ltr`.

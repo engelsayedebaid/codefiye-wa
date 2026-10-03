@@ -9,8 +9,7 @@
   "scripts": {
     "typecheck": "tsc -p .",
     "generate": "drizzle-kit generate",
-    "migrate": "drizzle-kit migrate",
-    "studio": "drizzle-kit studio"
+    "migrate": "tsx --env-file-if-exists=../../.env --env-file-if-exists=../../.env.local src/migrate.ts"
   },
   "dependencies": {
     "@wa/shared": "workspace:*",
@@ -18,6 +17,7 @@
     "postgres": "3.4.9"
   },
   "devDependencies": {
+    "@wa/provider": "workspace:*",
     "drizzle-kit": "0.31.11"
   }
 }

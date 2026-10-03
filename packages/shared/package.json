@@ -4,7 +4,13 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./plans": "./src/plans.ts",
+    "./broadcasts": "./src/broadcasts.ts",
+    "./constants": "./src/constants.ts",
+    "./name-suggestions": "./src/name-suggestions.ts",
+    "./phone": "./src/phone.ts",
+    "./template-text": "./src/template-text.ts"
   },
   "scripts": {
     "typecheck": "tsc -p ."

@@ -1,6 +1,6 @@
 {
-  "id": "9162931a-c9c1-434b-8cd4-cc5d43c51251",
-  "prevId": "0a05b579-503f-4a00-ab3e-355990c859aa",
+  "id": "6cd48332-2eca-4cf4-9aae-471610596c21",
+  "prevId": "0fabccd8-7d89-4eed-a91a-2d5a9edaab76",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -52,6 +52,12 @@
           "notNull": true,
           "default": "'{}'::text[]"
         },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "last_used_at": {
           "name": "last_used_at",
           "type": "timestamp with time zone",
@@ -73,26 +79,26 @@
         }
       },
       "indexes": {
-        "api_keys_key_hash_index": {
-          "name": "api_keys_key_hash_index",
-          "columns": [
-            {
-              "expression": "key_hash",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "api_keys_workspace_id_index": {
           "name": "api_keys_workspace_id_index",
           "columns": [
             {
               "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "api_keys_session_id_index": {
+          "name": "api_keys_session_id_index",
+          "columns": [
+            {
+              "expression": "session_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -133,13 +139,21 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "api_keys_keyHash_unique": {
+          "name": "api_keys_keyHash_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "key_hash"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.audit_logs": {
-      "name": "audit_logs",
+    "public.message_templates": {
+      "name": "message_templates",
       "schema": "",
       "columns": {
         "id": {
@@ -153,37 +167,26 @@
           "name": "workspace_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
-        "actor": {
-          "name": "actor",
+        "name": {
+          "name": "name",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "action": {
-          "name": "action",
+        "category": {
+          "name": "category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'custom'"
+        },
+        "body": {
+          "name": "body",
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "entity": {
-          "name": "entity",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "ip": {
-          "name": "ip",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "meta": {
-          "name": "meta",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -191,11 +194,18 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
         }
       },
       "indexes": {
-        "audit_logs_workspace_id_created_at_index": {
-          "name": "audit_logs_workspace_id_created_at_index",
+        "message_templates_workspace_id_name_index": {
+          "name": "message_templates_workspace_id_name_index",
           "columns": [
             {
               "expression": "workspace_id",
@@ -204,22 +214,22 @@
               "nulls": "last"
             },
             {
-              "expression": "created_at",
+              "expression": "name",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
             }
           ],
-          "isUnique": false,
+          "isUnique": true,
           "concurrently": false,
           "method": "btree",
           "with": {}
         }
       },
       "foreignKeys": {
-        "audit_logs_workspace_id_workspaces_id_fk": {
-          "name": "audit_logs_workspace_id_workspaces_id_fk",
-          "tableFrom": "audit_logs",
+        "message_templates_workspace_id_workspaces_id_fk": {
+          "name": "message_templates_workspace_id_workspaces_id_fk",
+          "tableFrom": "message_templates",
           "tableTo": "workspaces",
           "columnsFrom": [
             "workspace_id"
@@ -243,10 +253,26 @@
       "columns": {
         "id": {
           "name": "id",
-          "type": "uuid",
+          "type": "bigint",
           "primaryKey": true,
           "notNull": true,
-          "default": "gen_random_uuid()"
+          "identity": {
+            "type": "always",
+            "name": "messages_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
         },
         "session_id": {
           "name": "session_id",
@@ -256,8 +282,7 @@
         },
         "direction": {
           "name": "direction",
-          "type": "message_direction",
-          "typeSchema": "public",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
@@ -275,30 +300,27 @@
         },
         "type": {
           "name": "type",
-          "type": "message_type",
-          "typeSchema": "public",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "body": {
-          "name": "body",
+        "content": {
+          "name": "content",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true
         },
-        "media_ref": {
-          "name": "media_ref",
+        "raw": {
+          "name": "raw",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },
         "status": {
           "name": "status",
-          "type": "message_status",
-          "typeSchema": "public",
+          "type": "text",
           "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
+          "notNull": true
         },
         "error": {
           "name": "error",
@@ -309,6 +331,19 @@
         "idempotency_key": {
           "name": "idempotency_key",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
@@ -328,6 +363,49 @@
         }
       },
       "indexes": {
+        "messages_queue_idx": {
+          "name": "messages_queue_idx",
+          "columns": [
+            {
+              "expression": "session_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"messages\".\"status\" = 'queued'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "messages_workspace_id_created_at_index": {
+          "name": "messages_workspace_id_created_at_index",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "messages_session_id_created_at_index": {
           "name": "messages_session_id_created_at_index",
           "columns": [
@@ -365,7 +443,7 @@
               "nulls": "last"
             }
           ],
-          "isUnique": false,
+          "isUnique": true,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -393,6 +471,19 @@
         }
       },
       "foreignKeys": {
+        "messages_workspace_id_workspaces_id_fk": {
+          "name": "messages_workspace_id_workspaces_id_fk",
+          "tableFrom": "messages",
+          "tableTo": "workspaces",
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
         "messages_session_id_sessions_id_fk": {
           "name": "messages_session_id_sessions_id_fk",
           "tableFrom": "messages",
@@ -413,69 +504,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.payment_methods": {
-      "name": "payment_methods",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "label": {
-          "name": "label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "details": {
-          "name": "details",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        },
-        "instructions": {
-          "name": "instructions",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        },
-        "enabled": {
-          "name": "enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "sort_order": {
-          "name": "sort_order",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.payment_requests": {
-      "name": "payment_requests",
+    "public.plan_requests": {
+      "name": "plan_requests",
       "schema": "",
       "columns": {
         "id": {
@@ -497,36 +527,12 @@
           "primaryKey": false,
           "notNull": true
         },
-        "amount_egp": {
-          "name": "amount_egp",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "months": {
-          "name": "months",
-          "type": "integer",
+        "status": {
+          "name": "status",
+          "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": 1
-        },
-        "method_id": {
-          "name": "method_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "method": {
-          "name": "method",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "reference": {
-          "name": "reference",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
+          "default": "'pending'"
         },
         "note": {
           "name": "note",
@@ -534,28 +540,20 @@
           "primaryKey": false,
           "notNull": false
         },
-        "status": {
-          "name": "status",
-          "type": "payment_request_status",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
         "admin_note": {
           "name": "admin_note",
           "type": "text",
           "primaryKey": false,
           "notNull": false
         },
-        "reviewed_by": {
-          "name": "reviewed_by",
-          "type": "text",
+        "decided_by": {
+          "name": "decided_by",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": false
         },
-        "reviewed_at": {
-          "name": "reviewed_at",
+        "decided_at": {
+          "name": "decided_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
@@ -569,11 +567,26 @@
         }
       },
       "indexes": {
-        "payment_requests_workspace_id_created_at_index": {
-          "name": "payment_requests_workspace_id_created_at_index",
+        "plan_requests_workspace_id_index": {
+          "name": "plan_requests_workspace_id_index",
           "columns": [
             {
               "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "plan_requests_status_created_at_index": {
+          "name": "plan_requests_status_created_at_index",
+          "columns": [
+            {
+              "expression": "status",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -589,27 +602,12 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "payment_requests_status_index": {
-          "name": "payment_requests_status_index",
-          "columns": [
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
-        "payment_requests_workspace_id_workspaces_id_fk": {
-          "name": "payment_requests_workspace_id_workspaces_id_fk",
-          "tableFrom": "payment_requests",
+        "plan_requests_workspace_id_workspaces_id_fk": {
+          "name": "plan_requests_workspace_id_workspaces_id_fk",
+          "tableFrom": "plan_requests",
           "tableTo": "workspaces",
           "columnsFrom": [
             "workspace_id"
@@ -620,12 +618,12 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "payment_requests_method_id_payment_methods_id_fk": {
-          "name": "payment_requests_method_id_payment_methods_id_fk",
-          "tableFrom": "payment_requests",
-          "tableTo": "payment_methods",
+        "plan_requests_decided_by_users_id_fk": {
+          "name": "plan_requests_decided_by_users_id_fk",
+          "tableFrom": "plan_requests",
+          "tableTo": "users",
           "columnsFrom": [
-            "method_id"
+            "decided_by"
           ],
           "columnsTo": [
             "id"
@@ -642,52 +640,6 @@
     },
     "public.session_auth": {
       "name": "session_auth",
-      "schema": "",
-      "columns": {
-        "session_id": {
-          "name": "session_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "creds": {
-          "name": "creds",
-          "type": "bytea",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "session_auth_session_id_sessions_id_fk": {
-          "name": "session_auth_session_id_sessions_id_fk",
-          "tableFrom": "session_auth",
-          "tableTo": "sessions",
-          "columnsFrom": [
-            "session_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.session_auth_keys": {
-      "name": "session_auth_keys",
       "schema": "",
       "columns": {
         "session_id": {
@@ -724,9 +676,9 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "session_auth_keys_session_id_sessions_id_fk": {
-          "name": "session_auth_keys_session_id_sessions_id_fk",
-          "tableFrom": "session_auth_keys",
+        "session_auth_session_id_sessions_id_fk": {
+          "name": "session_auth_session_id_sessions_id_fk",
+          "tableFrom": "session_auth",
           "tableTo": "sessions",
           "columnsFrom": [
             "session_id"
@@ -739,8 +691,8 @@
         }
       },
       "compositePrimaryKeys": {
-        "session_auth_keys_session_id_type_key_id_pk": {
-          "name": "session_auth_keys_session_id_type_key_id_pk",
+        "session_auth_session_id_type_key_id_pk": {
+          "name": "session_auth_session_id_type_key_id_pk",
           "columns": [
             "session_id",
             "type",
@@ -784,28 +736,21 @@
         },
         "status": {
           "name": "status",
-          "type": "session_status",
-          "typeSchema": "public",
+          "type": "text",
           "primaryKey": false,
           "notNull": true,
           "default": "'created'"
         },
+        "desired_state": {
+          "name": "desired_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'stopped'"
+        },
         "worker_id": {
           "name": "worker_id",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "auto_connect": {
-          "name": "auto_connect",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "last_seen_at": {
-          "name": "last_seen_at",
-          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
@@ -815,9 +760,15 @@
           "primaryKey": false,
           "notNull": false
         },
-        "qr_updated_at": {
-          "name": "qr_updated_at",
-          "type": "timestamp with time zone",
+        "pairing_code": {
+          "name": "pairing_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_error": {
+          "name": "last_error",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -827,6 +778,18 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'{}'::jsonb"
+        },
+        "connected_at": {
+          "name": "connected_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_seen_at": {
+          "name": "last_seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -859,9 +822,15 @@
           "method": "btree",
           "with": {}
         },
-        "sessions_worker_id_index": {
-          "name": "sessions_worker_id_index",
+        "sessions_desired_state_worker_id_index": {
+          "name": "sessions_desired_state_worker_id_index",
           "columns": [
+            {
+              "expression": "desired_state",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
             {
               "expression": "worker_id",
               "isExpression": false,
@@ -896,74 +865,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.usage_counters": {
-      "name": "usage_counters",
-      "schema": "",
-      "columns": {
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "day": {
-          "name": "day",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "messages_out": {
-          "name": "messages_out",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "messages_in": {
-          "name": "messages_in",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "media_bytes": {
-          "name": "media_bytes",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "usage_counters_workspace_id_workspaces_id_fk": {
-          "name": "usage_counters_workspace_id_workspaces_id_fk",
-          "tableFrom": "usage_counters",
-          "tableTo": "workspaces",
-          "columnsFrom": [
-            "workspace_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "usage_counters_workspace_id_day_pk": {
-          "name": "usage_counters_workspace_id_day_pk",
-          "columns": [
-            "workspace_id",
-            "day"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.users": {
       "name": "users",
       "schema": "",
@@ -974,6 +875,12 @@
           "primaryKey": true,
           "notNull": true,
           "default": "gen_random_uuid()"
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "email": {
           "name": "email",
@@ -987,11 +894,12 @@
           "primaryKey": false,
           "notNull": false
         },
-        "totp_secret": {
-          "name": "totp_secret",
-          "type": "text",
+        "is_admin": {
+          "name": "is_admin",
+          "type": "boolean",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true,
+          "default": false
         },
         "created_at": {
           "name": "created_at",
@@ -1017,207 +925,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.webhook_deliveries": {
-      "name": "webhook_deliveries",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "webhook_id": {
-          "name": "webhook_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "event": {
-          "name": "event",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "payload": {
-          "name": "payload",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "attempt": {
-          "name": "attempt",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "status_code": {
-          "name": "status_code",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "response_body": {
-          "name": "response_body",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "next_retry_at": {
-          "name": "next_retry_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "webhook_deliveries_webhook_id_created_at_index": {
-          "name": "webhook_deliveries_webhook_id_created_at_index",
-          "columns": [
-            {
-              "expression": "webhook_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "webhook_deliveries_webhook_id_webhooks_id_fk": {
-          "name": "webhook_deliveries_webhook_id_webhooks_id_fk",
-          "tableFrom": "webhook_deliveries",
-          "tableTo": "webhooks",
-          "columnsFrom": [
-            "webhook_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.webhooks": {
-      "name": "webhooks",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "session_id": {
-          "name": "session_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "url": {
-          "name": "url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "secret": {
-          "name": "secret",
-          "type": "bytea",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "events": {
-          "name": "events",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "enabled": {
-          "name": "enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "consecutive_failures": {
-          "name": "consecutive_failures",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "webhooks_session_id_index": {
-          "name": "webhooks_session_id_index",
-          "columns": [
-            {
-              "expression": "session_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "webhooks_session_id_sessions_id_fk": {
-          "name": "webhooks_session_id_sessions_id_fk",
-          "tableFrom": "webhooks",
-          "tableTo": "sessions",
-          "columnsFrom": [
-            "session_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.workers": {
       "name": "workers",
       "schema": "",
@@ -1228,21 +935,34 @@
           "primaryKey": true,
           "notNull": true
         },
-        "sessions": {
-          "name": "sessions",
+        "url": {
+          "name": "url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "capacity": {
+          "name": "capacity",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "session_count": {
+          "name": "session_count",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
           "default": 0
         },
-        "max_sessions": {
-          "name": "max_sessions",
-          "type": "integer",
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": "now()"
         },
-        "last_seen_at": {
-          "name": "last_seen_at",
+        "heartbeat_at": {
+          "name": "heartbeat_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
@@ -1287,12 +1007,6 @@
           "notNull": true,
           "default": "'trial'"
         },
-        "stripe_customer_id": {
-          "name": "stripe_customer_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "trial_ends_at": {
           "name": "trial_ends_at",
           "type": "timestamp with time zone",
@@ -1301,12 +1015,6 @@
         },
         "plan_expires_at": {
           "name": "plan_expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "suspended_at": {
-          "name": "suspended_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
@@ -1342,65 +1050,7 @@
       "isRLSEnabled": false
     }
   },
-  "enums": {
-    "public.message_direction": {
-      "name": "message_direction",
-      "schema": "public",
-      "values": [
-        "in",
-        "out"
-      ]
-    },
-    "public.message_status": {
-      "name": "message_status",
-      "schema": "public",
-      "values": [
-        "pending",
-        "sent",
-        "delivered",
-        "read",
-        "played",
-        "failed"
-      ]
-    },
-    "public.message_type": {
-      "name": "message_type",
-      "schema": "public",
-      "values": [
-        "text",
-        "image",
-        "video",
-        "audio",
-        "document",
-        "location",
-        "contact",
-        "sticker"
-      ]
-    },
-    "public.payment_request_status": {
-      "name": "payment_request_status",
-      "schema": "public",
-      "values": [
-        "pending",
-        "approved",
-        "rejected"
-      ]
-    },
-    "public.session_status": {
-      "name": "session_status",
-      "schema": "public",
-      "values": [
-        "created",
-        "qr",
-        "pairing",
-        "connecting",
-        "connected",
-        "disconnected",
-        "needs_attention",
-        "logged_out"
-      ]
-    }
-  },
+  "enums": {},
   "schemas": {},
   "sequences": {},
   "roles": {},

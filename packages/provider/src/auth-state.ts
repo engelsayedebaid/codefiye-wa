@@ -1,95 +1,101 @@
 import {
+  type AuthenticationCreds,
+  type AuthenticationState,
   BufferJSON,
   initAuthCreds,
   proto,
-  type AuthenticationCreds,
-  type AuthenticationState,
   type SignalDataTypeMap,
 } from '@whiskeysockets/baileys';
-import { and, eq, inArray, sessionAuth, sessionAuthKeys, sql, type Db } from '@wa/db';
 import { decrypt, encrypt } from './crypto';
 
-const serialize = (value: unknown) => Buffer.from(JSON.stringify(value, BufferJSON.replacer));
-const deserialize = <T>(buf: Buffer): T => JSON.parse(buf.toString('utf8'), BufferJSON.reviver);
-
-/**
- * Baileys auth state persisted in Postgres, encrypted with AES-256-GCM.
- * Replaces `useMultiFileAuthState` for production use.
- */
-export async function usePostgresAuthState(db: Db, sessionId: string, key: Buffer) {
-  const credsAad = `${sessionId}:creds`;
-  const keyAad = (type: string, id: string) => `${sessionId}:${type}:${id}`;
-
-  const row = await db.query.sessionAuth.findFirst({ where: eq(sessionAuth.sessionId, sessionId) });
-  const creds: AuthenticationCreds = row ? deserialize(decrypt(key, row.creds, credsAad)) : initAuthCreds();
-
-  const state: AuthenticationState = {
-    creds,
-    keys: {
-      async get<T extends keyof SignalDataTypeMap>(type: T, ids: string[]) {
-        const out: { [id: string]: SignalDataTypeMap[T] } = {};
-        if (!ids.length) return out;
-        const rows = await db
-          .select({ keyId: sessionAuthKeys.keyId, value: sessionAuthKeys.value })
-          .from(sessionAuthKeys)
-          .where(and(eq(sessionAuthKeys.sessionId, sessionId), eq(sessionAuthKeys.type, type), inArray(sessionAuthKeys.keyId, ids)));
-        for (const r of rows) {
-          let value = deserialize<any>(decrypt(key, r.value, keyAad(type, r.keyId)));
-          if (type === 'app-state-sync-key') value = proto.Message.AppStateSyncKeyData.fromObject(value);
-          out[r.keyId] = value;
-        }
-        return out;
-      },
-      async set(data) {
-        const upserts: (typeof sessionAuthKeys.$inferInsert)[] = [];
-        const deletes: { type: string; ids: string[] }[] = [];
-        for (const [type, entries] of Object.entries(data)) {
-          const removed: string[] = [];
-          for (const [id, value] of Object.entries(entries ?? {})) {
-            if (value) upserts.push({ sessionId, type, keyId: id, value: encrypt(key, serialize(value), keyAad(type, id)) });
-            else removed.push(id);
-          }
-          if (removed.length) deletes.push({ type, ids: removed });
-        }
-        if (!upserts.length && !deletes.length) return;
-        await db.transaction(async (tx) => {
-          if (upserts.length)
-            await tx
-              .insert(sessionAuthKeys)
-              .values(upserts)
-              .onConflictDoUpdate({
-                target: [sessionAuthKeys.sessionId, sessionAuthKeys.type, sessionAuthKeys.keyId],
-                set: { value: sql`excluded.value`, updatedAt: sql`now()` },
-              });
-          for (const d of deletes)
-            await tx
-              .delete(sessionAuthKeys)
-              .where(and(eq(sessionAuthKeys.sessionId, sessionId), eq(sessionAuthKeys.type, d.type), inArray(sessionAuthKeys.keyId, d.ids)));
-        });
-      },
-      async clear() {
-        await db.delete(sessionAuthKeys).where(eq(sessionAuthKeys.sessionId, sessionId));
-      },
-    },
-  };
-
-  const saveCreds = async () => {
-    const value = encrypt(key, serialize(state.creds), credsAad);
-    await db
-      .insert(sessionAuth)
-      .values({ sessionId, creds: value })
-      .onConflictDoUpdate({ target: sessionAuth.sessionId, set: { creds: value, updatedAt: new Date() } });
-  };
-
-  /** Wipe all credentials for this session (used after logout). */
-  const clear = async () => {
-    await db.transaction(async (tx) => {
-      await tx.delete(sessionAuthKeys).where(eq(sessionAuthKeys.sessionId, sessionId));
-      await tx.delete(sessionAuth).where(eq(sessionAuth.sessionId, sessionId));
-    });
-  };
-
-  return { state, saveCreds, clear };
+/** Persistence for encrypted auth blobs. Implemented over Postgres by @wa/db `pgAuthStore`. */
+export interface AuthStore {
+  get(type: string, ids: string[]): Promise<Map<string, Buffer>>;
+  /** `value: null` deletes the entry. */
+  set(entries: { type: string; id: string; value: Buffer | null }[]): Promise<void>;
+  clear(): Promise<void>;
 }
 
-export type PostgresAuthState = Awaited<ReturnType<typeof usePostgresAuthState>>;
+export type EncryptedAuthState = {
+  state: AuthenticationState;
+  saveCreds: () => Promise<void>;
+  /** Wipes creds and keys, e.g. after the device was logged out. */
+  clear: () => Promise<void>;
+};
+
+const CREDS = { type: 'creds', id: 'creds' } as const;
+
+/**
+ * Replacement for Baileys' `useMultiFileAuthState` (README §4.1): creds and signal keys live in
+ * `session_auth`, each value JSON-encoded with BufferJSON then AES-256-GCM encrypted with
+ * AAD = `sessionId:type:id`.
+ */
+export async function useEncryptedAuthState(
+  store: AuthStore,
+  sessionId: string,
+  key: Buffer,
+): Promise<EncryptedAuthState> {
+  const aad = (type: string, id: string) => `${sessionId}:${type}:${id}`;
+  const seal = (type: string, id: string, value: unknown) =>
+    encrypt(key, Buffer.from(JSON.stringify(value, BufferJSON.replacer)), aad(type, id));
+  const open = (type: string, id: string, blob: Buffer) =>
+    JSON.parse(decrypt(key, blob, aad(type, id)).toString(), BufferJSON.reviver);
+
+  const stored = (await store.get(CREDS.type, [CREDS.id])).get(CREDS.id);
+  const creds: AuthenticationCreds = stored ? open(CREDS.type, CREDS.id, stored) : initAuthCreds();
+
+  return {
+    state: {
+      creds,
+      keys: {
+        async get<T extends keyof SignalDataTypeMap>(type: T, ids: string[]) {
+          const rows = await store.get(type, ids);
+          const result: { [id: string]: SignalDataTypeMap[T] } = {};
+          for (const [id, blob] of rows) {
+            let value = open(type, id, blob);
+            if (type === 'app-state-sync-key' && value) value = proto.Message.AppStateSyncKeyData.fromObject(value);
+            result[id] = value;
+          }
+          return result;
+        },
+        async set(data) {
+          const entries: { type: string; id: string; value: Buffer | null }[] = [];
+          for (const [type, values] of Object.entries(data)) {
+            for (const [id, value] of Object.entries(values ?? {})) {
+              entries.push({ type, id, value: value ? seal(type, id, value) : null });
+            }
+          }
+          if (entries.length > 0) await store.set(entries);
+        },
+      },
+    },
+    saveCreds: () => store.set([{ ...CREDS, value: seal(CREDS.type, CREDS.id, creds) }]),
+    clear: () => store.clear(),
+  };
+}
+
+/** In-memory AuthStore for tests and the POC. */
+export function memoryAuthStore(): AuthStore & { rows: Map<string, Buffer> } {
+  const rows = new Map<string, Buffer>();
+  const k = (type: string, id: string) => `${type}\u0000${id}`;
+  return {
+    rows,
+    async get(type, ids) {
+      const out = new Map<string, Buffer>();
+      for (const id of ids) {
+        const v = rows.get(k(type, id));
+        if (v) out.set(id, v);
+      }
+      return out;
+    },
+    async set(entries) {
+      for (const e of entries) {
+        if (e.value) rows.set(k(e.type, e.id), e.value);
+        else rows.delete(k(e.type, e.id));
+      }
+    },
+    async clear() {
+      rows.clear();
+    },
+  };
+}
