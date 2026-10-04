@@ -573,8 +573,8 @@ body {
   --chat-wall: #efeae2;
   --chat-dots: rgb(0 0 0 / 0.045);
   --chat-doodle-ink: rgb(0 0 0 / 0.06);
-  --chat-doodle: url('/chat-doodle.svg');
-  --chat-doodle-size: 460px;
+  --chat-doodle: url('/chat-doodle-light.svg');
+  --chat-doodle-size: 420px;
   --chat-in: #ffffff;
   --chat-out: #d9fdd3;
   --chat-out-ring: rgb(17 23 20 / 0.06);

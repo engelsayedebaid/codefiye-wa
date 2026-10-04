@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 420" fill="none" stroke="#000" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
+  <!-- dome (semicircle) -->
+  <path d="M38 62a18 18 0 0 1 36 0z"/>
+  <!-- quarter arc -->
+  <path d="M128 30a22 22 0 0 1 22 22h-22z"/>
+  <!-- ring -->
+  <circle cx="225" cy="45" r="10"/>
+  <!-- triangle -->
+  <path d="M312 28l14 24h-28z"/>
+  <!-- four-point sparkle -->
+  <path d="M392 46l3.5 10.5 10.5 3.5-10.5 3.5-3.5 10.5-3.5-10.5-10.5-3.5 10.5-3.5z"/>
+  <!-- wavy line -->
+  <path d="M62 148q11-11 22 0t22 0"/>
+  <!-- bowl -->
+  <path d="M155 140a18 18 0 0 0 36 0"/>
+  <!-- diamond -->
+  <path d="M262 128l11 11-11 11-11-11z"/>
+  <!-- ring -->
+  <circle cx="345" cy="162" r="11"/>
+  <!-- plus -->
+  <path d="M406 126v16M398 134h16"/>
+  <!-- triangle -->
+  <path d="M48 226l12 20h-24z"/>
+  <!-- ring -->
+  <circle cx="132" cy="232" r="9"/>
+  <!-- dome -->
+  <path d="M200 248a17 17 0 0 1 34 0z"/>
+  <!-- sparkle -->
+  <path d="M300 226l3 9 9 3-9 3-3 9-3-9-9-3 9-3z"/>
+  <!-- wavy line -->
+  <path d="M366 252q10-10 20 0t20 0"/>
+  <!-- bowl -->
+  <path d="M52 312a17 17 0 0 0 34 0"/>
+  <!-- quarter arc -->
+  <path d="M150 312a20 20 0 0 1 20 20h-20z"/>
+  <!-- triangle -->
+  <path d="M252 312l13 22h-26z"/>
+  <!-- ring -->
+  <circle cx="342" cy="322" r="10"/>
+  <!-- sparkle -->
+  <path d="M402 318l3 9 9 3-9 3-3 9-3-9-9-3 9-3z"/>
+  <!-- dome -->
+  <path d="M90 392a17 17 0 0 1 34 0z"/>
+  <!-- diamond -->
+  <path d="M200 378l10 10-10 10-10-10z"/>
+  <!-- wavy line -->
+  <path d="M290 388q10-10 20 0t20 0"/>
+  <!-- dots -->
+  <circle cx="95" cy="95" r="2.6" fill="#000" stroke="none"/>
+  <circle cx="185" cy="80" r="2.6" fill="#000" stroke="none"/>
+  <circle cx="285" cy="95" r="2.6" fill="#000" stroke="none"/>
+  <circle cx="30" cy="140" r="2.6" fill="#000" stroke="none"/>
+  <circle cx="230" cy="185" r="2.6" fill="#000" stroke="none"/>
+  <circle cx="380" cy="195" r="2.6" fill="#000" stroke="none"/>
+  <circle cx="100" cy="275" r="2.6" fill="#000" stroke="none"/>
+  <circle cx="210" cy="285" r="2.6" fill="#000" stroke="none"/>
+  <circle cx="320" cy="275" r="2.6" fill="#000" stroke="none"/>
+  <circle cx="410" cy="285" r="2.6" fill="#000" stroke="none"/>
+  <circle cx="45" cy="365" r="2.6" fill="#000" stroke="none"/>
+  <circle cx="155" cy="360" r="2.6" fill="#000" stroke="none"/>
+  <circle cx="265" cy="365" r="2.6" fill="#000" stroke="none"/>
+  <circle cx="375" cy="375" r="2.6" fill="#000" stroke="none"/>
+</svg>

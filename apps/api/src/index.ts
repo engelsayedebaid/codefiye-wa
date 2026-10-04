@@ -50,7 +50,7 @@ function otpSender(): OtpSender | null {
     if (accountSid && authToken && from) return twilioSender({ accountSid, authToken, from, logger: logger.child({ module: 'otp' }) });
     logger.warn('OTP_CHANNEL=sms but TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_FROM are incomplete');
   } else if (config.OTP_CHANNEL === 'whatsapp') {
-    if (config.OTP_WHATSAPP_SESSION_ID) return whatsappSender(workers, config.OTP_WHATSAPP_SESSION_ID);
+    if (config.OTP_WHATSAPP_SESSION_ID) return whatsappSender(workers, config.OTP_WHATSAPP_SESSION_ID, logger.child({ module: 'otp' }));
     logger.warn('OTP_CHANNEL=whatsapp but OTP_WHATSAPP_SESSION_ID is not set');
   }
   logger.warn('phone verification is not configured (OTP_CHANNEL); sign-ups will be refused with 503');

@@ -93,7 +93,7 @@ export function twilioSender(options: { accountSid: string; authToken: string; f
 }
 
 /** Sends from a connected WhatsApp session of this platform, straight through its worker (never queued in `messages`). */
-export function whatsappSender(workers: WorkerClient, sessionId: string): OtpSender {
+export function whatsappSender(workers: WorkerClient, sessionId: string, logger?: Logger): OtpSender {
   return {
     channel: 'whatsapp',
     async send(phone, text) {
@@ -101,6 +101,8 @@ export function whatsappSender(workers: WorkerClient, sessionId: string): OtpSen
         await workers.call(sessionId, 'send-text', { to: phone.replace(/^\+/, ''), text });
       } catch (err) {
         if (err instanceof ApiError && err.statusCode === 422) throw new OtpDeliveryError('recipient', 'This number is not on WhatsApp');
+        // e.g. session_not_running, or worker_unreachable when the owning worker is not on the API's network.
+        logger?.warn({ sessionId, code: err instanceof ApiError ? err.code : undefined, err: err instanceof ApiError ? undefined : err }, 'whatsapp otp send failed');
         throw new OtpDeliveryError('unavailable', 'WhatsApp verification sender is unavailable');
       }
     },

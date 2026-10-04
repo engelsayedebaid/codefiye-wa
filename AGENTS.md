@@ -34,6 +34,7 @@ Internal packages export TS sources directly (`exports: ./src/index.ts`) and run
 - Dev database: Neon endpoint `ep-dark-queen-b53vybv7`, database `wa` (since 2026-10-03). `neondb` on the same endpoint holds the old MVP's data and schema — don't migrate or wipe it. Tests still use `wa_test` on Neon project `floral-lake-67692203` (branch `rebuild-dev`); don't point anything at its `production` branch.
 - Port 3000 is used by another local app (CodeFiye) — never use it.
 - No Docker/Redis on the dev machine; `Dockerfile`/`docker-compose.yml` are for deploy targets.
+- Production (Railway, `codefiye-wa-production.up.railway.app`) runs the API from the `Dockerfile`; it needs its own **worker service** (same repo/image, start `pnpm --filter @wa/worker start`, same `DATABASE_URL*`, `AUTH_ENCRYPTION_KEY`, `WORKER_SECRET`). On Railway the worker binds `::` and registers `http://<RAILWAY_PRIVATE_DOMAIN>:4100`, so the API reaches it over the private network. A worker whose `workers.url` is loopback (a dev machine) can't serve the deployed API: OTP, pairing codes and other worker RPC fail (`otp_unavailable` / `worker_unreachable`).
 
 ## Conventions
 - Pin exact dependency versions; prefer versions published ≥ 7 days ago.
