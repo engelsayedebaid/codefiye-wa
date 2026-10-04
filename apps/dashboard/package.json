@@ -12,6 +12,7 @@
   "dependencies": {
     "@tanstack/react-query": "5.103.2",
     "@wa/shared": "workspace:*",
+    "emojibase-data": "17.0.0",
     "lucide-react": "1.48.0",
     "react": "19.3.0",
     "react-dom": "19.3.0"

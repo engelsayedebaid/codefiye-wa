@@ -30,6 +30,8 @@ import { type CachedMedia, MediaCache, sendMedia } from '../lib/media-cache';
 // The inbox (dashboard `/chats`): conversations of the workspace's own numbers, for admins and plans with `chats`. Hidden from /docs.
 const schemaBase = { tags: ['Admin'], hide: true };
 const SENDABLE = new Set(['connected', 'connecting']);
+/** What the chat message DTO reads from a `messages` row. */
+const MESSAGE_COLUMNS = 'id, direction, type, status, content, error, wa_message_id, raw is not null as has_raw, broadcast_id, sent_at, created_at';
 const MEDIA_TYPES = ['image', 'video', 'audio', 'document', 'sticker'];
 const PROFILE_TTL_MS = 30 * 60_000;
 /** List pictures: WhatsApp's links last days; a missing picture (hidden, none) is asked again sooner. */
@@ -188,8 +190,8 @@ export function chatRoutes(deps: Deps): FastifyPluginAsyncZod {
   const publish = (event: WaEvent) => notify(sql, CHANNELS.events, event);
 
   const findChat = async (sessionId: string, jid: string) => {
-    const [chat] = await sql<{ jid: string; alt_jid: string | null; unread_count: number; name: string | null }[]>`
-      select jid, alt_jid, unread_count, name from chats where session_id = ${sessionId} and (jid = ${jid} or alt_jid = ${jid})`;
+    const [chat] = await sql<{ jid: string; alt_jid: string | null; unread_count: number; inbound_count: number; name: string | null }[]>`
+      select jid, alt_jid, unread_count, inbound_count, name from chats where session_id = ${sessionId} and (jid = ${jid} or alt_jid = ${jid})`;
     return chat ?? null;
   };
   /** Both addresses a conversation's messages may be stored under. */
@@ -431,7 +433,9 @@ export function chatRoutes(deps: Deps): FastifyPluginAsyncZod {
         schema: {
           ...schemaBase,
           summary: 'Send a message in a conversation',
+          description: 'Send an `Idempotency-Key` header (the page sends one per message) to make retries safe.',
           params: sessionParams,
+          headers: z.object({ 'idempotency-key': z.string().min(1).max(255).optional() }),
           body: z
             .object({
               jid: jidSchema,
@@ -440,53 +444,84 @@ export function chatRoutes(deps: Deps): FastifyPluginAsyncZod {
               /** WhatsApp id of the message replied to. */
               quoteId: z.string().min(1).max(128).optional(),
               ptt: z.boolean().optional(),
+              /** Length of a voice note, shown by WhatsApp before it is played. */
+              seconds: z.number().int().min(1).max(3600).optional(),
             })
             .refine((b) => b.text || b.uploadId, { message: 'Write a message or attach a file', path: ['text'] }),
           response: { 200: successSchema(chatMessageDto) },
         },
       },
       async (req) => {
-        const session = await ownedSession(sql, req, req.params.sessionId);
+        const { text, uploadId, quoteId, ptt, seconds } = req.body;
+        const key = req.headers['idempotency-key'] ?? null;
+        const sessionId = req.params.sessionId;
+        // Every round trip to the database is felt on Send, so the lookups that don't depend on each
+        // other run alongside the ownership check. Nothing they read is used unless that check passes.
+        const lookups = Promise.all([
+          findChat(sessionId, req.body.jid),
+          uploadId
+            ? sql<{ mimetype: string; file_name: string | null }[]>`
+                select mimetype, file_name from media_uploads where id = ${uploadId} and workspace_id = ${req.auth.workspaceId}`
+            : [],
+          quoteId
+            ? sql<{ direction: MessageDirection; text: string | null; participant: string | null }[]>`
+                select direction, coalesce(content->>'text', content->>'caption', content->>'name') as text, raw->'key'->>'participant' as participant
+                from messages where session_id = ${sessionId} and wa_message_id = ${quoteId}`
+            : [],
+          key ? sql<MessageRow[]>`select ${sql.unsafe(MESSAGE_COLUMNS)} from messages where session_id = ${sessionId} and idempotency_key = ${key}` : [],
+        ]);
+        lookups.catch(() => {}); // awaited below, once the session is known to be the caller's
+        const session = await ownedSession(sql, req, sessionId);
+        const [found, [upload], [quoted], [repeat]] = await lookups;
+        // A retry of a message that already went through gets that message back, not a second one.
+        if (repeat) return ok(toMessageDto(repeat));
         assertActive(req.auth);
         if (session.desired_state !== 'running' || !SENDABLE.has(session.status)) {
           throw conflict(`Session is not connected (status: ${session.status})`, 'session_not_connected');
         }
-        const { text, uploadId, quoteId, ptt } = req.body;
-        const found = await findChat(session.id, req.body.jid);
         const jid = found?.jid ?? req.body.jid;
 
         let content: OutboundContent;
         if (uploadId) {
-          const [upload] = await sql<{ mimetype: string; file_name: string | null }[]>`
-            select mimetype, file_name from media_uploads where id = ${uploadId} and workspace_id = ${req.auth.workspaceId}`;
           if (!upload) throw unprocessable('The attachment expired', { uploadId: ['Attach the file again'] });
           const url = `${UPLOAD_SCHEME}${uploadId}`;
           const kind = kindOf(upload.mimetype);
           content =
             kind === 'audio'
-              ? { type: 'audio', url, ptt }
+              ? { type: 'audio', url, ptt, ...(ptt && seconds ? { seconds } : {}) }
               : kind === 'document'
                 ? { type: 'document', url, fileName: upload.file_name ?? undefined, mimetype: upload.mimetype, caption: text }
                 : { type: kind, url, caption: text };
         } else {
           content = { type: 'text', text: text! };
         }
-        if (quoteId) {
-          const [quoted] = await sql<{ direction: MessageDirection; text: string | null; participant: string | null }[]>`
-            select direction, coalesce(content->>'text', content->>'caption', content->>'name') as text, raw->'key'->>'participant' as participant
-            from messages where session_id = ${session.id} and wa_message_id = ${quoteId}`;
-          if (quoted) content.quote = { id: quoteId, fromMe: quoted.direction === 'out', participant: quoted.participant ?? undefined, text: quoted.text };
-        }
+        if (quoteId && quoted) content.quote = { id: quoteId, fromMe: quoted.direction === 'out', participant: quoted.participant ?? undefined, text: quoted.text };
+        // Typed by a person on the chats page: the worker skips the artificial "typing…" pause.
+        // A contact who has written to this number is on WhatsApp: the worker can skip asking again.
+        const stored = { ...content, sentFrom: 'chats' as const, ...(found && found.inbound_count > 0 ? { reachable: true as const } : {}) };
 
-        const [row] = await sql<MessageRow[]>`
-          insert into messages (workspace_id, session_id, direction, remote_jid, type, content, status)
-          values (${req.auth.workspaceId}, ${session.id}, 'out', ${jid}, ${content.type}, ${sql.json(content as never)}, 'queued')
-          returning id, direction, type, status, content, error, wa_message_id, raw is not null as has_raw, broadcast_id, sent_at, created_at`;
-        await notify(sql, CHANNELS.control, { type: 'message.queued', sessionId: session.id });
-        await publish({ type: 'messages.created', workspaceId: req.auth.workspaceId, sessionId: session.id, data: { id: row!.id, chatJid: jid, direction: 'out', type: content.type } });
-        // Answering a chat reads it, as on WhatsApp.
-        const read = await markChatRead(sql, session.id, jid);
-        if (read) await publish({ type: 'chat.read', workspaceId: req.auth.workspaceId, sessionId: session.id, data: { chatJid: read } });
+        // One round trip: the row, the worker's wake-up and the page's event (both sent on commit).
+        const created = (id: SqlFragment) =>
+          sql`jsonb_build_object('type', 'messages.created', 'workspaceId', ${req.auth.workspaceId}::text, 'sessionId', ${session.id}::text,
+            'data', jsonb_build_object('id', ${id}, 'chatJid', ${jid}::text, 'direction', 'out', 'type', ${content.type}::text, 'ref', ${key}::text))::text`;
+        let [row] = await sql<MessageRow[]>`
+          with ins as (
+            insert into messages (workspace_id, session_id, direction, remote_jid, type, content, status, idempotency_key)
+            values (${req.auth.workspaceId}, ${session.id}, 'out', ${jid}, ${content.type}, ${sql.json(stored as never)}, 'queued', ${key})
+            on conflict (session_id, idempotency_key) do nothing
+            returning ${sql.unsafe(MESSAGE_COLUMNS)}
+          )
+          select ins.*, pg_notify(${CHANNELS.control}, ${JSON.stringify({ type: 'message.queued', sessionId: session.id })}), pg_notify(${CHANNELS.events}, ${created(sql`ins.id`)})
+          from ins`;
+        // Lost a race with a concurrent retry carrying the same key.
+        if (!row) [row] = await sql<MessageRow[]>`select ${sql.unsafe(MESSAGE_COLUMNS)} from messages where session_id = ${session.id} and idempotency_key = ${key}`;
+
+        // Answering a chat reads it, as on WhatsApp. Not worth holding the reply for.
+        void markChatRead(sql, session.id, jid)
+          .then(async (read) => {
+            if (read) await publish({ type: 'chat.read', workspaceId: req.auth.workspaceId, sessionId: session.id, data: { chatJid: read } });
+          })
+          .catch((err: unknown) => req.log.warn({ err }, 'could not mark the chat read after sending'));
         return ok(toMessageDto(row!));
       },
     );

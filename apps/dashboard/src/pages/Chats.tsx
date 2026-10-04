@@ -13,6 +13,9 @@ import {
   ChevronsUpDown,
   CircleCheck,
   CircleX,
+  EllipsisVertical,
+  Eye,
+  EyeOff,
   Focus as FocusIcon,
   Lock,
   MessageSquarePlus,
@@ -23,6 +26,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Settings2,
   WifiOff,
 } from 'lucide-react';
 import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -33,6 +37,7 @@ import { ContactPanel } from '../app/chats/ContactPanel';
 import { Conversation } from '../app/chats/Conversation';
 import { Insights } from '../app/chats/Insights';
 import { type InboxNote, type NoteMessage, NoteStack, noteText, playPing, pushNote, unlockAudio } from '../app/chats/Notifier';
+import { setPrivacyMode, usePrivacyMode } from '../app/chats/privacy';
 import { type ChatInfo, type ChatNumber, type ChatPage, type ChatSummary, gradientFor, initials, isChat, type PresenceState, type Profile } from '../app/chats/model';
 import { SyncButton, SyncCard, SyncModal } from '../app/chats/SyncPanel';
 import { FocusBar, FocusMenu, useFocusMode } from '../app/chats/Focus';
@@ -125,7 +130,7 @@ function NumberSwitcher({ numbers, value, onChange }: { numbers: ChatNumber[]; v
     const picture = pictureOf(n);
     const online = n.status === 'connected';
     return (
-      <span className={cx('relative inline-flex shrink-0', size)}>
+      <span className={cx('pii relative inline-flex shrink-0', size)}>
         {picture ? (
           <img src={picture} alt="" referrerPolicy="no-referrer" className="size-full rounded-full object-cover ring-1 ring-white/10" />
         ) : (
@@ -153,7 +158,7 @@ function NumberSwitcher({ numbers, value, onChange }: { numbers: ChatNumber[]; v
       >
         {current && mark(current)}
         {current && (
-          <span className="min-w-0 flex-1">
+          <span className="min-w-0 flex-1 pii">
             <span className="flex items-center gap-2">
               <span className="truncate text-sm font-semibold">{current.name}</span>
               {state(current)}
@@ -176,7 +181,7 @@ function NumberSwitcher({ numbers, value, onChange }: { numbers: ChatNumber[]; v
                 className={cx('flex w-full items-center gap-3 rounded-xl p-2 text-start transition-colors hover:bg-raised', n.id === value && 'bg-raised')}
               >
                 {mark(n, 'size-9')}
-                <span className="min-w-0 flex-1">
+                <span className="min-w-0 flex-1 pii">
                   <span className="flex items-center gap-2">
                     <span className="truncate text-sm font-medium">{n.name}</span>
                     {state(n)}
@@ -261,7 +266,7 @@ function NewChatDialog({ sessionId, onStart, onClose }: { sessionId: string; onS
             )}
           >
             {checked.exists ? <CircleCheck className="size-4 shrink-0" /> : <CircleX className="size-4 shrink-0" />}
-            <span className="min-w-0 flex-1">{checked.exists ? n.found : n.notFound}</span>
+            <span className="min-w-0 flex-1 pii">{checked.exists ? n.found : n.notFound}</span>
             <span className="ltr font-mono text-xs opacity-80">+{checked.phone}</span>
           </p>
         )}
@@ -295,6 +300,95 @@ function IconAction({ label, active, onClick, disabled, children }: { label: str
       )}
     >
       {children}
+    </button>
+  );
+}
+
+/** The ⋯ menu of the column header: the quiet toggles (receipts, notifications, private mode). */
+const PREFS_MENU_WIDTH = 264;
+function PrefsMenu({
+  receipts,
+  onReceipts,
+  notifyOn,
+  onNotify,
+  privacy,
+  onPrivacy,
+}: {
+  receipts: boolean;
+  onReceipts: () => void;
+  notifyOn: boolean;
+  onNotify: () => void;
+  privacy: boolean;
+  onPrivacy: () => void;
+}) {
+  const { t } = useI18n();
+  const p = t.chats.prefs;
+  const [open, setOpen] = useState(false);
+  const [at, setAt] = useState<{ top: number; left: number } | null>(null);
+  const box = useRef<HTMLDivElement>(null);
+  const toggle = () => {
+    const rect = box.current?.getBoundingClientRect();
+    if (rect) setAt({ top: rect.bottom + 6, left: Math.min(Math.max(8, rect.left + rect.width / 2 - PREFS_MENU_WIDTH / 2), window.innerWidth - PREFS_MENU_WIDTH - 8) });
+    setOpen((o) => !o);
+  };
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => !box.current?.contains(e.target as Node) && setOpen(false);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      setOpen(false);
+    };
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey, true);
+    return () => {
+      document.removeEventListener('pointerdown', onDown);
+      document.removeEventListener('keydown', onKey, true);
+    };
+  }, [open]);
+
+  return (
+    <div ref={box} className="relative">
+      <IconAction label={p.title} active={open} onClick={toggle}>
+        <span className="relative">
+          <EllipsisVertical className="size-[18px]" />
+          {privacy && <span aria-hidden className="absolute -top-0.5 -end-0.5 size-2 rounded-full bg-brand ring-2 ring-card" />}
+        </span>
+      </IconAction>
+      {open && at && (
+        <div
+          role="menu"
+          aria-label={p.title}
+          className="animate-scale-in fixed z-[70] origin-top rounded-xl border border-line bg-card p-1.5 shadow-xl"
+          style={{ top: at.top, left: at.left, width: PREFS_MENU_WIDTH }}
+        >
+          <p className="flex items-center gap-1.5 px-2 pt-1 pb-1.5 text-[11px] font-semibold tracking-wide text-ink-3 uppercase">
+            <Settings2 className="size-3.5" /> {p.title}
+          </p>
+          <PrefItem icon={CheckCheck} label={p.receipts} on={receipts} onClick={onReceipts} />
+          <PrefItem icon={notifyOn ? Bell : BellOff} label={p.notify} on={notifyOn} onClick={onNotify} />
+          <PrefItem icon={privacy ? EyeOff : Eye} label={p.privacy} on={privacy} onClick={onPrivacy} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** A checkable row of the preferences menu. */
+function PrefItem({ icon: Icon, label, on, onClick }: { icon: typeof Bell; label: string; on: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      role="menuitemcheckbox"
+      aria-checked={on}
+      onClick={onClick}
+      className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-start transition-colors hover:bg-raised"
+    >
+      <span className={cx('grid size-7 shrink-0 place-items-center rounded-lg border', on ? 'border-brand/40 bg-brand/10 text-brand' : 'border-line bg-surface text-ink-2')}>
+        <Icon className="size-3.5" />
+      </span>
+      <span className="min-w-0 flex-1 truncate text-sm text-ink">{label}</span>
+      <Check className={cx('size-4 shrink-0 text-brand transition-opacity', on ? 'opacity-100' : 'opacity-0')} />
     </button>
   );
 }
@@ -405,6 +499,7 @@ export function ChatsPage() {
   const [infoOpen, setInfoOpen] = useState(false);
   const [newChat, setNewChat] = useState(false);
   const [receipts, setReceipts] = useState(() => read(RECEIPTS_KEY) !== '0');
+  const privacy = usePrivacyMode();
   const [presence, setPresence] = useState(() => new Map<string, PresenceState>());
   const search = useRef<HTMLInputElement>(null);
 
@@ -832,6 +927,7 @@ export function ChatsPage() {
     <div
       className={cx(
         'flex flex-col',
+        privacy && 'privacy-on',
         mode
           ? cx('fixed inset-0 z-[55] bg-bg', focus.exiting ? 'animate-focus-out' : 'animate-focus-in')
           : 'relative -m-1 h-[calc(100svh-6.5rem)] min-h-[540px] overflow-hidden rounded-2xl border border-line bg-card shadow-sm md:m-0 md:h-[calc(100svh-8rem)]',
@@ -885,21 +981,19 @@ export function ChatsPage() {
               <IconAction label={c.tabs.insights} active={view === 'insights'} onClick={() => setView((v) => (v === 'insights' ? 'chats' : 'insights'))}>
                 <BarChart3 className="size-[18px]" />
               </IconAction>
-              <IconAction
-                label={c.receipts}
-                active={receipts}
-                onClick={() =>
+              <PrefsMenu
+                receipts={receipts}
+                onReceipts={() =>
                   setReceipts((r) => {
                     write(RECEIPTS_KEY, r ? '0' : '1');
                     return !r;
                   })
                 }
-              >
-                <CheckCheck className="size-[18px]" />
-              </IconAction>
-              <IconAction label={notifyOn ? c.notify.on : c.notify.off} active={notifyOn} onClick={() => void toggleNotify()}>
-                {notifyOn ? <Bell className="size-[18px]" /> : <BellOff className="size-[18px]" />}
-              </IconAction>
+                notifyOn={notifyOn}
+                onNotify={() => void toggleNotify()}
+                privacy={privacy}
+                onPrivacy={() => setPrivacyMode(!privacy)}
+              />
             </div>
           </div>
           <NumberSwitcher numbers={list} value={current.id} onChange={switchNumber} />

@@ -1,64 +1,129 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 780" fill="none" stroke="#000" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 420" fill="none" stroke="#000" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round">
   <!-- chat bubble -->
-  <g transform="translate(40 40)">
-    <path d="M52 52h44a12 12 0 0 1 12 12v20a12 12 0 0 1-12 12H78l-14 14v-14H52a12 12 0 0 1-12-12V64a12 12 0 0 1 12-12z" transform="rotate(-8 76 76)"/>
+  <g transform="rotate(-10 40 32)">
+    <rect x="25" y="20" width="32" height="21" rx="8"/>
+    <path d="M33 41l-5 7v-7"/>
   </g>
   <!-- heart -->
-  <g transform="translate(112 34)">
-    <path d="M224 90c-12-12-26-20-26-33a14 14 0 0 1 26-7 14 14 0 0 1 26 7c0 13-14 21-26 33z" transform="rotate(8 224 68)"/>
-  </g>
-  <!-- smiley -->
-  <g transform="translate(44 98)">
-    <circle cx="88" cy="196" r="24"/>
-    <path d="M79 191h.01M97 191h.01" stroke-width="10"/>
-    <path d="M79 203a12 11 0 0 0 18 0"/>
-  </g>
+  <path transform="rotate(8 150 33)" d="M150 45c-7-7-15-10-15-18a7.5 7.5 0 0 1 15-3.5 7.5 7.5 0 0 1 15 3.5c0 8-8 11-15 18z"/>
   <!-- paper plane -->
-  <g transform="translate(213 100)">
-    <path d="M398 198l54-24-22 54-12-22z"/>
-    <path d="M418 206l16-16"/>
+  <g transform="rotate(12 262 32)">
+    <path d="M248 36l28-11-11 28-8-12z"/>
+    <path d="M257 41l9-9"/>
+  </g>
+  <!-- star -->
+  <path transform="rotate(-12 358 32)" d="M358 20l3.4 8.6 9.2.7-7 6 2.2 9-7.7-4.9-7.7 4.9 2.2-9-7-6 9.2-.7z"/>
+  <!-- smiley -->
+  <g transform="rotate(10 96 105)">
+    <circle cx="96" cy="105" r="13"/>
+    <path d="M90.5 101h.01M101.5 101h.01" stroke-width="5"/>
+    <path d="M89 109q7 7 14 0"/>
   </g>
   <!-- clock -->
-  <g transform="translate(38 163)">
-    <circle cx="76" cy="326" r="24"/>
-    <path d="M76 313v13l9 6"/>
-  </g>
+  <circle cx="208" cy="107" r="12"/>
+  <path d="M208 99v8l6 4"/>
   <!-- music note -->
-  <g transform="translate(117 157) rotate(-10 233 314)">
-    <path d="M230 326v-32l22-5v30"/>
-    <ellipse cx="224" cy="328" rx="9" ry="7"/>
-    <ellipse cx="246" cy="321" rx="9" ry="7"/>
-  </g>
-  <!-- camera -->
-  <g transform="translate(209 161)">
-    <rect x="392" y="306" width="52" height="38" rx="8"/>
-    <path d="M405 306l4-9h18l4 9"/>
-    <circle cx="418" cy="325" r="11"/>
-  </g>
-  <!-- lock -->
-  <g transform="translate(43 225)">
-    <rect x="68" y="440" width="34" height="28" rx="7"/>
-    <path d="M77 440v-9a8 9 0 0 1 16 0v9"/>
-  </g>
-  <!-- balloon -->
-  <g transform="translate(127 221)">
-    <ellipse cx="254" cy="436" rx="19" ry="23"/>
-    <path d="M254 459l-4 7h8z"/>
-    <path d="M254 466q7 8 1 14"/>
-  </g>
-  <!-- gift -->
-  <g transform="translate(213 226)">
-    <rect x="402" y="438" width="46" height="32" rx="5"/>
-    <path d="M425 438v32M402 449h46"/>
-    <path d="M425 438c-7 0-13-4-11-9 2-5 11-3 11 9zM425 438c7 0 13-4 11-9-2-5-11-3-11 9z"/>
+  <g transform="rotate(-14 318 110)">
+    <ellipse cx="311" cy="115" rx="6.5" ry="5"/>
+    <ellipse cx="327" cy="111" rx="6.5" ry="5"/>
+    <path d="M317 113V95l16-3v17"/>
   </g>
   <!-- moon -->
-  <g transform="translate(161 208)">
-    <path d="M330 492a15 15 0 0 1-16-20 12 12 0 0 0 16 20z"/>
+  <path transform="rotate(-15 392 112)" d="M397 122a11 11 0 0 1-13-15 9 9 0 0 0 13 15z"/>
+  <!-- gift -->
+  <g transform="rotate(8 34 190)">
+    <rect x="20" y="182" width="28" height="18" rx="3"/>
+    <path d="M34 182v18M20 188h28"/>
+    <path d="M34 182c-5 0-9-3-7.5-7 1.5-3.5 7.5-2 7.5 7zM34 182c5 0 9-3 7.5-7-1.5-3.5-7.5-2-7.5 7z"/>
   </g>
+  <!-- camera -->
+  <g transform="rotate(-8 140 200)">
+    <rect x="124" y="193" width="32" height="22" rx="5"/>
+    <path d="M132 193l3-6h10l3 6"/>
+    <circle cx="140" cy="204" r="6"/>
+  </g>
+  <!-- balloon -->
+  <g transform="rotate(10 252 190)">
+    <ellipse cx="252" cy="186" rx="10" ry="12"/>
+    <path d="M252 198l-2.5 3.5h5z"/>
+    <path d="M252 201.5q4.5 5.5 0 10"/>
+  </g>
+  <!-- lock -->
+  <g transform="rotate(-10 362 198)">
+    <rect x="351" y="197" width="22" height="17" rx="4"/>
+    <path d="M356 197v-5.5a6 6 0 0 1 12 0v5.5"/>
+  </g>
+  <!-- coffee -->
+  <g transform="rotate(8 82 262)">
+    <path d="M72 252h20v11a10 10 0 0 1-20 0z"/>
+    <path d="M92 255h4a4.5 4.5 0 0 1 0 9h-4"/>
+    <path d="M70 269h24"/>
+    <path d="M78 246q2.5-3 0-6M85 246q2.5-3 0-6"/>
+  </g>
+  <!-- key -->
+  <g transform="rotate(-12 198 263)">
+    <circle cx="188" cy="263" r="6"/>
+    <path d="M194 263h17M207 263v6M201.5 263v4.5"/>
+  </g>
+  <!-- mic -->
+  <g transform="rotate(12 300 264)">
+    <rect x="294" y="250" width="12" height="19" rx="6"/>
+    <path d="M289 265a11 9 0 0 0 22 0"/>
+    <path d="M300 274v6M295 280h10"/>
+  </g>
+  <!-- phone -->
+  <g transform="rotate(-12 388 262)">
+    <rect x="380" y="250" width="16" height="25" rx="4"/>
+    <path d="M385 270h6"/>
+  </g>
+  <!-- umbrella -->
+  <g transform="rotate(8 128 340)">
+    <path d="M114 338a14 14 0 0 1 28 0z"/>
+    <path d="M128 338v10a4 4 0 0 0 8 0"/>
+    <path d="M128 324v-3"/>
+  </g>
+  <!-- pencil -->
+  <g transform="rotate(35 236 338)">
+    <path d="M230 331h16v13h-16z"/>
+    <path d="M246 331l8 6.5-8 6.5z"/>
+    <path d="M230 337.5h-4"/>
+  </g>
+  <!-- rocket -->
+  <g transform="rotate(-10 344 340)">
+    <path d="M336 350c-1-9 2-18 8-25 6 7 9 16 8 25z"/>
+    <circle cx="344" cy="337" r="3.2"/>
+    <path d="M336 346l-6 8 6-2zM352 346l6 8-6-2z"/>
+  </g>
+  <!-- second chat bubble -->
+  <g transform="rotate(14 40 386)">
+    <rect x="26" y="376" width="30" height="20" rx="8"/>
+    <path d="M49 396l5 7v-7"/>
+  </g>
+  <!-- second heart -->
+  <path transform="rotate(-8 285 390)" d="M285 401c-6-6-13-9-13-15.5a6.5 6.5 0 0 1 13-3 6.5 6.5 0 0 1 13 3c0 6.5-7 9.5-13 15.5z"/>
+  <!-- second plane -->
+  <g transform="rotate(-14 395 388)">
+    <path d="M382 392l26-10-10 26-7-11z"/>
+    <path d="M391 397l8-8"/>
+  </g>
+  <!-- second star -->
+  <path transform="rotate(18 165 395)" d="M165 385l2.8 7.2 7.7.6-5.8 5 1.8 7.5-6.5-4-6.5 4 1.8-7.5-5.8-5 7.7-.6z"/>
   <!-- sprinkle dots -->
-  <circle cx="240" cy="225" r="4"/>
-  <circle cx="480" cy="180" r="4"/>
-  <circle cx="700" cy="585" r="4"/>
-  <circle cx="270" cy="660" r="4"/>
+  <circle cx="92" cy="52" r="2.6"/>
+  <circle cx="205" cy="45" r="2.6"/>
+  <circle cx="312" cy="52" r="2.6"/>
+  <circle cx="55" cy="140" r="2.6"/>
+  <circle cx="160" cy="130" r="2.6"/>
+  <circle cx="265" cy="145" r="2.6"/>
+  <circle cx="368" cy="140" r="2.6"/>
+  <circle cx="105" cy="215" r="2.6"/>
+  <circle cx="215" cy="220" r="2.6"/>
+  <circle cx="315" cy="215" r="2.6"/>
+  <circle cx="50" cy="305" r="2.6"/>
+  <circle cx="150" cy="300" r="2.6"/>
+  <circle cx="255" cy="300" r="2.6"/>
+  <circle cx="355" cy="305" r="2.6"/>
+  <circle cx="125" cy="395" r="2.6"/>
+  <circle cx="245" cy="392" r="2.6"/>
+  <circle cx="345" cy="398" r="2.6"/>
 </svg>

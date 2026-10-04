@@ -13,7 +13,7 @@ export type WaEvent =
   | Base<'messages.received', { id: number; from: string; type: MessageType; text: string | null; chatJid?: string; pushName?: string | null }>
   | Base<'messages.update', { id: number; status: MessageStatus; error: string | null }>
   /** A message that didn't arrive through `messages.received`: sent from the phone itself, or queued from the chats page. */
-  | Base<'messages.created', { id: number; chatJid: string; direction: MessageDirection; type: MessageType }>
+  | Base<'messages.created', { id: number; chatJid: string; direction: MessageDirection; type: MessageType; /** The Idempotency-Key it was sent with, if any. */ ref?: string | null }>
   /** A recipient answered a poll we sent; `selected` is their current choice (empty = withdrawn). */
   | Base<'poll.vote', { id: number; voter: string; selected: string[] }>
   /** A stored message changed in place: its sender edited it, or deleted it for everyone. */

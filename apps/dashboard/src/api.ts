@@ -65,6 +65,8 @@ type RequestOptions = {
   signal?: AbortSignal;
   /** Gives up after this long; nothing in the dashboard may spin forever. */
   timeoutMs?: number;
+  /** Extra request headers (e.g. `idempotency-key`). */
+  headers?: Record<string, string>;
 };
 
 const DEFAULT_TIMEOUT_MS = 20_000;
@@ -82,7 +84,7 @@ function combine(a: AbortSignal, b?: AbortSignal) {
 
 /** Calls the API and unwraps `{ success, data }`; throws ApiRequestError with the API's message and code otherwise. */
 export async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...options.headers };
   if (options.token) headers.authorization = `Bearer ${options.token}`;
   if (options.body !== undefined) headers['content-type'] = 'application/json';
   if (options.sessionId) headers['x-session-id'] = options.sessionId;

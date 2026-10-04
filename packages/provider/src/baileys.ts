@@ -848,7 +848,13 @@ export class BaileysProvider implements Provider {
       case 'video':
         return { video: data, caption: content.caption };
       case 'audio':
-        return { audio: data, ptt: content.ptt, mimetype: mimetype ?? 'audio/mp4' };
+        // Voice notes play on phones as Ogg/Opus, which WhatsApp names with its codec.
+        return {
+          audio: data,
+          ptt: content.ptt,
+          mimetype: content.ptt && mimetype === 'audio/ogg' ? 'audio/ogg; codecs=opus' : (mimetype ?? 'audio/mp4'),
+          ...(content.seconds ? { seconds: content.seconds } : {}),
+        };
       case 'sticker':
         return { sticker: data };
       case 'document':

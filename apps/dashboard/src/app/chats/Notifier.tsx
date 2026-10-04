@@ -102,7 +102,7 @@ function NoteCard({ note, peek, onOpen, onDismiss }: { note: InboxNote; peek: bo
           <span className="flex size-4 items-center justify-center rounded-[5px] bg-brand text-on-brand">
             <ChatGlyph className="size-2.5" />
           </span>
-          <span className="truncate font-medium text-muted">{note.number ?? c.newMessage}</span>
+          <span className="pii truncate font-medium text-muted">{note.number ?? c.newMessage}</span>
           <span aria-hidden>·</span>
           <span className="shrink-0 text-brand">{c.now}</span>
           {note.count > 1 && (
@@ -113,9 +113,9 @@ function NoteCard({ note, peek, onOpen, onDismiss }: { note: InboxNote; peek: bo
         </div>
         <button type="button" onClick={onOpen} tabIndex={peek ? -1 : 0} className="flex w-full items-start gap-3 px-3.5 pt-2 pb-3.5 text-start outline-none focus-visible:bg-ink/[0.03]">
           <Avatar name={note.title} id={note.jid} picture={note.picture} group={note.isGroup} size="lg" />
-          <span className="min-w-0 flex-1">
-            <span dir="auto" className="block truncate text-[15px] font-semibold text-ink">
-              {note.title.startsWith('+') ? <span className="ltr">{note.title}</span> : note.title}
+          <span className="min-w-0 flex-1 pii">
+            <span className="block truncate text-start text-[15px] font-semibold text-ink">
+              {note.title.startsWith('+') ? <span className="ltr">{note.title}</span> : <span dir="auto">{note.title}</span>}
             </span>
             <span className="mt-1 block space-y-0.5">
               {note.messages.map((m, i) => (

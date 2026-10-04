@@ -37,25 +37,35 @@ export function pgAuthStore(sql: Sql, sessionId: string, { workerId }: { workerI
       return new Map(rows.map((r) => [r.key_id, r.value]));
     },
 
-    /** All-or-nothing: the upserts and deletes of one call commit together or not at all. */
+    /**
+     * All-or-nothing: the upserts and deletes of one call commit together or not at all. One
+     * statement (an implicit transaction) holding the fence's share lock: Baileys awaits this on every
+     * encrypted send, so it costs one round trip instead of BEGIN, fence, write and COMMIT.
+     */
     async set(entries: { type: string; id: string; value: Buffer | null }[]): Promise<void> {
-      const upserts = entries
-        .filter((e) => e.value !== null)
-        .map((e) => ({ session_id: sessionId, type: e.type, key_id: e.id, value: e.value! }));
+      if (entries.length === 0) return;
+      const upserts = entries.filter((e) => e.value !== null);
       const deletes = entries.filter((e) => e.value === null);
-      await sql.begin(async (tx) => {
-        await fence(tx);
-        if (upserts.length > 0) {
-          await tx`
-            insert into session_auth ${tx(upserts, 'session_id', 'type', 'key_id', 'value')}
-            on conflict (session_id, type, key_id) do update set value = excluded.value, updated_at = now()`;
-        }
-        if (deletes.length > 0) {
-          await tx`
-            delete from session_auth s using unnest(${deletes.map((d) => d.type)}::text[], ${deletes.map((d) => d.id)}::text[]) as d(type, key_id)
-            where s.session_id = ${sessionId} and s.type = d.type and s.key_id = d.key_id`;
-        }
-      });
+      const owned = workerId ? sql`select 1 from sessions where id = ${sessionId} and worker_id = ${workerId} for share` : sql`select 1`;
+      const [row] = await sql<{ owned: boolean }[]>`
+        with owned as (${owned}),
+        up as (
+          insert into session_auth (session_id, type, key_id, value)
+          select ${sessionId}, u.type, u.key_id, decode(u.hex, 'hex')
+          -- postgres.js can't bind a bytea[]: the values travel as hex text.
+          from unnest(${upserts.map((e) => e.type)}::text[], ${upserts.map((e) => e.id)}::text[], ${upserts.map((e) => e.value!.toString('hex'))}::text[]) as u(type, key_id, hex)
+          where exists (select 1 from owned)
+          on conflict (session_id, type, key_id) do update set value = excluded.value, updated_at = now()
+          returning 1
+        ),
+        del as (
+          delete from session_auth s
+          using unnest(${deletes.map((d) => d.type)}::text[], ${deletes.map((d) => d.id)}::text[]) as d(type, key_id)
+          where exists (select 1 from owned) and s.session_id = ${sessionId} and s.type = d.type and s.key_id = d.key_id
+          returning 1
+        )
+        select exists (select 1 from owned) as owned, (select count(*) from up) + (select count(*) from del) as changed`;
+      if (!row?.owned) throw new AuthFenceError(`Session ${sessionId} is no longer owned by worker ${workerId}`);
     },
 
     /** Deletes every credential of the session: only for a confirmed logout or an explicit unlink. */

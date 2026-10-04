@@ -58,7 +58,10 @@ export type MessageContent = {
   pushName?: string | null;
   isGroup?: boolean;
   timestamp?: number;
-  sentFrom?: 'phone';
+  /** `phone`: sent from the phone itself; `chats`: typed on the chats page. */
+  sentFrom?: 'phone' | 'chats';
+  /** Outbound voice notes: their length. */
+  seconds?: number;
   media?: ChatMedia;
   location?: ChatLocation;
   contacts?: ChatContactCard[];

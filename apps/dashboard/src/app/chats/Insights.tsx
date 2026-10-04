@@ -194,7 +194,7 @@ export function Insights({ sessionId, onOpenChat }: { sessionId: string; onOpenC
                         <button type="button" onClick={() => onOpenChat(row.jid)} className="flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-start transition-colors hover:bg-raised/60">
                           <span className="w-5 text-center text-sm font-semibold text-faint tabular-nums">{i + 1}</span>
                           <Avatar name={title} id={row.jid} group={row.jid.endsWith('@g.us')} size="sm" />
-                          <span className="min-w-0 flex-1">
+                          <span className="min-w-0 flex-1 pii">
                             <span dir="auto" className="block truncate text-sm font-medium">
                               {title}
                             </span>

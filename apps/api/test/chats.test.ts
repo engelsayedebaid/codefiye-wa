@@ -192,6 +192,37 @@ describe.skipIf(!url)('chats api (integration)', () => {
     expect(res.json().data).toMatchObject({ direction: 'out', status: 'queued', content: { type: 'text', text: 'On its way!', quote: { id: 'IN2', fromMe: false, text: 'my order' } } });
   });
 
+  it('treats a retry with the same Idempotency-Key as the same message', async () => {
+    const send = () =>
+      app.inject({
+        method: 'POST',
+        url: `/api/chats/${sessionId}/send`,
+        headers: { authorization: `Bearer ${admin.pat}`, 'idempotency-key': 'page-retry-1' },
+        payload: { jid: PHONE, text: 'Only once' },
+      });
+    const [a, b] = await Promise.all([send(), send()]);
+    const c = await send();
+    expect(a.statusCode, a.body).toBe(200);
+    expect(b.json().data.id).toBe(a.json().data.id);
+    expect(c.json().data.id).toBe(a.json().data.id);
+    expect(a.json().data.content).toMatchObject({ type: 'text', text: 'Only once', sentFrom: 'chats', reachable: true });
+    const [counted] = await sql<{ n: number }[]>`select count(*)::int as n from messages where session_id = ${sessionId} and content->>'text' = 'Only once'`;
+    expect(counted?.n).toBe(1);
+  });
+
+  it('sends a recorded voice note with its length', async () => {
+    const up = await app.inject({
+      method: 'POST',
+      url: '/api/chats/uploads',
+      headers: { authorization: `Bearer ${admin.pat}`, 'content-type': 'application/octet-stream', 'x-mime-type': 'audio/ogg', 'x-file-name': 'voice.ogg' },
+      payload: Buffer.from('OggS test'),
+    });
+    expect(up.json().data).toMatchObject({ kind: 'audio' });
+    const sent = await call('POST', `/api/chats/${sessionId}/send`, admin.pat, { jid: PHONE, uploadId: up.json().data.id, ptt: true, seconds: 7 });
+    expect(sent.statusCode, sent.body).toBe(200);
+    expect(sent.json().data).toMatchObject({ type: 'audio', status: 'queued', content: { type: 'audio', ptt: true, seconds: 7 } });
+  });
+
   it('stores uploads and sends them as the right kind', async () => {
     const up = await app.inject({
       method: 'POST',

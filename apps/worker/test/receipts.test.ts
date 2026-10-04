@@ -54,7 +54,7 @@ const job: QueuedMessage = { id: 1, workspace_id: 'w1', session_id: 's1', remote
  * Sends one message whose receipt WhatsApp delivers `when` relative to the send returning:
  * 'before' (processed before sendMessage resolves) or 'during' (while markSent is in flight).
  */
-async function sendWithReceipt(receipt: Omit<ProviderEvents['receipt'], 'waMessageId' | 'chatJid'>, when: 'before' | 'during') {
+async function sendWithReceipt(receipt: Omit<ProviderEvents['receipt'], 'waMessageId' | 'chatJid'>, when: 'before' | 'during', content: QueuedMessage['content'] = job.content) {
   const row: Row = { id: 1, status: 'sending', waMessageId: null, error: null };
   const shield: Shield = {};
   const runner = new SessionRunner('s1', 'w1', {}, {
@@ -73,11 +73,15 @@ async function sendWithReceipt(receipt: Omit<ProviderEvents['receipt'], 'waMessa
     sendOne: (j: QueuedMessage) => Promise<void>;
   };
   let handled: Promise<void> = Promise.resolve();
+  let lookups = 0;
   const fire = () => {
     handled = internals.onReceipt({ waMessageId: 'W1', chatJid: job.remote_jid, ...receipt });
   };
   internals.provider = {
-    isOnWhatsApp: async () => [{ input: '201012345678', exists: true, jid: job.remote_jid }],
+    isOnWhatsApp: async () => {
+      lookups += 1;
+      return [{ input: '201012345678', exists: true, jid: job.remote_jid }];
+    },
     setTyping: async () => {},
     send: async () => {
       if (when === 'before') fire();
@@ -85,9 +89,9 @@ async function sendWithReceipt(receipt: Omit<ProviderEvents['receipt'], 'waMessa
       return { waMessageId: 'W1' };
     },
   };
-  await internals.sendOne(job);
+  await internals.sendOne({ ...job, content });
   await handled;
-  return { ...row, shield };
+  return { ...row, shield, lookups };
 }
 
 describe('receipts that beat the markSent write', () => {
@@ -109,5 +113,23 @@ describe('receipts that beat the markSent write', () => {
     const row = await sendWithReceipt({ status: 'failed', error: '999' }, 'during');
     expect(row.error).toBe('Rejected by WhatsApp (error 999)');
     expect(row.shield).toEqual({});
+  });
+});
+
+describe('the "is it on WhatsApp?" lookup', () => {
+  it('is asked for an API message', async () => {
+    const row = await sendWithReceipt({ status: 'delivered' }, 'during');
+    expect(row.lookups).toBe(1);
+  });
+
+  it('is skipped for a chats-page reply to a contact who has written to us', async () => {
+    const row = await sendWithReceipt({ status: 'delivered' }, 'during', { type: 'text', text: 'hi', sentFrom: 'chats', reachable: true });
+    expect(row.lookups).toBe(0);
+    expect(row.status).toBe('delivered');
+  });
+
+  it('is still asked for a chats-page message to a number that never wrote', async () => {
+    const row = await sendWithReceipt({ status: 'delivered' }, 'during', { type: 'text', text: 'hi', sentFrom: 'chats' });
+    expect(row.lookups).toBe(1);
   });
 });

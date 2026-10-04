@@ -70,10 +70,10 @@ function Row({ chat, active, presence, picture, onSelect }: { chat: ChatSummary;
     >
       {active && <span aria-hidden className="animate-scale-in absolute inset-y-3 start-0 w-[3px] rounded-e-full bg-brand" />}
       <Avatar name={title} id={chat.jid} picture={picture} group={chat.isGroup} online={live?.presence === 'available' || typing} />
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 pii">
         <div className="flex items-baseline gap-2">
-          <p dir="auto" className={cx('min-w-0 flex-1 truncate text-[15px]', chat.unread > 0 ? 'font-semibold' : 'font-medium')}>
-            {chat.name ? title : <span className="ltr font-mono text-sm">{title}</span>}
+          <p className={cx('min-w-0 flex-1 truncate text-start text-[15px]', chat.unread > 0 ? 'font-semibold' : 'font-medium')}>
+            {chat.name ? <span dir="auto">{title}</span> : <span className="ltr font-mono text-sm">{title}</span>}
           </p>
           <span className={cx('shrink-0 text-[11px] tabular-nums', chat.unread > 0 ? 'font-semibold text-brand' : 'text-faint')}>{stamp(chat.lastMessageAt)}</span>
         </div>
@@ -223,7 +223,7 @@ function TypingFloat({ chats, side, pictures, onPick }: { chats: { chat: ChatSum
             className="animate-fade-up pointer-events-auto flex max-w-full items-center gap-2 rounded-full border border-brand/30 bg-card/95 py-1 ps-1 pe-3 shadow-lg shadow-black/40 light:shadow-black/15 backdrop-blur transition-colors hover:border-brand/60 hover:bg-raised"
           >
             <Avatar name={title} id={chat.jid} picture={pictures.get(chat.jid)} group={chat.isGroup} size="sm" online />
-            <span dir="auto" className="min-w-0 truncate text-[13px] font-semibold text-ink">
+            <span dir="auto" className="pii min-w-0 truncate text-[13px] font-semibold text-ink">
               {chat.name ? title : <span className="ltr font-mono text-xs">{title}</span>}
             </span>
             <span className="flex shrink-0 items-center gap-1.5 text-xs font-medium text-brand">
@@ -352,6 +352,7 @@ export const ChatList = forwardRef<HTMLInputElement, Props>(function ChatList({ 
             ref={searchRef}
             value={query}
             onChange={(e) => onQuery(e.target.value)}
+            dir={query ? 'auto' : undefined}
             placeholder={c.search}
             aria-label={c.search}
             className="h-10 w-full rounded-xl border border-line bg-card ps-9 pe-8 text-sm text-ink shadow-xs outline-none transition-[border-color,box-shadow] placeholder:text-muted focus:border-ring focus:ring-[3px] focus:ring-ring/30"
@@ -393,7 +394,7 @@ export const ChatList = forwardRef<HTMLInputElement, Props>(function ChatList({ 
             {q ? c.emptySearch : c.emptyList}
           </div>
         ) : (
-          <ul className="space-y-0.5 px-2">
+          <ul className="chat-rows space-y-0.5 px-2">
             {chats.map((chat) => (
               <li key={chat.jid} data-jid={chat.jid} className="group">
                 <Row chat={chat} active={selected === chat.jid} presence={presence.get(chat.jid)} picture={pictures.get(chat.jid)} onSelect={() => onSelect(chat)} />

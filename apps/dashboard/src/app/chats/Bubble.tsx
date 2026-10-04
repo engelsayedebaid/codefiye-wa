@@ -19,6 +19,7 @@ import {
   Pause,
   Play,
   Reply,
+  RotateCw,
   Smartphone,
   User,
   Users,
@@ -50,7 +51,7 @@ export function Avatar({
   const [failed, setFailed] = useState(false);
   const dims = { sm: 'size-8 text-xs', md: 'size-11 text-sm', lg: 'size-12 text-base', xl: 'size-24 text-2xl' }[size];
   return (
-    <span className={cx('relative inline-flex shrink-0', dims)}>
+    <span className={cx('pii relative inline-flex shrink-0', dims)}>
       {picture && !failed ? (
         <img src={picture} alt="" referrerPolicy="no-referrer" onError={() => setFailed(true)} className="size-full rounded-full object-cover ring-1 ring-white/10" />
       ) : (
@@ -77,10 +78,10 @@ function frame(width?: number, height?: number) {
   return { aspectRatio: String(ratio) };
 }
 
-function ImageMedia({ m, onOpen }: { m: ChatMessage; onOpen: () => void }) {
+function ImageMedia({ m, onOpen, localSrc }: { m: ChatMessage; onOpen: () => void; localSrc?: string }) {
   const { t } = useI18n();
   const media = m.content.media;
-  const src = m.hasMedia ? (m.content.url?.startsWith('http') && !m.content.media ? m.content.url : mediaUrl(m.id)) : null;
+  const src = localSrc ?? (m.hasMedia ? (m.content.url?.startsWith('http') && !m.content.media ? m.content.url : mediaUrl(m.id)) : null);
   const [state, setState] = useState<'loading' | 'ready' | 'failed'>(src ? 'loading' : 'failed');
   const sticker = m.type === 'sticker';
   return (
@@ -122,11 +123,11 @@ function ImageMedia({ m, onOpen }: { m: ChatMessage; onOpen: () => void }) {
   );
 }
 
-function VideoMedia({ m }: { m: ChatMessage }) {
+function VideoMedia({ m, localSrc }: { m: ChatMessage; localSrc?: string }) {
   const { t } = useI18n();
   const media = m.content.media;
   const [playing, setPlaying] = useState(false);
-  const src = m.hasMedia ? mediaUrl(m.id) : null;
+  const src = localSrc ?? (m.hasMedia ? mediaUrl(m.id) : null);
   return (
     <div className="relative w-72 max-w-full overflow-hidden rounded-lg bg-black/40" style={frame(media?.width, media?.height)}>
       {playing && src ? (
@@ -163,17 +164,17 @@ function bars(seed: number, n = 36) {
   });
 }
 
-function AudioMedia({ m, outbound }: { m: ChatMessage; outbound: boolean }) {
+function AudioMedia({ m, outbound, localSrc }: { m: ChatMessage; outbound: boolean; localSrc?: string }) {
   const { t } = useI18n();
   const ref = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [duration, setDuration] = useState(m.content.media?.seconds ?? 0);
+  const [duration, setDuration] = useState(m.content.media?.seconds ?? m.content.seconds ?? 0);
   const [failed, setFailed] = useState(false);
   const [rate, setRate] = useState(1);
   const voice = Boolean(m.content.media?.ptt ?? m.content.ptt);
-  const src = m.hasMedia ? mediaUrl(m.id) : null;
-  const wave = bars(m.id);
+  const src = localSrc ?? (m.hasMedia ? mediaUrl(m.id) : null);
+  const wave = bars(Math.abs(m.id));
 
   const toggle = () => {
     const audio = ref.current;
@@ -429,9 +430,13 @@ type BubbleProps = {
   onOpenMedia: (m: ChatMessage) => void;
   onJump?: (waMessageId: string) => void;
   onOpenChat?: (phone: string) => void;
+  /** A message still on its way from this page (see outbox.ts): its file previews locally. */
+  localSrc?: string;
+  /** Failed on its way: offer to retry or drop it. */
+  pending?: { failed: boolean; error?: string; onRetry: () => void; onDiscard: () => void };
 };
 
-export const Bubble = memo(function Bubble({ m, sender, first, reactions, highlight, quotedAuthor, onReply, onOpenMedia, onJump, onOpenChat }: BubbleProps) {
+export const Bubble = memo(function Bubble({ m, sender, first, reactions, highlight, quotedAuthor, onReply, onOpenMedia, onJump, onOpenChat, localSrc, pending }: BubbleProps) {
   const { t, fmt } = useI18n();
   const c = t.chats;
   const out = m.direction === 'out';
@@ -463,9 +468,9 @@ export const Bubble = memo(function Bubble({ m, sender, first, reactions, highli
         <Eye className="size-4" /> {c.media.viewOnce}
       </p>
     );
-  } else if (m.type === 'image' || m.type === 'sticker') body = <ImageMedia m={m} onOpen={() => onOpenMedia(m)} />;
-  else if (m.type === 'video') body = <VideoMedia m={m} />;
-  else if (m.type === 'audio') body = <AudioMedia m={m} outbound={out} />;
+  } else if (m.type === 'image' || m.type === 'sticker') body = <ImageMedia m={m} onOpen={() => onOpenMedia(m)} localSrc={localSrc} />;
+  else if (m.type === 'video') body = <VideoMedia m={m} localSrc={localSrc} />;
+  else if (m.type === 'audio') body = <AudioMedia m={m} outbound={out} localSrc={localSrc} />;
   else if (m.type === 'document') body = <DocumentMedia m={m} />;
   else if (m.type === 'location') body = <LocationCard m={m} />;
   else if (m.type === 'contact') body = <ContactCards m={m} onOpenChat={onOpenChat} />;
@@ -490,7 +495,7 @@ export const Bubble = memo(function Bubble({ m, sender, first, reactions, highli
       <div className={cx('flex max-w-[min(88%,34rem)] items-center gap-1', out && 'flex-row-reverse')}>
         <div
           className={cx(
-            'relative min-w-0 text-sm text-ink shadow-sm',
+            'pii relative min-w-0 text-sm text-ink shadow-sm',
             bare ? '' : 'rounded-2xl px-2.5 pt-2 pb-1.5 shadow-[0_1px_1.5px_rgb(0_0_0/0.12)]',
             !bare && (out ? 'bg-(--chat-out) ring-1 ring-(--chat-out-ring)' : 'bg-(--chat-in) ring-1 ring-line/60'),
             !bare && first && (out ? 'rounded-se-sm' : 'rounded-ss-sm'),
@@ -528,6 +533,16 @@ export const Bubble = memo(function Bubble({ m, sender, first, reactions, highli
               <AlertTriangle className="mt-px size-3.5 shrink-0" />
               <span dir="auto">{errorText(m.error, t.sessionDetail.errors)}</span>
             </p>
+          )}
+          {pending?.failed && (
+            <div className="mt-1.5 flex items-center justify-end gap-1">
+              <button type="button" onClick={pending.onDiscard} className="rounded-md px-2 py-1 text-xs font-medium text-muted transition-colors hover:bg-ink/10 hover:text-ink">
+                {c.pending.discard}
+              </button>
+              <button type="button" onClick={pending.onRetry} className="inline-flex items-center gap-1 rounded-md bg-brand px-2 py-1 text-xs font-semibold text-on-brand transition-opacity hover:opacity-90">
+                <RotateCw className="size-3" /> {c.pending.retry}
+              </button>
+            </div>
           )}
           {reactions && reactions.length > 0 && (
             <span className={cx('absolute -bottom-3.5 flex items-center gap-0.5 rounded-full border border-line bg-card px-1.5 py-0.5 text-xs shadow-md', out ? 'end-2' : 'start-2')}>

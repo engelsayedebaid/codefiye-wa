@@ -1,5 +1,4 @@
-import { UPLOAD_MAX_BYTES } from '@wa/shared/chats';
-import { type InfiniteData, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { type InfiniteData, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Archive,
   ArrowDown,
@@ -8,35 +7,55 @@ import {
   ChevronRight,
   Download,
   ExternalLink,
-  FileText,
-  Image as ImageIcon,
   History,
   Info,
   Loader2,
   MailOpen,
   MoreVertical,
   Palette,
-  Paperclip,
   Pin,
-  Reply,
   Search,
-  SendHorizontal,
   Undo2,
-  WifiOff,
   X,
 } from 'lucide-react';
-import { type FormEvent, type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { api, ApiRequestError, errorMessage } from '../../api';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { api } from '../../api';
 import { useLiveEvents } from '../../events';
 import { useI18n } from '../../i18n';
 import { qk } from '../../queries';
 import { cx, flip, LoadError, Modal } from '../../ui';
-import { Avatar, Bubble, TypeLabel } from './Bubble';
+import { Avatar, Bubble } from './Bubble';
 import { TypingDots } from './ChatList';
-import { type ChatMessage, type ChatSummary, chatTitle, formatBytes, isChat, livePresence, mediaUrl, type MessagesPage, type PresenceState, textOf } from './model';
+import { Composer } from './Composer';
+import { type ChatMessage, type ChatSummary, chatTitle, isChat, livePresence, mediaUrl, type MessagesPage, type PresenceState, textOf } from './model';
+import { type Draft, discard, enqueue, type Pending, resolveRef, retry, settle, usePending } from './outbox';
 import { CHAT_WALLS, setChatWall, useChatWall, wallStyle } from './walls';
 
 type Pages = InfiniteData<MessagesPage, number | undefined>;
+
+/** A message on its way, drawn like a stored one ("queued", or "failed" with retry). */
+function pendingMessage(p: Pending, index: number): ChatMessage {
+  const { text, file, ptt, seconds, quote } = p.draft;
+  const kind = !file ? 'text' : file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : file.type.startsWith('audio/') ? 'audio' : 'document';
+  return {
+    id: -1 - index,
+    direction: 'out',
+    type: kind,
+    status: p.state === 'failed' ? 'failed' : 'queued',
+    error: p.state === 'failed' ? (p.error ?? null) : null,
+    content: {
+      ...(kind === 'text' ? { text: text?.trim() } : { caption: text?.trim() || undefined }),
+      ...(file && kind === 'document' ? { fileName: file.name, mimetype: file.type } : {}),
+      ...(kind === 'audio' ? { ptt, seconds } : {}),
+      ...(quote?.waMessageId ? { quote: { id: quote.waMessageId, fromMe: quote.direction === 'out', text: textOf(quote) } } : {}),
+    },
+    waMessageId: null,
+    hasMedia: false,
+    broadcastId: null,
+    sentAt: null,
+    createdAt: p.createdAt,
+  };
+}
 
 /** The contact's line under the name: typing, online, last seen. */
 export function PresenceLine({ chat, presence }: { chat: ChatSummary; presence?: PresenceState }) {
@@ -95,7 +114,7 @@ function Lightbox({ items, index, onIndex, onClose }: { items: ChatMessage[]; in
             <ChevronLeft className={cx('size-6', flip)} />
           </button>
         )}
-        <img key={m.id} src={src} alt="" referrerPolicy="no-referrer" className="animate-scale-in max-h-full max-w-full rounded-lg object-contain shadow-2xl" />
+        <img key={m.id} src={src} alt="" referrerPolicy="no-referrer" className="pii animate-scale-in max-h-full max-w-full rounded-lg object-contain shadow-2xl" />
         {index < items.length - 1 && (
           <button type="button" onClick={() => onIndex(index + 1)} className="absolute end-3 rounded-full bg-white/10 p-2 text-white hover:bg-white/20" aria-label="›">
             <ChevronRight className={cx('size-6', flip)} />
@@ -211,6 +230,20 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
     return out;
   }, [list, firstUnreadId, unreadAtOpen, chat.isGroup, fmt]);
 
+  // Each day lives in its own section: the sticky pill then sticks only while its day is on screen
+  // (flat list = every pill sticks at once and they pile on top of each other).
+  const sections = useMemo(() => {
+    const out: { key: string; label: string | null; items: Extract<Item, { kind: 'unread' | 'msg' }>[] }[] = [];
+    for (const item of items) {
+      if (item.kind === 'day') out.push({ key: item.key, label: item.label, items: [] });
+      else {
+        if (!out.length) out.push({ key: 'head', label: null, items: [] });
+        out[out.length - 1]!.items.push(item);
+      }
+    }
+    return out;
+  }, [items]);
+
   // --- live: new messages are fetched and appended, status changes patched in place ---
   const newestId = messages.data?.pages[0]?.messages[0]?.id ?? 0;
   const newestRef = useRef(newestId);
@@ -251,6 +284,7 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
   useLiveEvents((event) => {
     if (event.sessionId !== sessionId) return;
     if ((event.type === 'messages.received' && isChat(chat, event.data.chatJid ?? '')) || (event.type === 'messages.created' && isChat(chat, event.data.chatJid))) {
+      if (event.type === 'messages.created' && event.data.ref) resolveRef(sessionId, chat.jid, event.data.ref, event.data.id);
       void catchUp();
     } else if (event.type === 'message.changed') {
       // Edited or deleted for everyone by its sender: reload if it's one of ours here.
@@ -304,124 +338,43 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
     if (bottom) setUnseen(0);
   };
   const toBottom = () => scroller.current?.scrollTo({ top: 0, behavior: 'smooth' });
-  const jump = (waMessageId: string) => {
+  const jump = useCallback((waMessageId: string) => {
     const el = document.getElementById(`msg-${waMessageId}`);
     if (!el) return;
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     el.classList.remove('flash-msg');
     void el.offsetWidth;
     el.classList.add('flash-msg');
-  };
+  }, []);
 
-  // --- composer ---
-  const [text, setText] = useState('');
+  // --- composer: messages show at once and go out in the order written (outbox.ts) ---
   const [reply, setReply] = useState<ChatMessage | null>(null);
-  const [file, setFile] = useState<File | null>(null);
-  const [ptt, setPtt] = useState(false);
-  const [sendError, setSendError] = useState<string | null>(null);
-  const input = useRef<HTMLTextAreaElement>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
-  const preview = useMemo(() => (file && file.type.startsWith('image/') ? URL.createObjectURL(file) : null), [file]);
-  useEffect(() => () => void (preview && URL.revokeObjectURL(preview)), [preview]);
-
-  // "typing…" for the contact: at most every 8s while typing, "paused" after 4s idle.
-  const typingAt = useRef(0);
-  const pauseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const sendState = useCallback(
-    (state: 'composing' | 'paused') => void api(`/api/chats/${sessionId}/typing`, { method: 'POST', body: { jid: chat.jid, state } }).catch(() => {}),
-    [sessionId, chat.jid],
-  );
-  const onType = (value: string) => {
-    setText(value);
-    if (!connected) return;
-    if (Date.now() - typingAt.current > 8_000 && value.trim()) {
-      typingAt.current = Date.now();
-      sendState('composing');
-    }
-    if (pauseTimer.current) clearTimeout(pauseTimer.current);
-    pauseTimer.current = setTimeout(() => {
-      if (typingAt.current) sendState('paused');
-      typingAt.current = 0;
-    }, 4_000);
-  };
-  useEffect(() => () => void (pauseTimer.current && clearTimeout(pauseTimer.current)), []);
-
-  // Grow the textarea with its text, up to ~6 lines.
-  useEffect(() => {
-    const el = input.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-  }, [text]);
-
-  const send = useMutation({
-    mutationFn: async () => {
-      let uploadId: string | undefined;
-      if (file) {
-        const res = await fetch('/api/chats/uploads', {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: { 'content-type': 'application/octet-stream', 'x-mime-type': file.type || 'application/octet-stream', 'x-file-name': encodeURIComponent(file.name) },
-          body: file,
-        });
-        const json = (await res.json().catch(() => null)) as { success: boolean; data?: { id: string }; message?: string } | null;
-        if (!res.ok || !json?.success || !json.data) throw new ApiRequestError(res.status, json?.message ?? c.errors.upload);
-        uploadId = json.data.id;
-      }
-      return api<ChatMessage>(`/api/chats/${sessionId}/send`, {
-        method: 'POST',
-        body: { jid: chat.jid, ...(text.trim() ? { text: text.trim() } : {}), ...(uploadId ? { uploadId, ptt } : {}), ...(reply?.waMessageId ? { quoteId: reply.waMessageId } : {}) },
-        timeoutMs: 60_000,
-      });
-    },
-    onSuccess: (m) => {
-      queryClient.setQueryData<Pages>(key, (data) => {
-        if (!data?.pages[0] || data.pages.some((p) => p.messages.some((x) => x.id === m.id))) return data;
-        return { ...data, pages: [{ ...data.pages[0], messages: [m, ...data.pages[0].messages] }, ...data.pages.slice(1)] };
-      });
-      setText('');
-      setFile(null);
+  const pending = usePending(sessionId, chat.jid);
+  const onSend = useCallback(
+    (draft: Draft) => {
+      enqueue(queryClient, sessionId, chat.jid, draft);
       setReply(null);
-      setPtt(false);
-      setSendError(null);
-      typingAt.current = 0;
-      toBottom();
-      input.current?.focus();
+      requestAnimationFrame(() => scroller.current?.scrollTo({ top: 0, behavior: 'smooth' }));
     },
-    onError: (err) => setSendError(errorMessage(err)),
-  });
-
-  const canSend = connected && !send.isPending && (text.trim().length > 0 || file !== null);
-  const submit = (e?: FormEvent) => {
-    e?.preventDefault();
-    if (canSend) send.mutate();
-  };
-  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-      e.preventDefault();
-      submit();
-    }
-    if (e.key === 'Escape' && reply) setReply(null);
-  };
-  const pickFile = (f: File | undefined) => {
-    if (!f) return;
-    if (f.size > UPLOAD_MAX_BYTES) return setSendError(c.composer.tooLarge(UPLOAD_MAX_BYTES / 1024 / 1024));
-    setSendError(null);
-    setFile(f);
-    setPtt(false);
-    input.current?.focus();
-  };
-
-  // Reply / focus when a chat opens or a reply is picked.
-  useEffect(() => {
-    input.current?.focus();
-  }, [chat.jid, reply]);
+    [queryClient, sessionId, chat.jid],
+  );
+  const cancelReply = useCallback(() => setReply(null), []);
+  const shownIds = useMemo(() => new Set(list.map((m) => m.id)), [list]);
+  // Once the list holds the real message, its "sending" stand-in goes.
+  useEffect(() => settle(sessionId, chat.jid, (id) => shownIds.has(id)), [shownIds, pending, sessionId, chat.jid]);
+  const outgoing = useMemo(
+    () => (q ? [] : pending.filter((p) => p.realId === undefined || !shownIds.has(p.realId)).map((p, i) => ({ p, m: pendingMessage(p, i) }))),
+    [pending, shownIds, q],
+  );
 
   const [menu, setMenu] = useState(false);
   const [lightbox, setLightbox] = useState<number | null>(null);
-  const quotedAuthor = (fromMe: boolean, participant: string | null) => (fromMe ? c.you : chat.isGroup && participant ? `+${participant.split('@')[0]}` : title);
-
-  const replyText = reply ? textOf(reply) : null;
+  // Stable callbacks keep the (memoized) bubbles from re-rendering on every change above them.
+  const quotedAuthor = useCallback(
+    (fromMe: boolean, participant: string | null) => (fromMe ? c.you : chat.isGroup && participant ? `+${participant.split('@')[0]}` : title),
+    [c.you, chat.isGroup, title],
+  );
+  const openMedia = useCallback((m: ChatMessage) => setLightbox(images.findIndex((x) => x.id === m.id)), [images]);
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
@@ -432,9 +385,9 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
         </button>
         <button type="button" onClick={onToggleInfo} className="flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1 text-start transition-colors hover:bg-raised/60">
           <Avatar name={title} id={chat.jid} picture={picture} group={chat.isGroup} online={livePresence(presence)?.presence === 'available'} />
-          <span className="min-w-0">
-            <span dir="auto" className="block truncate font-semibold">
-              {chat.name ? title : <span className="ltr font-mono">{title}</span>}
+          <span className="pii min-w-0">
+            <span className="block truncate text-start font-semibold">
+              {chat.name ? <span dir="auto">{title}</span> : <span className="ltr font-mono">{title}</span>}
             </span>
             <span className="block truncate text-xs text-muted">
               <PresenceLine chat={chat} presence={presence} />
@@ -522,6 +475,7 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
             value={rawQuery}
             onChange={(e) => setRawQuery(e.target.value)}
             onKeyDown={(e) => e.key === 'Escape' && setSearching(false)}
+            dir={rawQuery ? 'auto' : undefined}
             placeholder={c.searchIn}
             className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted"
           />
@@ -557,32 +511,55 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
                   ) : null}
                 </div>
                 {list.length === 0 && <p className="mx-auto mt-10 w-fit rounded-lg bg-card/90 px-4 py-2 text-sm text-muted shadow-sm">{q ? c.searchResults(0) : c.noMessages}</p>}
-                {items.map((item) =>
-                  item.kind === 'day' ? (
-                    <div key={item.key} className="sticky top-2 z-[5] my-3 flex justify-center">
-                      <span className="rounded-lg bg-card/95 px-3 py-1 text-xs font-medium text-muted shadow-sm ring-1 ring-line/60 backdrop-blur">{item.label}</span>
-                    </div>
-                  ) : item.kind === 'unread' ? (
-                    <div key={item.key} className="my-3 flex justify-center bg-brand/[0.07] py-1.5">
-                      <span className="rounded-full bg-card px-3 py-0.5 text-xs font-semibold text-brand shadow-sm">{c.unreadDivider(item.n)}</span>
-                    </div>
-                  ) : (
-                    <div key={item.key} className={cx('animate-fade-in', reactions.has(item.m.waMessageId ?? '') && 'mb-3')}>
-                      <Bubble
-                        m={item.m}
-                        first={item.first}
-                        sender={item.sender}
-                        reactions={item.m.waMessageId ? reactions.get(item.m.waMessageId) : undefined}
-                        highlight={q || undefined}
-                        quotedAuthor={quotedAuthor}
-                        onReply={setReply}
-                        onOpenMedia={(m) => setLightbox(images.findIndex((x) => x.id === m.id))}
-                        onJump={jump}
-                        onOpenChat={onOpenPhone}
-                      />
-                    </div>
-                  ),
-                )}
+                {sections.map((section) => (
+                  <div key={section.key}>
+                    {section.label !== null && (
+                      <div className="sticky top-2 z-[5] my-3 flex justify-center">
+                        <span className="rounded-lg bg-card/95 px-3 py-1 text-xs font-medium text-muted shadow-sm ring-1 ring-line/60 backdrop-blur">{section.label}</span>
+                      </div>
+                    )}
+                    {section.items.map((item) =>
+                      item.kind === 'unread' ? (
+                        <div key={item.key} className="my-3 flex justify-center bg-brand/[0.07] py-1.5">
+                          <span className="rounded-full bg-card px-3 py-0.5 text-xs font-semibold text-brand shadow-sm">{c.unreadDivider(item.n)}</span>
+                        </div>
+                      ) : (
+                        <div key={item.key} className={cx('animate-fade-in [contain-intrinsic-size:auto_72px] [content-visibility:auto]', reactions.has(item.m.waMessageId ?? '') && 'mb-3')}>
+                          <Bubble
+                            m={item.m}
+                            first={item.first}
+                            sender={item.sender}
+                            reactions={item.m.waMessageId ? reactions.get(item.m.waMessageId) : undefined}
+                            highlight={q || undefined}
+                            quotedAuthor={quotedAuthor}
+                            onReply={setReply}
+                            onOpenMedia={openMedia}
+                            onJump={jump}
+                            onOpenChat={onOpenPhone}
+                          />
+                        </div>
+                      ),
+                    )}
+                  </div>
+                ))}
+                {outgoing.map(({ p, m }, i) => (
+                  <div key={p.ref} className="animate-fade-up">
+                    <Bubble
+                      m={m}
+                      first={i === 0 && list.at(-1)?.direction !== 'out'}
+                      quotedAuthor={quotedAuthor}
+                      localSrc={p.localSrc}
+                      pending={{
+                        failed: p.state === 'failed',
+                        error: p.error,
+                        onRetry: () => retry(queryClient, sessionId, chat.jid, p.ref),
+                        onDiscard: () => discard(sessionId, chat.jid, p.ref),
+                      }}
+                      onReply={setReply}
+                      onOpenMedia={openMedia}
+                    />
+                  </div>
+                ))}
               </>
             )}
           </div>
@@ -602,108 +579,7 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
         )}
       </div>
 
-      {/* composer */}
-      <form onSubmit={submit} className="shrink-0 border-t border-line/60 bg-card/80 px-2 py-2.5 backdrop-blur md:px-4">
-        {!connected && (
-          <p className="mb-2 flex items-center gap-2 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
-            <WifiOff className="size-4 shrink-0" /> {c.composer.disconnected}
-          </p>
-        )}
-        {sendError && (
-          <p role="alert" className="mb-2 flex items-start justify-between gap-2 rounded-md bg-red-500/10 px-3 py-2 text-xs text-red-400">
-            <span>
-              {c.errors.send}: {sendError}
-            </span>
-            <button type="button" onClick={() => setSendError(null)} aria-label={t.common.close}>
-              <X className="size-3.5" />
-            </button>
-          </p>
-        )}
-        {reply && (
-          <div className="animate-fade-up mb-2 flex items-center gap-2 overflow-hidden rounded-lg bg-raised ps-0">
-            <span className="w-1 self-stretch bg-brand" />
-            <Reply className={cx('size-4 shrink-0 text-brand', flip)} />
-            <div className="min-w-0 flex-1 py-1.5">
-              <p className="text-xs font-semibold text-brand">
-                {c.replyingTo} {reply.direction === 'out' ? c.you : (reply.content.pushName ?? title)}
-              </p>
-              <p dir="auto" className="truncate text-xs text-muted">
-                {replyText || <TypeLabel type={reply.type} />}
-              </p>
-            </div>
-            <button type="button" onClick={() => setReply(null)} className="me-2 rounded p-1 text-muted hover:text-ink" aria-label={c.cancelReply}>
-              <X className="size-4" />
-            </button>
-          </div>
-        )}
-        {file && (
-          <div className="animate-fade-up mb-2 flex items-center gap-3 rounded-lg bg-raised p-2">
-            {preview ? (
-              <img src={preview} alt="" className="size-14 rounded-md object-cover" />
-            ) : (
-              <span className="flex size-14 items-center justify-center rounded-md bg-bg text-muted">{file.type.startsWith('image/') ? <ImageIcon className="size-6" /> : <FileText className="size-6" />}</span>
-            )}
-            <div className="min-w-0 flex-1">
-              <p dir="auto" className="truncate text-sm font-medium">
-                {file.name}
-              </p>
-              <p className="text-xs text-muted">{formatBytes(file.size)}</p>
-              {file.type.startsWith('audio/') && (
-                <label className="mt-1 flex items-center gap-1.5 text-xs text-ink-2">
-                  <input type="checkbox" checked={ptt} onChange={(e) => setPtt(e.target.checked)} className="accent-[var(--color-brand)]" />
-                  {c.composer.voiceNote}
-                </label>
-              )}
-            </div>
-            <button type="button" onClick={() => setFile(null)} className="rounded p-1 text-muted hover:text-ink" aria-label={c.composer.removeFile}>
-              <X className="size-4" />
-            </button>
-          </div>
-        )}
-        <div className="flex items-end gap-2">
-          {/* One rounded field: attach, text, then send beside it. */}
-          <div className="flex min-w-0 flex-1 items-end gap-1 rounded-2xl border border-line bg-bg p-1 shadow-xs transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/30">
-            <button
-              type="button"
-              onClick={() => fileInput.current?.click()}
-              disabled={!connected}
-              className="flex size-9 shrink-0 items-center justify-center rounded-xl text-muted transition-colors hover:bg-raised hover:text-ink disabled:opacity-40"
-              aria-label={c.composer.attach}
-              title={c.composer.attach}
-            >
-              <Paperclip className="size-[18px]" />
-            </button>
-            <input ref={fileInput} type="file" className="hidden" onChange={(e) => (pickFile(e.target.files?.[0]), (e.target.value = ''))} />
-            <textarea
-              ref={input}
-              rows={1}
-              value={text}
-              onChange={(e) => onType(e.target.value)}
-              onKeyDown={onKeyDown}
-              onPaste={(e) => {
-                const pasted = [...e.clipboardData.files][0];
-                if (pasted) {
-                  e.preventDefault();
-                  pickFile(pasted);
-                }
-              }}
-              dir="auto"
-              placeholder={file ? c.composer.caption : c.composer.placeholder}
-              aria-label={c.composer.placeholder}
-              title={c.composer.hint}
-              className="code-scroll max-h-40 min-h-9 flex-1 resize-none bg-transparent px-2 py-2 text-sm leading-5 text-ink outline-none placeholder:text-muted"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={!canSend}
-            className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-brand text-on-brand shadow-[0_8px_24px_-10px] shadow-brand/70 transition-[transform,opacity] hover:-translate-y-0.5 active:translate-y-0 disabled:translate-y-0 disabled:opacity-40 disabled:shadow-none"
-            aria-label={c.composer.send}
-          >
-            {send.isPending ? <Loader2 className="size-5 animate-spin" /> : <SendHorizontal className={cx('size-5', flip)} />}
-          </button>
-        </div>
-      </form>
+      <Composer sessionId={sessionId} jid={chat.jid} connected={connected} title={title} reply={reply} onCancelReply={cancelReply} onSend={onSend} />
 
       {lightbox !== null && lightbox >= 0 && <Lightbox items={images} index={lightbox} onIndex={setLightbox} onClose={() => setLightbox(null)} />}
 

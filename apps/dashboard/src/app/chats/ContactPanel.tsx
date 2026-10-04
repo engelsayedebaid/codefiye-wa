@@ -36,7 +36,7 @@ function Gallery({ sessionId, jid, kind }: { sessionId: string; jid: string; kin
           <li key={m.id}>
             <a href={mediaUrl(m.id, true)} className="flex items-center gap-3 rounded-lg p-2 transition-colors hover:bg-raised">
               <FileText className="size-8 shrink-0 text-rose-400" />
-              <span className="min-w-0 flex-1">
+              <span className="min-w-0 flex-1 pii">
                 <span dir="auto" className="block truncate text-sm">
                   {m.content.media?.fileName ?? m.content.fileName ?? t.chats.media.document}
                 </span>
@@ -111,7 +111,7 @@ export function ContactPanel({
         <h2 className="font-semibold">{p.title}</h2>
       </header>
       <div className="code-scroll min-h-0 flex-1 space-y-5 overflow-y-auto p-4">
-        <div className="animate-fade-up flex flex-col items-center text-center">
+        <div className="pii animate-fade-up flex flex-col items-center text-center">
           <Avatar name={title} id={chat.jid} picture={picture} group={chat.isGroup} size="xl" />
           <h3 dir="auto" className="mt-3 text-lg font-semibold">
             {chat.name ? title : <span className="ltr font-mono">{title}</span>}

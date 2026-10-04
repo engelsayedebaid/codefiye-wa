@@ -10,14 +10,21 @@ export type OutboundContent = (
   | { type: 'text'; text: string }
   | { type: 'image'; url: string; caption?: string }
   | { type: 'video'; url: string; caption?: string }
-  | { type: 'audio'; url: string; ptt?: boolean }
+  /** `seconds`: a voice note's length, shown before it is played. */
+  | { type: 'audio'; url: string; ptt?: boolean; seconds?: number }
   | { type: 'document'; url: string; fileName?: string; mimetype?: string; caption?: string }
   | { type: 'sticker'; url: string }
   | { type: 'location'; latitude: number; longitude: number; name?: string; address?: string }
   | { type: 'contact'; name: string; phone: string }
   /** WhatsApp poll; `selectableCount` 0 = any number of answers. Votes land in `content.votes` (voter → chosen options). */
   | { type: 'poll'; name: string; options: string[]; selectableCount: number }
-) & { quote?: OutboundQuote };
+) & {
+  quote?: OutboundQuote;
+  /** Typed by a person on the chats page (not the API or a campaign): sent without the artificial "typing…" pause. */
+  sentFrom?: 'chats';
+  /** Set with `sentFrom: 'chats'` when the contact has messaged this number: no "is it on WhatsApp?" lookup needed. */
+  reachable?: true;
+};
 
 const httpUrl = z.url({ protocol: /^https?$/, error: 'Must be an http(s) URL' });
 

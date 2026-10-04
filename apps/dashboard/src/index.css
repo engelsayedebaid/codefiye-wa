@@ -562,6 +562,9 @@ body {
   --chat-dots: rgb(255 255 255 / 0.035);
   /* Ink for the doodle overlay (mask-image, like WhatsApp's own wallpaper). */
   --chat-doodle-ink: rgb(255 255 255 / 0.055);
+  /* Dark mode gets a geometric batik tile; light gets the classic WhatsApp doodles. */
+  --chat-doodle: url('/chat-doodle-dark.svg');
+  --chat-doodle-size: 400px;
   --chat-in: #1e2023;
   --chat-out: #10402d;
   --chat-out-ring: rgb(52 211 153 / 0.12);
@@ -570,6 +573,8 @@ body {
   --chat-wall: #efeae2;
   --chat-dots: rgb(0 0 0 / 0.045);
   --chat-doodle-ink: rgb(0 0 0 / 0.06);
+  --chat-doodle: url('/chat-doodle.svg');
+  --chat-doodle-size: 460px;
   --chat-in: #ffffff;
   --chat-out: #d9fdd3;
   --chat-out-ring: rgb(17 23 20 / 0.06);
@@ -599,12 +604,12 @@ body {
   position: absolute;
   inset: 0;
   background: var(--chat-doodle-ink);
-  -webkit-mask-image: url('/chat-doodle.svg');
-  mask-image: url('/chat-doodle.svg');
+  -webkit-mask-image: var(--chat-doodle);
+  mask-image: var(--chat-doodle);
   -webkit-mask-repeat: repeat;
   mask-repeat: repeat;
-  -webkit-mask-size: 580px auto;
-  mask-size: 580px auto;
+  -webkit-mask-size: var(--chat-doodle-size) auto;
+  mask-size: var(--chat-doodle-size) auto;
   pointer-events: none;
 }
 /* Wallpaper-picker swatches show the same doodle, tiled smaller. */
@@ -612,8 +617,39 @@ body {
   position: relative;
 }
 .wall-swatch::before {
-  -webkit-mask-size: 180px auto;
-  mask-size: 180px auto;
+  -webkit-mask-size: 150px auto;
+  mask-size: 150px auto;
+}
+
+/* Hairline between chat rows, inset past the avatar so it starts at the text column. */
+.chat-rows > li {
+  position: relative;
+}
+.chat-rows > li + li::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  inset-inline-start: 66px; /* row padding + avatar width + gap */
+  inset-inline-end: 0;
+  height: 1px;
+  background: color-mix(in srgb, var(--color-line) 55%, transparent);
+  pointer-events: none;
+}
+
+/* Private mode: blur personal content; hover a blurred element to peek. */
+.privacy-on .pii {
+  filter: blur(7px);
+  transition: filter 0.2s ease;
+}
+@media (hover: hover) {
+  .privacy-on .pii:hover {
+    filter: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .privacy-on .pii {
+    transition: none;
+  }
 }
 
 /* "typing…" dots. */

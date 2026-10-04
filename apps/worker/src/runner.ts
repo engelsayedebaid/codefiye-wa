@@ -109,6 +109,8 @@ const PRESENCE_RENEW_MS = 5 * 60_000;
 const LOOKUP_TIMEOUT_MS = 10_000;
 /** Sending: generous for media (uploads to WhatsApp's CDN), tight for everything else. */
 const SEND_TIMEOUT_MS = { media: 5 * 60_000, other: 45_000 };
+/** A send slower than this (claim → stored) is logged with its stage timings. */
+const SLOW_SEND_MS = 1_500;
 const MEDIA_TYPES = new Set(['image', 'video', 'audio', 'document', 'sticker']);
 /**
  * Waits between attempts of a write that must not be lost (~3 min in all): WhatsApp delivers an
@@ -709,11 +711,19 @@ export class SessionRunner {
     const recipient = job.pace !== null && job.content.type !== 'poll';
     /** WhatsApp took the message: from here on, an error is ours to record, not a failed send. */
     let accepted = false;
+    /** Where the time of a send goes (logged per message; see SLOW_SEND_MS). */
+    const started = performance.now();
+    const at: Record<string, number> = {};
+    const lap = (stage: string) => void (at[stage] = Math.round(performance.now() - started));
     try {
-      if (isUserJid(jid) && !(await this.recipientExists(provider, jid))) {
+      // A reply to someone who has written to us needs no lookup (one WhatsApp round trip saved).
+      const known = job.content.sentFrom === 'chats' && job.content.reachable === true;
+      if (isUserJid(jid) && !known && !(await this.recipientExists(provider, jid))) {
         return await this.fail(job.id, 'Recipient is not on WhatsApp');
       }
+      lap('lookup');
       await this.pace(provider, job, recipient);
+      lap('pace');
       const media = MEDIA_TYPES.has(job.content.type);
       const { waMessageId, raw } = await withTimeout(
         provider.send(jid, job.content),
@@ -721,6 +731,7 @@ export class SessionRunner {
         'WhatsApp did not confirm this message in time. It may still be delivered — check before resending.',
       );
       accepted = true;
+      lap('whatsapp');
       // Receipts that arrive during this write wait for it (see onReceipt).
       const stored = this.persist('mark message sent', () => markSent(sql, job.id, waMessageId, raw));
       this.storing.set(waMessageId, stored);
@@ -731,6 +742,11 @@ export class SessionRunner {
         this.campaignFailures = 0;
       }
       await this.publish({ type: 'messages.update', data: { id: job.id, status: 'sent', error: null } });
+      lap('stored');
+      // Cumulative ms since the job was claimed: lookup → pace → whatsapp (accepted) → stored (+ event).
+      const timings = { messageId: job.id, type: job.content.type, ms: at, skippedLookup: known };
+      if (at.stored! > SLOW_SEND_MS) this.log.info(timings, 'slow send');
+      else this.log.debug(timings, 'message sent');
       const early = this.earlyReceipts.get(waMessageId);
       if (early) {
         this.earlyReceipts.delete(waMessageId);
@@ -780,11 +796,14 @@ export class SessionRunner {
     const { min, max } = this.ctx.sendDelay;
     const gap = max > min ? randomInt(min, max + 1) : min;
     const isText = job.content.type === 'text';
-    let wait = Math.max(this.lastSentAt + gap - Date.now(), isText ? min : 0);
+    // A reply typed on the chats page already showed "typing…" while it was written (see chatState):
+    // it only keeps the gap from the previous send, without a pause of its own.
+    const typed = job.content.sentFrom === 'chats';
+    let wait = Math.max(this.lastSentAt + gap - Date.now(), isText && !typed ? min : 0);
     if (recipient && job.pace) wait = Math.max(wait, this.lastCampaignAt + BROADCAST_PACES[job.pace].gap.min * 1000 - Date.now());
     if (wait <= 0) return;
     // "typing…" only for the last stretch of a long wait.
-    const typing = isText ? Math.min(wait, Math.max(min, gap)) : 0;
+    const typing = isText && !typed ? Math.min(wait, Math.max(min, gap)) : 0;
     if (wait > typing) await sleep(wait - typing);
     if (typing > 0) {
       await provider.setTyping(job.remote_jid, true).catch(() => {});
