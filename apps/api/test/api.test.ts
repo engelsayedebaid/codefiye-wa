@@ -969,10 +969,10 @@ describe.skipIf(!url)('api (integration)', () => {
         [online[1], '201000000002@s.whatsapp.net', 'Hi Omar, *30% off* today'],
         [online[0], '201000000003@s.whatsapp.net', 'Hi Mona, *30% off* today'],
       ]);
-      // Line 1's second message waits 10–20s after its first; the worker's queue holds it until then.
+      // Line 1's second message waits 15–35s after its first (`normal`); the worker's queue holds it until then.
       const gap = rows[2]!.not_before.getTime() - rows[0]!.not_before.getTime();
-      expect(gap).toBeGreaterThanOrEqual(10_000);
-      expect(gap).toBeLessThanOrEqual(20_000);
+      expect(gap).toBeGreaterThanOrEqual(15_000);
+      expect(gap).toBeLessThanOrEqual(35_000);
       expect((await claimNextOutbound(sql, online[0]!))?.remote_jid).toBe('201000000001@s.whatsapp.net');
       expect(await claimNextOutbound(sql, online[0]!)).toBeNull();
 
@@ -999,12 +999,63 @@ describe.skipIf(!url)('api (integration)', () => {
       );
       expect(res.statusCode, res.body).toBe(201);
       const rows = await sql<{ type: string; not_before: Date | null }[]>`select type, not_before from messages where broadcast_id = ${res.json().data.id} order by id`;
-      expect(rows).toEqual([
-        { type: 'image', not_before: null },
-        { type: 'poll', not_before: null },
-      ]);
+      expect(rows.map((r) => r.type)).toEqual(['image', 'poll']);
+      // Even `fast` is scheduled, and the poll goes out with its card.
+      expect(rows[0]!.not_before).not.toBeNull();
+      expect(rows[1]!.not_before).toEqual(rows[0]!.not_before);
       const detail = (await call('GET', `/api/broadcasts/${res.json().data.id}`, admin.pat)).json().data;
       expect(detail.stats.queued).toBe(1);
+      await call('POST', `/api/broadcasts/${res.json().data.id}/cancel`, admin.pat);
+    });
+
+    it('keeps to the sending hours and reports the schedule', async () => {
+      const window = { from: 9, to: 21, timeZone: 'Asia/Riyadh' };
+      const res = await call('POST', '/api/broadcasts', admin.pat, body({ window }));
+      expect(res.statusCode, res.body).toBe(201);
+      const rows = await sql<{ local: number }[]>`
+        select extract(hour from not_before at time zone 'Asia/Riyadh')::int as local from messages where broadcast_id = ${res.json().data.id}`;
+      expect(rows.every((r) => r.local >= 9 && r.local < 21)).toBe(true);
+      const detail = (await call('GET', `/api/broadcasts/${res.json().data.id}`, admin.pat)).json().data;
+      expect(detail).toMatchObject({ window, finishesAt: res.json().data.finishesAt });
+      expect(detail.nextAt).not.toBeNull();
+      expect(detail.sessions.every((s: { shield: unknown; restingUntil: unknown }) => s.shield === null && s.restingUntil === null)).toBe(true);
+      await call('POST', `/api/broadcasts/${res.json().data.id}/cancel`, admin.pat);
+
+      const bad = await call('POST', '/api/broadcasts', admin.pat, body({ window: { from: 21, to: 9, timeZone: 'Mars/Olympus' } }));
+      expect(bad.statusCode).toBe(422);
+    });
+
+    it('skips recipients who replied stop', async () => {
+      await sql`insert into opt_outs (workspace_id, phone) values (${admin.id}, '+201000000002')`;
+      const res = await call('POST', '/api/broadcasts', admin.pat, body());
+      expect(res.statusCode, res.body).toBe(201);
+      expect(res.json().data).toMatchObject({ recipients: 2, skippedCount: 3 });
+      expect(res.json().data.skipped).toContainEqual({ to: '+201000000002', reason: 'opted_out' });
+      await call('POST', `/api/broadcasts/${res.json().data.id}/cancel`, admin.pat);
+      await sql`delete from opt_outs where workspace_id = ${admin.id}`;
+    });
+
+    it('rests a number for a day after WhatsApp restricted it', async () => {
+      await sql`update sessions set restricted_at = now() - interval '2 hours' where id = ${online[1]!}`;
+      const res = await call('POST', '/api/broadcasts', admin.pat, body());
+      expect(res.statusCode).toBe(409);
+      expect(res.json().code).toBe('number_resting');
+      const numbers = (await call('GET', '/api/broadcasts/numbers', admin.pat)).json().data as { id: string; restingUntil: string | null }[];
+      expect(numbers.find((n) => n.id === online[1])!.restingUntil).not.toBeNull();
+      expect(numbers.find((n) => n.id === online[0])!.restingUntil).toBeNull();
+      // A day later it may send again.
+      await sql`update sessions set restricted_at = now() - interval '25 hours' where id = ${online[1]!}`;
+      const ok = await call('POST', '/api/broadcasts', admin.pat, body());
+      expect(ok.statusCode, ok.body).toBe(201);
+      await call('POST', `/api/broadcasts/${ok.json().data.id}/cancel`, admin.pat);
+    });
+
+    it('reports each number’s campaign load for the planner', async () => {
+      const res = await call('POST', '/api/broadcasts', admin.pat, body());
+      const numbers = (await call('GET', '/api/broadcasts/numbers', admin.pat)).json().data as { id: string; queued: number; sent24h: number; history: number[] }[];
+      const line1 = numbers.find((n) => n.id === online[0])!;
+      expect(line1).toMatchObject({ queued: 2, sent24h: 0 });
+      expect(line1.history).toHaveLength(2);
       await call('POST', `/api/broadcasts/${res.json().data.id}/cancel`, admin.pat);
     });
   });

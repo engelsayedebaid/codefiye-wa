@@ -37,8 +37,8 @@ export function otpMatches(key: Buffer, verificationId: string, code: string, st
 
 /** Fallback texts; admins can override per language in `settings` (`otp_text`). `{{code}}` and `{{minutes}}` placeholders. */
 export const OTP_DEFAULT_TEXTS = {
-  ar: 'رمز التحقق الخاص بك في wa-platform هو: {{code}}\nصالح لمدة {{minutes}} دقائق. لا تشاركه مع أي شخص.',
-  en: "Your wa-platform verification code is: {{code}}\nIt expires in {{minutes}} minutes. Don't share it with anyone.",
+  ar: 'رمز التحقق الخاص بك في WA CodeFiye هو: {{code}}\nصالح لمدة {{minutes}} دقائق. لا تشاركه مع أي شخص.',
+  en: "Your WA CodeFiye verification code is: {{code}}\nIt expires in {{minutes}} minutes. Don't share it with anyone.",
 } as const;
 
 const MINUTES_RE = /\{\{\s*minutes\s*\}\}/g;

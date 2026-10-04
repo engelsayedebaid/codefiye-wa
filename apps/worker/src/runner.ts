@@ -5,25 +5,45 @@ import {
   claimNextOutbound,
   failInterrupted,
   loadOutboundRaw,
+  markChatRead,
   markFailed,
   markSent,
   notify,
+  notifyMany,
   pgAuthStore,
   type QueuedMessage,
+  recordOptOut,
   recordPollVote,
+  replanCampaigns,
   requeue,
   type SessionSettings,
+  setChatName,
   type Sql,
+  stopCampaigns,
 } from '@wa/db';
 import {
   BaileysProvider,
+  type EchoMessage,
+  type HistoryAnchor,
   type InboundMessage,
   type MediaFetcher,
   ProviderError,
   type ProviderEvents,
   useEncryptedAuthState,
 } from '@wa/provider';
-import { CHANNELS, type DesiredState, isUserJid, jidToPhone, type SessionStatus, type WaEvent } from '@wa/shared';
+import {
+  BROADCAST_PACES,
+  CHANNELS,
+  type DesiredState,
+  isGroupJid,
+  isUserJid,
+  jidToPhone,
+  optOutReply,
+  type SessionStatus,
+  SHIELD_STOPS,
+  type ShieldStop,
+  type WaEvent,
+} from '@wa/shared';
 import type { Logger } from 'pino';
 import { MediaError } from './media';
 import { TimeoutError, withTimeout } from './timeout';
@@ -49,21 +69,40 @@ type SessionPatch = Partial<{
   last_error: string | null;
   phone: string | null;
   connected_at: Date;
+  restricted_at: Date;
 }>;
 
 type EventInput = WaEvent extends infer E ? (E extends WaEvent ? Omit<E, 'workspaceId' | 'sessionId'> : never) : never;
 
 const MAX_RECONNECTS = 20;
 const ON_WHATSAPP_TTL_MS = 24 * 60 * 60_000;
+/** History sync: rows per insert, messages asked per chat, and the gap between per-chat requests. */
+const HISTORY_CHUNK = 200;
+const HISTORY_PAGE = 50;
+const HISTORY_REQUEST_GAP_MS = 400;
+/** Profile pictures fetched in parallel for the chat list. */
+const PICTURE_CONCURRENCY = 4;
+/** How long the account stays online after the chats page last asked (it renews every minute). */
+const WATCH_LEASE_MS = 75_000;
 /** Number lookups: Baileys would wait 60s on a dead socket. */
 const LOOKUP_TIMEOUT_MS = 10_000;
 /** Sending: generous for media (uploads to WhatsApp's CDN), tight for everything else. */
 const SEND_TIMEOUT_MS = { media: 5 * 60_000, other: 45_000 };
 const MEDIA_TYPES = new Set(['image', 'video', 'audio', 'document', 'sticker']);
 
+/**
+ * A campaign message due longer ago than this means the number fell behind (offline, restarted):
+ * its campaigns are re-planned rather than caught up in a burst.
+ */
+const REPLAN_AFTER_MS = 60_000;
+/** Failed campaign sends in a row before the shield stops the number's campaigns. */
+const MAX_CAMPAIGN_FAILURES = 5;
+/** WhatsApp's error ack for a number that may not start new chats right now. */
+const RESTRICTED = '463';
+
 /** Why WhatsApp rejected a message (the code of its error ack), in words a customer can act on. */
 const REJECTIONS: Record<string, string> = {
-  '463':
+  [RESTRICTED]:
     'WhatsApp refused: this number may not start new chats right now (a new or restricted number, or the contact has never messaged it). Ask the contact to message this number first — resending makes the restriction worse.',
   '479': 'WhatsApp rejected the message (stale device session). Send it again.',
 };
@@ -89,6 +128,9 @@ export class SessionRunner {
   private draining = false;
   private drainRequested = false;
   private lastSentAt = 0;
+  /** Last campaign recipient sent, and campaign sends that failed since (the shield, README §10). */
+  private lastCampaignAt = 0;
+  private campaignFailures = 0;
   private readonly onWhatsApp = new Map<string, { exists: boolean; at: number }>();
   /**
    * Receipts can beat our own write of the WhatsApp id: an error ack often arrives before the
@@ -98,6 +140,11 @@ export class SessionRunner {
   private readonly storing = new Map<string, Promise<unknown>>();
   private readonly earlyReceipts = new Map<string, ProviderEvents['receipt']>();
   private readonly log: Logger;
+  /** Groups whose subject we already looked up. */
+  private readonly groupNames = new Set<string>();
+  /** The account shows as online until then: someone is watching a chat on the chats page (see `watchChat`). */
+  private onlineUntil = 0;
+  private onlineTimer: NodeJS.Timeout | null = null;
 
   constructor(
     readonly sessionId: string,
@@ -140,6 +187,10 @@ export class SessionRunner {
       provider.on('message', (m) => this.track(this.onMessage(m)));
       provider.on('receipt', (r) => this.track(this.onReceipt(r)));
       provider.on('pollVote', (v) => this.track(this.onPollVote(v)));
+      provider.on('echo', (m) => this.track(this.onEcho(m)));
+      provider.on('presence', (p) => this.track(this.publish({ type: 'presence.update', data: p })));
+      provider.on('chatRead', ({ chatJid }) => this.track(this.onChatRead(chatJid)));
+      provider.on('history', (h) => this.track(this.onHistory(h)));
       await provider.connect();
     } catch (err) {
       this.log.error({ err }, 'connect failed');
@@ -172,6 +223,8 @@ export class SessionRunner {
       case 'restart_required': // expected right after a QR scan / pairing
         return this.connect();
       case 'logged_out':
+        // Unlinked from the phone, or banned: either way its campaigns must not resume on a relink.
+        await this.shieldStop('loggedOut');
         await pgAuthStore(this.ctx.sql, this.sessionId).clear();
         return this.finish('logged_out', 'The device was logged out from the phone');
       case 'qr_timeout':
@@ -188,19 +241,135 @@ export class SessionRunner {
 
   private async onMessage(m: InboundMessage) {
     const { sql } = this.ctx;
-    const content = { from: m.from, fromPhone: jidToPhone(m.from), pushName: m.pushName, text: m.text, isGroup: m.isGroup, timestamp: m.timestamp };
+    const content = {
+      from: m.from,
+      fromPhone: jidToPhone(m.from),
+      pushName: m.pushName,
+      text: m.text,
+      isGroup: m.isGroup,
+      timestamp: m.timestamp,
+      ...m.extras,
+    };
     const [row] = await sql<{ id: number }[]>`
       insert into messages (workspace_id, session_id, direction, remote_jid, wa_message_id, type, content, raw, status)
       values (${this.workspaceId}, ${this.sessionId}, 'in', ${m.chatJid}, ${m.waMessageId}, ${m.type},
-              ${sql.json(content)}, ${sql.json(m.raw as never)}, 'received')
+              ${sql.json(content as never)}, ${sql.json(m.raw as never)}, 'received')
       on conflict (session_id, wa_message_id) do nothing
       returning id`;
     if (!row) return; // duplicate delivery
-    await this.publish({ type: 'messages.received', data: { id: row.id, from: m.from, type: m.type, text: m.text } });
-    if (this.settings.autoRead) await this.provider?.markRead([m]).catch((err) => this.log.warn({ err }, 'markRead failed'));
+    await this.publish({ type: 'messages.received', data: { id: row.id, from: m.from, type: m.type, text: m.text, chatJid: m.chatJid } });
+    if (this.settings.autoRead) {
+      await this.provider?.markRead([m]).catch((err) => this.log.warn({ err }, 'markRead failed'));
+      await markChatRead(sql, this.sessionId, m.chatJid);
+    }
+    if (m.isGroup) await this.nameGroup(m.chatJid);
+    await this.onOptOutReply(m);
+  }
+
+  /**
+   * A message sent from the phone or another linked device. Stored as a sent outbound message so the
+   * chats page shows both sides; never treated as an opt-out reply or counted against a plan.
+   * Answering from the phone means the chat was read there.
+   */
+  private async onEcho(m: EchoMessage) {
+    const { sql } = this.ctx;
+    const content = { text: m.text, isGroup: m.isGroup, timestamp: m.timestamp, sentFrom: 'phone', ...m.extras };
+    const [row] = await sql<{ id: number }[]>`
+      insert into messages (workspace_id, session_id, direction, remote_jid, wa_message_id, type, content, raw, status, sent_at)
+      values (${this.workspaceId}, ${this.sessionId}, 'out', ${m.chatJid}, ${m.waMessageId}, ${m.type},
+              ${sql.json(content as never)}, ${sql.json(m.raw as never)}, 'sent', to_timestamp(${m.timestamp}))
+      on conflict (session_id, wa_message_id) do nothing
+      returning id`;
+    if (!row) return;
+    await this.publish({ type: 'messages.created', data: { id: row.id, chatJid: m.chatJid, direction: 'out', type: m.type } });
+    if (m.type !== 'reaction') await this.onChatRead(m.chatJid);
+    if (m.isGroup) await this.nameGroup(m.chatJid);
+  }
+
+  /**
+   * Past messages from the phone (a sync), stored with their real time and marked `history`: they never
+   * count as unread, trigger replies or opt-outs. Only media keeps the raw WAMessage (to download it).
+   */
+  private async onHistory({ messages, names }: ProviderEvents['history']) {
+    const { sql } = this.ctx;
+    let added = 0;
+    const chatJids = new Set<string>();
+    for (let i = 0; i < messages.length; i += HISTORY_CHUNK) {
+      const rows = messages.slice(i, i + HISTORY_CHUNK).map((m) => ({
+        direction: m.fromMe ? 'out' : 'in',
+        remote_jid: m.chatJid,
+        wa: m.waMessageId,
+        type: m.type,
+        content: m.fromMe
+          ? { text: m.text, isGroup: m.isGroup, timestamp: m.timestamp, sentFrom: 'phone', history: true, ...m.extras }
+          : { from: m.from, fromPhone: jidToPhone(m.from), pushName: m.pushName, text: m.text, isGroup: m.isGroup, timestamp: m.timestamp, history: true, ...m.extras },
+        raw: MEDIA_TYPES.has(m.type) ? m.raw : null,
+        status: m.fromMe ? 'sent' : 'received',
+        ts: m.timestamp,
+      }));
+      const inserted = await sql<{ remote_jid: string }[]>`
+        insert into messages (workspace_id, session_id, direction, remote_jid, wa_message_id, type, content, raw, status, created_at, sent_at)
+        select ${this.workspaceId}, ${this.sessionId}, x.direction, x.remote_jid, x.wa, x.type, x.content, x.raw, x.status,
+          to_timestamp(x.ts), case when x.direction = 'out' then to_timestamp(x.ts) end
+        from jsonb_to_recordset(${sql.json(rows as never)}) as x(direction text, remote_jid text, wa text, type text, content jsonb, raw jsonb, status text, ts float8)
+        on conflict (session_id, wa_message_id) do nothing
+        returning remote_jid`;
+      added += inserted.length;
+      for (const r of inserted) chatJids.add(r.remote_jid);
+    }
+    if (names.length) {
+      // Contact names only fill gaps (a WhatsApp name from their own messages wins); groups take their subject.
+      await sql`
+        update chats c set name = n.name
+        from jsonb_to_recordset(${sql.json(names as never)}) as n(jid text, name text)
+        where c.session_id = ${this.sessionId} and (c.jid = n.jid or c.alt_jid = n.jid)
+          and (c.name is null or c.jid like '%@g.us') and c.name is distinct from n.name`;
+    }
+    this.log.info({ messages: messages.length, added, names: names.length }, 'history sync');
+    const [only] = chatJids;
+    await this.publish({ type: 'chats.synced', data: { chatJid: chatJids.size === 1 ? only! : null, added } });
+  }
+
+  /** Asks the phone for older messages of each chat, a little apart. Results arrive as history events. */
+  fetchHistory(anchors: HistoryAnchor[]) {
+    const provider = this.live();
+    this.track(
+      (async () => {
+        for (const [i, anchor] of anchors.entries()) {
+          if (i > 0) await sleep(HISTORY_REQUEST_GAP_MS);
+          if (!provider.connected) return;
+          await provider.fetchHistory(anchor, HISTORY_PAGE).catch((err) => this.log.warn({ err }, 'history request failed'));
+        }
+      })(),
+    );
+  }
+
+  private async onChatRead(chatJid: string) {
+    const jid = await markChatRead(this.ctx.sql, this.sessionId, chatJid);
+    if (jid) await this.publish({ type: 'chat.read', data: { chatJid: jid } });
+  }
+
+  /** Groups are listed by their subject, asked of WhatsApp once per group while this runner lives. */
+  private async nameGroup(jid: string) {
+    if (!isGroupJid(jid) || this.groupNames.has(jid) || !this.provider) return;
+    this.groupNames.add(jid);
+    const subject = await withTimeout(this.provider.groupSubject(jid), LOOKUP_TIMEOUT_MS, 'group lookup timed out').catch(() => null);
+    if (subject) await setChatName(this.ctx.sql, this.sessionId, jid, subject);
+  }
+
+  /** "Stop" drops the sender from this workspace's campaigns (queued ones included), "start" brings them back. */
+  private async onOptOutReply(m: InboundMessage) {
+    const intent = m.isGroup ? null : optOutReply(m.text);
+    const phone = intent && jidToPhone(m.from);
+    if (!intent || !phone) return;
+    const dropped = await recordOptOut(this.ctx.sql, this.workspaceId, phone, intent);
+    this.log.info({ intent, dropped: dropped.length }, 'campaign opt-out reply');
+    await this.publishFailed(dropped, SHIELD_STOPS.optedOut);
   }
 
   private async onReceipt(receipt: ProviderEvents['receipt']) {
+    // Whichever message drew it (even one sent from the phone), the number is restricted now.
+    if (receipt.status === 'failed' && receipt.error === RESTRICTED) await this.onRestricted();
     const { waMessageId } = receipt;
     const pending = this.storing.get(waMessageId);
     if (pending) await pending.catch(() => {});
@@ -245,6 +414,22 @@ export class SessionRunner {
     }, EARLY_RECEIPT_TTL_MS).unref();
   }
 
+  /**
+   * WhatsApp refused to let this number start new chats: more campaign messages would only deepen the
+   * restriction, so its queued ones stop and new campaigns wait a day (the API reads `restricted_at`).
+   */
+  private async onRestricted() {
+    await this.write({ restricted_at: new Date() });
+    await this.shieldStop('restricted');
+  }
+
+  /** Fails the number's queued campaign messages, saying why. */
+  private async shieldStop(reason: ShieldStop) {
+    const stopped = await stopCampaigns(this.ctx.sql, this.sessionId, reason);
+    if (stopped.length) this.log.warn({ reason, stopped: stopped.length }, 'shield stopped campaign messages');
+    await this.publishFailed(stopped, SHIELD_STOPS[reason]);
+  }
+
   /** Keeps each voter's current choice on the poll row (keyed by phone when known). */
   private async onPollVote({ waMessageId, voter, voterPhone, selected }: ProviderEvents['pollVote']) {
     const who = voterPhone ?? voter;
@@ -267,6 +452,13 @@ export class SessionRunner {
             while (!this.stopped && this.connected) {
               const job = await claimNextOutbound(this.ctx.sql, this.sessionId);
               if (!job) break;
+              if (job.broadcast_id && job.late_ms > REPLAN_AFTER_MS) {
+                await requeue(this.ctx.sql, job.id);
+                const replanned = await replanCampaigns(this.ctx.sql, this.sessionId);
+                this.log.info({ lateMs: Math.round(job.late_ms), replanned }, 'campaign fell behind; re-planned instead of catching up');
+                if (!replanned) break;
+                continue;
+              }
               await this.sendOne(job);
             }
           } while (this.drainRequested && !this.stopped);
@@ -282,11 +474,13 @@ export class SessionRunner {
     const provider = this.provider;
     if (!provider) return requeue(sql, job.id);
     const jid = job.remote_jid;
+    // A campaign's buttons poll follows its card at once; recipients are what the campaign paces.
+    const recipient = job.pace !== null && job.content.type !== 'poll';
     try {
       if (isUserJid(jid) && !(await this.recipientExists(provider, jid))) {
         return await this.fail(job.id, 'Recipient is not on WhatsApp');
       }
-      await this.pace(provider, jid, job.content.type === 'text');
+      await this.pace(provider, job, recipient);
       const media = MEDIA_TYPES.has(job.content.type);
       const { waMessageId, raw } = await withTimeout(
         provider.send(jid, job.content),
@@ -298,6 +492,10 @@ export class SessionRunner {
       this.storing.set(waMessageId, stored);
       setTimeout(() => this.storing.delete(waMessageId), EARLY_RECEIPT_TTL_MS).unref();
       await stored;
+      if (recipient) {
+        this.lastCampaignAt = Date.now();
+        this.campaignFailures = 0;
+      }
       await this.publish({ type: 'messages.update', data: { id: job.id, status: 'sent', error: null } });
       const early = this.earlyReceipts.get(waMessageId);
       if (early) {
@@ -310,6 +508,7 @@ export class SessionRunner {
         // Failed, not requeued: it may have gone out, and a resend must stay the client's call (no duplicates).
         this.log.warn({ messageId: job.id }, 'send timed out');
         await this.fail(job.id, err.message);
+        if (job.pace) await this.onCampaignFailure();
         // A plain message that hangs means the socket is gone; reconnect instead of stalling the queue.
         if (!MEDIA_TYPES.has(job.content.type)) await this.restartSocket('Send timed out; reconnecting');
         return;
@@ -317,22 +516,40 @@ export class SessionRunner {
       const message = err instanceof MediaError || err instanceof ProviderError ? err.message : `Send failed: ${(err as Error).message}`;
       this.log.warn({ err, messageId: job.id }, 'send failed');
       await this.fail(job.id, message);
+      if (job.pace) await this.onCampaignFailure();
     } finally {
       this.lastSentAt = Date.now();
     }
   }
 
+  /** Failures in a row mean something is wrong with the number or the campaign: stop rather than push on. */
+  private async onCampaignFailure() {
+    this.campaignFailures += 1;
+    if (this.campaignFailures < MAX_CAMPAIGN_FAILURES) return;
+    this.campaignFailures = 0;
+    await this.shieldStop('failures');
+  }
+
   /**
    * Anti-ban pacing (README §4.4/§10): consecutive messages are spaced by a random gap, and text
    * shows "typing…" for at least SEND_DELAY_MIN_MS. A lone message isn't delayed beyond that.
+   * Campaign recipients are scheduled by their campaign's pace; this also keeps them at least its
+   * shortest gap apart when they run late, so catching up never turns into a burst.
    */
-  private async pace(provider: BaileysProvider, jid: string, isText: boolean) {
+  private async pace(provider: BaileysProvider, job: QueuedMessage, recipient: boolean) {
     const { min, max } = this.ctx.sendDelay;
     const gap = max > min ? randomInt(min, max + 1) : min;
-    const wait = Math.max(this.lastSentAt + gap - Date.now(), isText ? min : 0);
+    const isText = job.content.type === 'text';
+    let wait = Math.max(this.lastSentAt + gap - Date.now(), isText ? min : 0);
+    if (recipient && job.pace) wait = Math.max(wait, this.lastCampaignAt + BROADCAST_PACES[job.pace].gap.min * 1000 - Date.now());
     if (wait <= 0) return;
-    if (isText) await provider.setTyping(jid, true).catch(() => {});
-    await sleep(wait);
+    // "typing…" only for the last stretch of a long wait.
+    const typing = isText ? Math.min(wait, Math.max(min, gap)) : 0;
+    if (wait > typing) await sleep(wait - typing);
+    if (typing > 0) {
+      await provider.setTyping(job.remote_jid, true).catch(() => {});
+      await sleep(typing);
+    }
   }
 
   private async recipientExists(provider: BaileysProvider, jid: string): Promise<boolean> {
@@ -355,6 +572,15 @@ export class SessionRunner {
     await this.publish({ type: 'messages.update', data: { id, status: 'failed', error } });
   }
 
+  /** One `messages.update` per message, in a single round trip. */
+  private async publishFailed(ids: number[], error: string) {
+    await notifyMany(
+      this.ctx.sql,
+      CHANNELS.events,
+      ids.map((id): WaEvent => ({ type: 'messages.update', data: { id, status: 'failed', error }, workspaceId: this.workspaceId, sessionId: this.sessionId })),
+    );
+  }
+
   // --- operations called over RPC ---------------------------------------------------------------
 
   async requestPairingCode(phone: string): Promise<string> {
@@ -363,6 +589,70 @@ export class SessionRunner {
     await this.write({ status: 'pairing', pairing_code: code });
     await this.publish({ type: 'pairing.updated', data: { code } });
     return code;
+  }
+
+  private live(): BaileysProvider {
+    if (!this.provider?.connected) throw new ProviderError('not_connected', 'Session is not connected');
+    return this.provider;
+  }
+
+  /**
+   * Someone opened this chat on the chats page: subscribe to the contact's presence. WhatsApp only
+   * delivers presence to online clients, so the account shows online while anyone watches (the page
+   * renews this every minute) and goes back offline shortly after, letting the phone notify again.
+   */
+  async watchChat(jid: string) {
+    const provider = this.live();
+    const wasOnline = this.onlineUntil > Date.now();
+    this.onlineUntil = Date.now() + WATCH_LEASE_MS;
+    if (!wasOnline) await withTimeout(provider.setOnline(true), LOOKUP_TIMEOUT_MS, 'presence update timed out');
+    await withTimeout(provider.subscribePresence(jid), LOOKUP_TIMEOUT_MS, 'presence subscribe timed out');
+    this.scheduleOffline();
+  }
+
+  private scheduleOffline() {
+    if (this.onlineTimer) clearTimeout(this.onlineTimer);
+    this.onlineTimer = setTimeout(() => {
+      this.onlineTimer = null;
+      if (Date.now() < this.onlineUntil) return this.scheduleOffline();
+      this.onlineUntil = 0;
+      if (this.provider?.connected) this.track(this.provider.setOnline(false));
+    }, Math.max(1_000, this.onlineUntil - Date.now()));
+    this.onlineTimer.unref();
+  }
+
+  /** "typing…" / "recording…" shown to the contact while the chats page composes. */
+  async chatState(jid: string, state: 'composing' | 'recording' | 'paused') {
+    await withTimeout(this.live().sendChatState(jid, state), LOOKUP_TIMEOUT_MS, 'presence update timed out');
+  }
+
+  /** Blue ticks for messages read on the chats page. */
+  async readMessages(messages: { chatJid: string; waMessageId: string; participant?: string }[]) {
+    await withTimeout(this.live().markRead(messages), LOOKUP_TIMEOUT_MS, 'read receipt timed out');
+  }
+
+  /** Small profile pictures for the chat list, a few lookups at a time. */
+  async pictures(jids: string[]): Promise<Record<string, string | null>> {
+    const provider = this.live();
+    const result: Record<string, string | null> = {};
+    const queue = [...jids];
+    const next = async (): Promise<void> => {
+      const jid = queue.shift();
+      if (!jid) return;
+      result[jid] = await withTimeout(provider.pictureUrl(jid), LOOKUP_TIMEOUT_MS, 'picture lookup timed out').catch(() => null);
+      return next();
+    };
+    await Promise.all(Array.from({ length: Math.min(PICTURE_CONCURRENCY, jids.length) }, next));
+    return result;
+  }
+
+  profile(jid: string) {
+    return withTimeout(this.live().profile(jid), LOOKUP_TIMEOUT_MS + 5_000, 'profile lookup timed out');
+  }
+
+  /** Asks the phone to upload expired media again; returns the stored WAMessage with a fresh link. */
+  reuploadMedia(raw: unknown) {
+    return withTimeout(this.live().reuploadMedia(raw), 30_000, 'The phone did not re-upload the media in time');
   }
 
   isOnWhatsAppLookup(phones: string[]) {
@@ -429,6 +719,8 @@ export class SessionRunner {
     this.stopped = true;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
+    if (this.onlineTimer) clearTimeout(this.onlineTimer);
+    this.onlineTimer = null;
     const provider = this.provider;
     this.provider = null;
     await provider?.close();

@@ -92,7 +92,7 @@ function Header() {
             <a
               key={label}
               href={NAV_HREFS[i]}
-              className="relative text-sm font-medium whitespace-nowrap text-white/70 transition-colors after:absolute after:inset-x-0 after:-bottom-1.5 after:h-px after:origin-center after:scale-x-0 after:bg-brand after:transition-transform after:duration-300 hover:text-white hover:after:scale-x-100"
+              className="relative text-sm font-medium whitespace-nowrap text-ink-2 transition-colors after:absolute after:inset-x-0 after:-bottom-1.5 after:h-px after:origin-center after:scale-x-0 after:bg-brand after:transition-transform after:duration-300 hover:text-ink hover:after:scale-x-100"
             >
               {label}
             </a>
@@ -106,7 +106,7 @@ function Header() {
             </Link>
           ) : (
             <>
-              <Link href="/login" className={buttonClass('ghost', 'md', 'text-white/80 hover:bg-white/10 hover:text-white')}>
+              <Link href="/login" className={buttonClass('ghost', 'md', 'text-ink-2 hover:bg-ink/[0.06] hover:text-ink')}>
                 {t.landing.login}
               </Link>
               <Link href="/register" className={buttonClass('white', 'md')}>
@@ -172,7 +172,7 @@ function Hero() {
           {h.text}
         </p>
         <div className="animate-fade-up relative z-[2] mt-10 flex flex-wrap items-center justify-center gap-4" style={delay(550)}>
-          <Link href="/register" className={buttonClass('white', 'lg', 'h-12 px-8 text-lg hover:shadow-[0_0_40px_-8px_rgba(255,255,255,0.45)]')}>
+          <Link href="/register" className={buttonClass('white', 'lg', 'h-12 px-8 text-lg hover:shadow-[0_0_40px_-8px] hover:shadow-brand/50')}>
             {h.cta} <Arrow />
           </Link>
           <a href="/docs" className={buttonClass('white', 'md', 'h-10')}>
@@ -180,7 +180,7 @@ function Hero() {
           </a>
         </div>
         <ul
-          className="animate-fade-up relative z-[2] mx-auto mt-10 inline-flex flex-wrap items-center justify-center gap-x-5 gap-y-2 rounded-2xl border border-white/[0.06] bg-black/40 px-6 py-3.5 text-[15px] font-semibold backdrop-blur"
+          className="animate-fade-up relative z-[2] mx-auto mt-10 inline-flex flex-wrap items-center justify-center gap-x-5 gap-y-2 rounded-2xl border border-line bg-card/70 px-6 py-3.5 text-[15px] font-semibold backdrop-blur"
           style={delay(700)}
         >
           {h.trust.map((item, i) => {
@@ -219,7 +219,7 @@ function Integration() {
           <ul className="mt-10 flex flex-wrap items-center justify-center gap-2.5" dir="ltr">
             {LANGUAGES.map((l) => (
               <li key={l}>
-                <span className="block rounded-lg border border-line bg-white/[0.03] px-3 py-1.5 text-sm font-medium text-ink-2 transition-all duration-300 hover:-translate-y-0.5 hover:border-brand/40 hover:text-ink">
+                <span className="block rounded-lg border border-line bg-ink/[0.03] px-3 py-1.5 text-sm font-medium text-ink-2 transition-all duration-300 hover:-translate-y-0.5 hover:border-brand/40 hover:text-ink">
                   {l}
                 </span>
               </li>
@@ -248,9 +248,9 @@ function DeveloperResources() {
             const { icon: Icon, tint, href } = RESOURCES[i]!;
             return (
               <Reveal key={item.title} delay={i * 90}>
-                <article className="lift group flex h-full flex-col rounded-xl border border-line bg-gradient-to-b from-[#161616] to-[#121722] p-6">
+                <article className="lift group flex h-full flex-col rounded-xl border border-line bg-gradient-to-b from-card to-surface p-6">
                   <h3 className="flex items-center gap-3 text-xl font-semibold">
-                    <span className="flex size-10 items-center justify-center rounded-lg bg-white/5 transition-transform duration-300 group-hover:scale-110">
+                    <span className="flex size-10 items-center justify-center rounded-lg bg-ink/5 transition-transform duration-300 group-hover:scale-110">
                       <Icon className={cx('size-5', tint)} />
                     </span>
                     {item.title}
@@ -283,11 +283,11 @@ function HowItWorks() {
               <li key={step.title} className="relative pb-16 last:pb-0">
                 {i < s.steps.length - 1 && <span className="absolute top-24 bottom-0 start-12 w-px bg-gradient-to-b from-brand/70 to-brand/0" />}
                 <Reveal delay={i * 120} className="flex gap-8">
-                  <span className="relative flex size-24 shrink-0 items-center justify-center rounded-full border border-line-strong bg-gradient-to-b from-[#1c1c1c] to-[#0f1a14] text-3xl font-bold shadow-[0_0_40px_-10px] shadow-brand/30">
+                  <span className="relative flex size-24 shrink-0 items-center justify-center rounded-full border border-line-strong bg-gradient-to-b from-raised to-surface text-3xl font-bold shadow-[0_0_40px_-10px] shadow-brand/30">
                     {i + 1}
                   </span>
                   <div className="pt-2">
-                    <span className="flex size-14 items-center justify-center rounded-xl bg-[#10281a] text-brand">
+                    <span className="flex size-14 items-center justify-center rounded-xl bg-brand/15 text-brand">
                       <Icon className="size-6" />
                     </span>
                     <h3 className="mt-4 text-2xl font-semibold">{step.title}</h3>
@@ -338,7 +338,7 @@ function SendReceive() {
                   const Icon = MESSAGE_TYPE_ICONS[i]!;
                   return (
                     <Reveal key={type.title} delay={i * 60}>
-                      <div className="lift h-full rounded-xl border border-line bg-white/[0.02] p-4">
+                      <div className="lift h-full rounded-xl border border-line bg-ink/[0.02] p-4">
                         <p className="flex items-center gap-2.5 font-semibold">
                           <span className="flex size-7 items-center justify-center rounded-full bg-brand text-black">
                             <Icon className="size-4" />
@@ -359,7 +359,7 @@ function SendReceive() {
                   const { icon: Icon, tint } = RECIPIENTS[i]!;
                   return (
                     <Reveal key={r.title} delay={i * 80}>
-                      <div className="lift rounded-xl border border-line bg-white/[0.02] p-4">
+                      <div className="lift rounded-xl border border-line bg-ink/[0.02] p-4">
                         <p className="flex items-center gap-2.5 font-semibold">
                           <span className={cx('flex size-7 items-center justify-center rounded-full bg-gradient-to-br text-white', tint)}>
                             <Icon className="size-4" />
@@ -403,7 +403,7 @@ function UseCases() {
             const Icon = USE_CASE_ICONS[i]!;
             return (
               <Reveal key={u.title} delay={(i % 3) * 100}>
-                <article className="lift group h-full rounded-2xl border border-line bg-gradient-to-b from-[#121212] to-[#0f141d] p-7">
+                <article className="lift group h-full rounded-2xl border border-line bg-gradient-to-b from-card to-surface p-7">
                   <span
                     className={cx(
                       'flex size-16 items-center justify-center rounded-xl bg-gradient-to-br text-white transition-transform duration-500 group-hover:-rotate-6 group-hover:scale-110',
@@ -449,9 +449,9 @@ function Pricing() {
           <PlanCards />
         </div>
         <Reveal className="mx-auto mt-14 max-w-4xl">
-          <div className="flex flex-wrap items-center justify-between gap-5 rounded-2xl border border-line bg-[#141821] p-6">
+          <div className="flex flex-wrap items-center justify-between gap-5 rounded-2xl border border-line bg-surface p-6">
             <div className="flex items-center gap-4">
-              <span className="flex size-12 items-center justify-center rounded-xl bg-white/[0.06]">
+              <span className="flex size-12 items-center justify-center rounded-xl bg-ink/[0.06]">
                 <Users className="size-5" />
               </span>
               <div>
@@ -477,11 +477,11 @@ function Faq() {
       <div className="mx-auto max-w-4xl px-4">
         <SectionIntro eyebrow={s.eyebrow} top={s.top} accent={s.accent} text={s.text} />
         <Reveal className="mt-14">
-          <div className="space-y-4 rounded-2xl border border-line bg-[#131313] p-4 sm:p-7">
+          <div className="space-y-4 rounded-2xl border border-line bg-surface p-4 sm:p-7">
             {s.items.map((item) => (
-              <details key={item.q} className="group rounded-xl border border-line bg-white/[0.02] transition-colors open:bg-white/[0.04] hover:border-white/15">
+              <details key={item.q} className="group rounded-xl border border-line bg-ink/[0.02] transition-colors open:bg-ink/[0.04] hover:border-line-strong">
                 <summary className="flex cursor-pointer list-none items-center gap-4 px-5 py-5 text-lg font-semibold [&::-webkit-details-marker]:hidden">
-                  <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[#10281a] text-brand">
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-brand/15 text-brand">
                     <CircleHelp className="size-4" />
                   </span>
                   <span className="flex-1 text-center">{item.q}</span>
@@ -519,7 +519,7 @@ function FinalCta() {
     <section className="py-24 sm:py-32">
       <div className="mx-auto max-w-7xl px-4 sm:px-6">
         <Reveal>
-          <div className="relative grid items-center gap-12 overflow-hidden rounded-3xl border border-line bg-gradient-to-br from-[#121722] via-[#0f141d] to-[#0c1a14] p-8 sm:p-14 lg:grid-cols-2">
+          <div className="relative grid items-center gap-12 overflow-hidden rounded-3xl border border-line bg-gradient-to-br from-surface via-card to-brand/10 p-8 sm:p-14 lg:grid-cols-2">
             <div aria-hidden className="animate-glow pointer-events-none absolute -end-24 -bottom-24 size-80 rounded-full bg-brand/10 blur-3xl" />
             <div className="relative">
               <h2 className="text-4xl leading-[1.15] font-bold tracking-tight sm:text-5xl">

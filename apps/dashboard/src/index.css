@@ -68,7 +68,7 @@ body {
 
 /* Section eyebrow pill: "Simple Integration · Powerful API". */
 .eyebrow {
-  @apply inline-flex items-center gap-2 rounded-full border border-line-strong bg-white/[0.03] px-4 py-1.5 text-sm font-medium text-ink-2;
+  @apply inline-flex items-center gap-2 rounded-full border border-line-strong bg-ink/[0.03] px-4 py-1.5 text-sm font-medium text-ink-2;
 }
 
 /* Soft dark → navy wash used behind most marketing sections. */
@@ -405,5 +405,65 @@ body {
   .animate-spotlight {
     animation-duration: 1ms;
     animation-delay: 0s;
+  }
+}
+
+/* --- Chats inbox (pages/Chats.tsx) ------------------------------------------------------------ */
+
+/* WhatsApp-like wallpaper and bubbles. */
+:root {
+  --chat-wall: #0c0d0e;
+  --chat-dots: rgb(255 255 255 / 0.035);
+  --chat-in: #1e2023;
+  --chat-out: #10402d;
+  --chat-out-ring: rgb(52 211 153 / 0.12);
+}
+.chat-wall {
+  background-color: var(--chat-wall);
+  background-image: radial-gradient(var(--chat-dots) 1px, transparent 1.2px);
+  background-size: 16px 16px;
+}
+
+/* "typing…" dots. */
+@keyframes typing-dot {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  30% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+.typing-dot {
+  animation: typing-dot 1.2s ease-in-out infinite;
+}
+.typing-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.typing-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+/* A message briefly glows when jumped to (a quoted reply). */
+@keyframes flash-msg {
+  0%,
+  100% {
+    background-color: transparent;
+  }
+  30% {
+    background-color: color-mix(in oklab, var(--color-brand) 18%, transparent);
+  }
+}
+.flash-msg {
+  animation: flash-msg 1.6s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .typing-dot,
+  .flash-msg {
+    animation: none;
   }
 }

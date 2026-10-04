@@ -68,6 +68,12 @@ export async function notify(sql: Sql, channel: string, payload: unknown) {
   await sql`select pg_notify(${channel}, ${JSON.stringify(payload)})`;
 }
 
+/** Several notifications in one round trip (e.g. a status change on many messages at once). */
+export async function notifyMany(sql: Sql, channel: string, payloads: unknown[]) {
+  if (!payloads.length) return;
+  await sql`select pg_notify(${channel}, p) from unnest(${payloads.map((p) => JSON.stringify(p))}::text[]) as p`;
+}
+
 export function databaseUrls(env: NodeJS.ProcessEnv = process.env) {
   const pooled = env.DATABASE_URL;
   if (!pooled) throw new Error('DATABASE_URL is not set');

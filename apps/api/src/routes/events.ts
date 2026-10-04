@@ -22,7 +22,8 @@ export function eventRoutes({ events }: Deps): FastifyPluginAsyncZod {
           tags: ['Events'],
           summary: 'Live event stream (SSE)',
           description:
-            'Events: session.status, qrcode.updated, pairing.updated, messages.received, messages.update, poll.vote. ' +
+            'Events: session.status, qrcode.updated, pairing.updated, messages.received, messages.update, messages.created, poll.vote, ' +
+            'presence.update, chat.read, chats.synced. ' +
             '`resync` means events may have been missed (e.g. after a reconnect): reload your state.',
         },
       },

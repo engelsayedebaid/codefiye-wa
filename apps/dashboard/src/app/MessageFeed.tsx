@@ -89,7 +89,7 @@ function byDay(messages: Message[]) {
  * in the reader's language — the patterns follow apps/worker (runner.ts, media.ts) and the queue.
  * Anything unknown is shown as stored.
  */
-function errorText(error: string, e: Dict['sessionDetail']['errors']): string {
+export function errorText(error: string, e: Dict['sessionDetail']['errors']): string {
   if (error.startsWith('WhatsApp refused: this number may not start new chats')) return e.restricted;
   if (error.includes('(stale device session)')) return e.stale;
   const rejected = /^Rejected by WhatsApp(?: \(error (\w+)\))?$/.exec(error);
@@ -103,7 +103,7 @@ function errorText(error: string, e: Dict['sessionDetail']['errors']): string {
   return error;
 }
 
-function StatusTick({ status }: { status: MessageStatus }) {
+export function StatusTick({ status }: { status: MessageStatus }) {
   const { t } = useI18n();
   const { icon: Icon, className, labelled, spin } = STATUS_TICKS[status];
   const label = t.status.message[status];
@@ -119,7 +119,7 @@ function StatusTick({ status }: { status: MessageStatus }) {
 const textDir = (text: string) => (/^[^A-Za-z\u00C0-\u024F\u0590-\u08FF\uFB1D-\uFEFC]*[\u0590-\u08FF\uFB1D-\uFEFC]/.test(text) ? 'rtl' : 'ltr');
 
 /** Answers to a poll we sent: a filled bar per option (the leader ticked), and who chose what. */
-function PollResults({ content }: { content: Record<string, unknown> }) {
+export function PollResults({ content }: { content: Record<string, unknown> }) {
   const { t, lang } = useI18n();
   const d = t.sessionDetail;
   const options = (content.options as string[] | undefined) ?? [];
@@ -136,7 +136,7 @@ function PollResults({ content }: { content: Record<string, unknown> }) {
         return (
           <div key={option} dir={dir} className="relative overflow-hidden rounded-md">
             <div
-              className={cx('absolute inset-y-0 start-0 rounded-md transition-[width] duration-700', leading ? 'bg-brand/20' : 'bg-white/[0.06]')}
+              className={cx('absolute inset-y-0 start-0 rounded-md transition-[width] duration-700', leading ? 'bg-brand/20' : 'bg-ink/[0.06]')}
               style={{ width: `${pct}%` }}
             />
             <div className="relative flex items-center gap-2 px-2.5 py-1.5 text-sm">

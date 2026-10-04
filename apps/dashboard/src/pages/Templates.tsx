@@ -421,7 +421,7 @@ function TemplateGallery({
           onPick={() => onPick(starterDraft(undefined, tt, taken))}
           preview={
             <span className="flex h-full items-center justify-center">
-              <span className="flex size-12 items-center justify-center rounded-full border border-dashed border-white/25 text-white/50 transition-colors duration-200 group-hover:border-brand/70 group-hover:text-brand">
+              <span className="flex size-12 items-center justify-center rounded-full border border-dashed border-line-strong text-muted transition-colors duration-200 group-hover:border-brand/70 group-hover:text-brand">
                 <Plus className="size-5" />
               </span>
             </span>

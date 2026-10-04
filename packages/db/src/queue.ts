@@ -1,4 +1,4 @@
-import type { MessageStatus, OutboundContent } from '@wa/shared';
+import type { BroadcastPace, MessageStatus, OutboundContent } from '@wa/shared';
 import type { Sql } from './client';
 
 export type QueuedMessage = {
@@ -8,6 +8,11 @@ export type QueuedMessage = {
   remote_jid: string;
   content: OutboundContent;
   attempts: number;
+  /** Set for campaign messages, with the campaign's pace. */
+  broadcast_id: string | null;
+  pace: BroadcastPace | null;
+  /** How long ago it was due (`not_before`), in ms; 0 when unscheduled. */
+  late_ms: number;
 };
 
 /**
@@ -18,15 +23,20 @@ export type QueuedMessage = {
  */
 export async function claimNextOutbound(sql: Sql, sessionId: string): Promise<QueuedMessage | null> {
   const [row] = await sql<QueuedMessage[]>`
-    update messages set status = 'sending', attempts = attempts + 1, updated_at = now()
-    where id = (
-      select id from messages
-      where session_id = ${sessionId} and status = 'queued' and (not_before is null or not_before <= now())
-      order by id
-      limit 1
-      for update skip locked
+    with claimed as (
+      update messages set status = 'sending', attempts = attempts + 1, updated_at = now()
+      where id = (
+        select id from messages
+        where session_id = ${sessionId} and status = 'queued' and (not_before is null or not_before <= now())
+        order by id
+        limit 1
+        for update skip locked
+      )
+      returning id, workspace_id, session_id, remote_jid, content, attempts, broadcast_id, not_before
     )
-    returning id, workspace_id, session_id, remote_jid, content, attempts`;
+    select c.id, c.workspace_id, c.session_id, c.remote_jid, c.content, c.attempts, c.broadcast_id, b.pace,
+      coalesce(extract(epoch from now() - c.not_before) * 1000, 0)::float8 as late_ms
+    from claimed c left join broadcasts b on b.id = c.broadcast_id`;
   return row ?? null;
 }
 

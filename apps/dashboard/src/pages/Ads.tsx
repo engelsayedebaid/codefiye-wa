@@ -1,30 +1,51 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BROADCAST_LIMITS, BROADCAST_PACE_IDS, type BroadcastPace, estimateDuration, rotationSplit } from '@wa/shared/broadcasts';
+import {
+  BROADCAST_LIMITS,
+  BROADCAST_PACE_IDS,
+  BROADCAST_PACES,
+  type BroadcastPace,
+  DEFAULT_SENDING_HOURS,
+  dailyCap,
+  estimateFinish,
+  isWarmingUp,
+  rotationSplit,
+  type SendingWindow,
+  SHIELD_STOPS,
+  type ShieldStop,
+} from '@wa/shared/broadcasts';
 import { planHasFeature } from '@wa/shared/plans';
 import type { MessageStatus } from '@wa/shared/constants';
 import { POLL_LIMITS, type TemplateParts, templatePartsVariables } from '@wa/shared/template-text';
 import {
   ArrowLeft,
   BadgePercent,
+  BellOff,
   Bold,
   BookOpen,
   Building2,
   CalendarCheck,
+  CalendarClock,
   CalendarDays,
   ChartColumn,
   Check,
   CheckCheck,
+  ChevronDown,
+  CircleAlert,
+  CircleCheck,
   CircleStop,
   Clock,
   Code,
+  Coffee,
   Copy,
   Dumbbell,
   FileSpreadsheet,
+  FileText,
   Gauge,
   Gift,
   GraduationCap,
   HeartHandshake,
   Image as ImageIcon,
+  Info,
   Italic,
   LayoutGrid,
   ListChecks,
@@ -32,25 +53,32 @@ import {
   type LucideIcon,
   Megaphone,
   Moon,
+  MoonStar,
+  OctagonX,
   PartyPopper,
   PenLine,
   Plus,
   Rocket,
+  RotateCcw,
   Send,
+  Shield,
+  ShieldAlert,
   ShieldCheck,
   ShoppingCart,
+  Shuffle,
   Smartphone,
   Smile,
   Sparkles,
+  Sprout,
   Star,
   Stethoscope,
   Store,
   Strikethrough,
   Ticket,
   Timer,
-  TriangleAlert,
   Trophy,
   Truck,
+  Unplug,
   Upload,
   UserPlus,
   UserRound,
@@ -84,6 +112,7 @@ import type { Session, Template } from '../types';
 import {
   Badge,
   Button,
+  Checkbox,
   cx,
   delay,
   EmptyState,
@@ -116,21 +145,40 @@ type Campaign = {
   sessionIds: string[];
   rotateEvery: number;
   pace: BroadcastPace;
+  window: SendingWindow | null;
   recipients: number;
   state: CampaignState;
   stats: Stats;
+  nextAt: string | null;
   finishesAt: string | null;
   createdAt: string;
   cancelledAt: string | null;
 };
 
+type Lane = {
+  id: string;
+  name: string;
+  phone: string | null;
+  status: string;
+  total: number;
+  done: number;
+  failed: number;
+  pending: number;
+  /** Why the shield stopped this number's share (a recipient's unsubscribe never stops a number). */
+  shield: Exclude<ShieldStop, 'optedOut'> | null;
+  restingUntil: string | null;
+};
+
 type CampaignDetail = Campaign & {
-  sessions: { id: string; name: string; phone: string | null; status: string; total: number; done: number; failed: number; pending: number }[];
+  sessions: Lane[];
   recent: { id: number; phone: string | null; sessionId: string; status: MessageStatus; error: string | null; updatedAt: string }[];
   failures: { phone: string | null; error: string | null }[];
 };
 
 type Created = { id: string; recipients: number; skippedCount: number; finishesAt: string | null };
+
+/** A number's campaign load (`GET /api/broadcasts/numbers`): what the planner and the number cards need. */
+type NumberLoad = { id: string; sent24h: number; queued: number; history: number[]; restingUntil: string | null };
 
 /** The campaign launched from this tab, so its page can say so (and how many numbers were left out). */
 let lastLaunch: Created | null = null;
@@ -186,12 +234,102 @@ const EMOJIS = ['🔥', '⚡', '🎁', '🎉', '✨', '✅', '👉', '👇', '�
 const ROTATE_EVERY = [1, 5, 10, 25, 50];
 const PACE_ICONS: Record<BroadcastPace, LucideIcon> = { safe: ShieldCheck, normal: Gauge, fast: Zap };
 
-type Draft = { source: AdId | 'blank' | 'saved' | null; body: string; imageUrl: string; buttons: string[]; buttonsTitle: string };
+/** What the shield does, in the banner's order (copy in `ads.shield.features`). */
+const SHIELD_FEATURES: { id: keyof Dict['ads']['shield']['features']; icon: LucideIcon }[] = [
+  { id: 'gaps', icon: Shuffle },
+  { id: 'rests', icon: Coffee },
+  { id: 'daily', icon: CalendarClock },
+  { id: 'warmup', icon: Sprout },
+  { id: 'hours', icon: MoonStar },
+  { id: 'stop', icon: OctagonX },
+  { id: 'optOut', icon: BellOff },
+];
+
+/** `savedName`: the saved template it came from, shown above the editor. */
+type Draft = { source: AdId | 'blank' | 'saved' | null; savedName?: string; body: string; imageUrl: string; buttons: string[]; buttonsTitle: string };
 const EMPTY_DRAFT: Draft = { source: null, body: '', imageUrl: '', buttons: [], buttonsTitle: '' };
 
 const sendableSession = (s: Session) => s.desiredState === 'running' && (s.status === 'connected' || s.status === 'connecting');
 const processedOf = (s: Stats) => s.sent + s.delivered + s.read + s.failed;
 const prefersReducedMotion = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+const DAY_MS = 86_400_000;
+
+/** The device's time zone: sending hours are in it. */
+function deviceTimeZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
+
+/** Until when a number rests after WhatsApp restricted it, while it still does. */
+const restingUntil = (load: NumberLoad | undefined, now: number) => (load?.restingUntil && new Date(load.restingUntil).getTime() > now ? load.restingUntil : null);
+
+/** The current time, ticking every `everyMs`: rests end and estimates move while the page stays open. */
+function useNow(everyMs = 30_000) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), everyMs);
+    return () => clearInterval(timer);
+  }, [everyMs]);
+  return now;
+}
+
+/** The message as sent: the unsubscribe line goes last, once. */
+const withOptOut = (body: string, line: string, on: boolean) => (on && body.trim() && !body.includes(line) ? `${body.trimEnd()}\n\n${line}` : body);
+
+const LINK = /https?:\/\/|www\./i;
+const SHORT_LINK = /\b(bit\.ly|tinyurl\.com|t\.co|goo\.gl|cutt\.ly|is\.gd|rb\.gy|shorturl\.at|ow\.ly|tiny\.cc)\//i;
+/** An unsubscribe line written by hand: "reply STOP", "أرسل «توقف»". */
+const UNSUBSCRIBE = /(reply|send|text|أرسل|ارسل|رد)\s*[«"'“]?\s*(stop|توقف)/i;
+
+/** Messages whose `error` the dashboard words itself (the rest are shown as the API wrote them). */
+const KNOWN_ERRORS: Record<string, keyof Dict['ads']['live']['reasons']> = {
+  [SHIELD_STOPS.restricted]: 'restricted',
+  [SHIELD_STOPS.loggedOut]: 'loggedOut',
+  [SHIELD_STOPS.failures]: 'failures',
+  [SHIELD_STOPS.optedOut]: 'optedOut',
+  Cancelled: 'cancelled',
+  'Recipient is not on WhatsApp': 'notOnWhatsApp',
+};
+
+type SafetyTone = 'good' | 'info' | 'warn' | 'risk';
+type SafetyCheck = { tone: SafetyTone; text: string; weight: number };
+
+/**
+ * How risky a campaign is for its numbers, from what's known before launch: the protection level,
+ * night sending, identical copies, links, a way to unsubscribe, a dirty list. 100 = nothing to fix.
+ */
+function safetyReport(
+  c: { pace: BroadcastPace; hours: boolean; body: string; personal: boolean; optOut: boolean; poll: boolean; invalidShare: number; warming: number; spread: string | null },
+  s: Dict['ads']['safety']['checks'],
+) {
+  const checks: SafetyCheck[] = [
+    c.pace === 'safe'
+      ? { tone: 'good', text: s.paceSafe, weight: 0 }
+      : c.pace === 'normal'
+        ? { tone: 'warn', text: s.paceNormal, weight: 10 }
+        : { tone: 'risk', text: s.paceFast, weight: 25 },
+    c.hours ? { tone: 'good', text: s.hoursOn, weight: 0 } : { tone: 'warn', text: s.hoursOff, weight: 10 },
+    c.personal ? { tone: 'good', text: s.personal, weight: 0 } : { tone: 'warn', text: s.generic, weight: 10 },
+    SHORT_LINK.test(c.body)
+      ? { tone: 'risk', text: s.shortLink, weight: 20 }
+      : LINK.test(c.body)
+        ? { tone: 'warn', text: s.link, weight: 10 }
+        : { tone: 'good', text: s.noLinks, weight: 0 },
+    c.optOut ? { tone: 'good', text: s.optOut, weight: 0 } : { tone: 'warn', text: s.noOptOut, weight: 10 },
+  ];
+  if (c.body.length > 700) checks.push({ tone: 'warn', text: s.long, weight: 5 });
+  if (c.poll) checks.push({ tone: 'warn', text: s.poll, weight: 5 });
+  if (c.invalidShare > 0.2) checks.push({ tone: 'warn', text: s.dirty, weight: 10 });
+  if (c.warming) checks.push({ tone: 'info', text: s.warming(c.warming), weight: 0 });
+  if (c.spread) checks.push({ tone: 'info', text: s.spread(c.spread), weight: 0 });
+  const order: SafetyTone[] = ['risk', 'warn', 'info', 'good'];
+  checks.sort((a, b) => order.indexOf(a.tone) - order.indexOf(b.tone));
+  const score = Math.max(0, 100 - checks.reduce((sum, x) => sum + x.weight, 0));
+  return { checks, score, level: score >= 80 ? 'high' : score >= 55 ? 'medium' : 'low' } as const;
+}
 
 // --- small pieces ----------------------------------------------------------------------------------
 
@@ -314,6 +452,160 @@ function StackedBar({ stats, total, className }: { stats: Stats; total: number; 
   );
 }
 
+// --- the shield ------------------------------------------------------------------------------------
+
+const GUIDE_KEY = 'wa.ads.guide';
+
+/** Whether the safety notes are open: open until the viewer closes them once. */
+function useGuideOpen() {
+  const [open, setOpen] = useState(() => {
+    try {
+      return localStorage.getItem(GUIDE_KEY) !== 'closed';
+    } catch {
+      return true;
+    }
+  });
+  const toggle = () => {
+    setOpen(!open);
+    try {
+      localStorage.setItem(GUIDE_KEY, open ? 'closed' : 'open');
+    } catch {
+      // per-tab only
+    }
+  };
+  return [open, toggle] as const;
+}
+
+/** What protects the numbers on every campaign, and the safety notes behind a toggle. */
+function ShieldBanner() {
+  const { t } = useI18n();
+  const s = t.ads.shield;
+  const g = t.ads.guide;
+  const [open, toggle] = useGuideOpen();
+  return (
+    <section className="animate-fade-up relative overflow-hidden rounded-xl border border-brand/25 bg-card shadow-sm">
+      <span aria-hidden className="pointer-events-none absolute -top-24 -start-16 size-64 rounded-full bg-brand/10 blur-3xl" />
+      <div className="relative flex flex-wrap items-start gap-4 p-5">
+        <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#3BE37F] to-[#0E9488] text-black shadow-[0_0_30px_-8px] shadow-brand">
+          <ShieldCheck className="size-6" />
+        </span>
+        <div className="min-w-0 flex-1 basis-64 space-y-1">
+          <p className="flex flex-wrap items-center gap-2 font-semibold">
+            {s.title}
+            <Badge tone="good" className="gap-1.5">
+              <span className="size-1.5 animate-pulse rounded-full bg-green-500" />
+              {s.on}
+            </Badge>
+          </p>
+          <p className="text-sm text-muted">{s.text}</p>
+        </div>
+        <Button variant="outline" size="sm" icon={<BookOpen className="size-4" />} onClick={toggle} aria-expanded={open}>
+          {open ? s.hideGuide : s.showGuide}
+          <ChevronDown className={cx('size-4 transition-transform duration-200', open && 'rotate-180')} />
+        </Button>
+      </div>
+      <ul className="relative flex flex-wrap gap-2 px-5 pb-5">
+        {SHIELD_FEATURES.map(({ id, icon: Icon }) => (
+          <li key={id} title={s.features[id].text} className="flex items-center gap-1.5 rounded-full border border-line bg-raised/40 py-1 ps-1.5 pe-3 text-xs text-ink-2">
+            <span className="flex size-5 items-center justify-center rounded-full bg-brand/15 text-brand">
+              <Icon className="size-3" />
+            </span>
+            {s.features[id].title}
+          </li>
+        ))}
+      </ul>
+      {open && (
+        <div className="animate-fade-in relative space-y-5 border-t border-line bg-bg/40 p-5">
+          <p className="font-semibold">{g.title}</p>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {SHIELD_FEATURES.map(({ id, icon: Icon }) => (
+              <div key={id} className="flex items-start gap-3 rounded-lg border border-line bg-card p-3">
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-brand/15 text-brand">
+                  <Icon className="size-4" />
+                </span>
+                <span className="space-y-0.5">
+                  <span className="block text-sm font-medium">{s.features[id].title}</span>
+                  <span className="block text-xs text-muted">{s.features[id].text}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            {[
+              { title: g.do, items: g.dos, icon: CircleCheck, tone: 'border-green-500/20 bg-green-500/5', ink: 'text-green-400' },
+              { title: g.dont, items: g.donts, icon: XCircle, tone: 'border-red-500/20 bg-red-500/5', ink: 'text-red-400' },
+            ].map(({ title, items, icon: Icon, tone, ink }) => (
+              <div key={title} className={cx('space-y-3 rounded-lg border p-4', tone)}>
+                <p className={cx('flex items-center gap-2 text-sm font-semibold', ink)}>
+                  <Icon className="size-4" /> {title}
+                </p>
+                <ul className="space-y-2">
+                  {items.map((item) => (
+                    <li key={item} className="flex items-start gap-2 text-sm text-ink-2">
+                      <Icon className={cx('mt-0.5 size-3.5 shrink-0', ink)} />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+          <p className="flex items-start gap-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-200">
+            <Info className="mt-0.5 size-4 shrink-0 text-amber-300" />
+            {g.disclaimer}
+          </p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+const SAFETY_TONES: Record<SafetyTone, { icon: LucideIcon; ink: string }> = {
+  risk: { icon: ShieldAlert, ink: 'text-red-400' },
+  warn: { icon: CircleAlert, ink: 'text-amber-400' },
+  info: { icon: Info, ink: 'text-sky-400' },
+  good: { icon: CircleCheck, ink: 'text-green-500' },
+};
+const SAFETY_LEVELS = {
+  high: { ink: 'text-green-500', bar: 'bg-gradient-to-r from-[#3BE37F] to-[#0E9488] rtl:bg-gradient-to-l' },
+  medium: { ink: 'text-amber-400', bar: 'bg-amber-400' },
+  low: { ink: 'text-red-400', bar: 'bg-red-500' },
+} as const;
+
+/** The campaign's safety score and what moves it, updated as the campaign is composed. */
+function SafetyCard({ report }: { report: ReturnType<typeof safetyReport> }) {
+  const { t } = useI18n();
+  const level = SAFETY_LEVELS[report.level];
+  const score = useCountUp(report.score);
+  return (
+    <div className="space-y-3 rounded-xl border border-line bg-card p-4 shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <p className="flex items-center gap-2 font-semibold">
+          <Shield className="size-4 text-muted" /> {t.ads.safety.title}
+        </p>
+        <p className={cx('flex items-center gap-1.5 text-sm font-semibold', level.ink)}>
+          <span>{t.ads.safety.levels[report.level]}</span>
+          <span className="ltr tabular-nums">{score}/100</span>
+        </p>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-raised">
+        <span className={cx('block h-full rounded-full transition-[width] duration-700 ease-out', level.bar)} style={{ width: `${report.score}%` }} />
+      </div>
+      <ul className="space-y-1.5">
+        {report.checks.map((check) => {
+          const tone = SAFETY_TONES[check.tone];
+          return (
+            <li key={check.text} className="flex items-start gap-2 text-xs text-ink-2">
+              <tone.icon className={cx('mt-px size-3.5 shrink-0', tone.ink)} />
+              {check.text}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 // --- step 1: the message ---------------------------------------------------------------------------
 
 const teaser = (body: string, name: string) =>
@@ -387,37 +679,138 @@ function AdCard({ ad, index, selected, onPick }: { ad: AdStyle; index: number; s
   );
 }
 
+/** Where a draft came from, as shown above the editor and in the gallery's "current" bar. */
+type Origin = { title: string; hint: string; icon: LucideIcon; from: string; to: string };
+
+function draftOrigin(draft: Draft, t: Dict): Origin {
+  if (draft.source === 'blank') return { title: t.ads.gallery.blank, hint: t.ads.gallery.blankHint, icon: PenLine, from: '#52525b', to: '#27272a' };
+  if (draft.source === 'saved' || draft.source === null) {
+    return { title: draft.savedName ?? t.ads.gallery.savedLabel, hint: t.ads.gallery.savedHint, icon: FileText, from: '#0ea5e9', to: '#4338ca' };
+  }
+  const ad = ADS.find((a) => a.id === draft.source)!;
+  return { title: t.ads.templates[ad.id].title, hint: t.ads.templates[ad.id].hint, icon: ad.icon, from: ad.from, to: ad.to };
+}
+
+function OriginIcon({ origin, className }: { origin: Origin; className?: string }) {
+  return (
+    <span
+      className={cx('relative flex shrink-0 items-center justify-center overflow-hidden rounded-xl text-white shadow-md', className ?? 'size-12')}
+      style={{ background: `linear-gradient(135deg, ${origin.from}, ${origin.to})` }}
+    >
+      <span aria-hidden className="absolute -end-3 -top-3 size-8 rounded-full bg-white/25 blur-md" />
+      <origin.icon className="relative size-1/2" />
+    </span>
+  );
+}
+
+/** A dashed "add this part" button for the optional image and reply buttons. */
+function AddOn({ icon: Icon, title, text, onClick }: { icon: LucideIcon; title: string; text: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group flex items-start gap-3 rounded-xl border border-dashed border-line-strong p-3 text-start transition-colors duration-200 outline-none hover:border-brand/60 hover:bg-brand/5 focus-visible:ring-[3px] focus-visible:ring-ring/50"
+    >
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-raised text-muted transition-colors duration-200 group-hover:bg-brand/15 group-hover:text-brand">
+        <Plus className="size-4" />
+      </span>
+      <span className="min-w-0 space-y-0.5">
+        <span className="flex items-center gap-1.5 text-sm font-medium">
+          <Icon className="size-4 text-muted" /> {title}
+        </span>
+        <span className="block text-xs text-muted">{text}</span>
+      </span>
+    </button>
+  );
+}
+
+/** A titled box for an optional part that's in use, with a way to drop it. */
+function PartCard({ icon: Icon, title, removeLabel, onRemove, children }: { icon: LucideIcon; title: string; removeLabel: string; onRemove: () => void; children: ReactNode }) {
+  return (
+    <section className="animate-fade-in space-y-2.5 rounded-xl border border-line bg-raised/10 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex items-center gap-2 text-sm font-medium">
+          <span className="flex size-7 items-center justify-center rounded-lg bg-raised text-muted">
+            <Icon className="size-4" />
+          </span>
+          {title}
+        </span>
+        <button
+          type="button"
+          onClick={onRemove}
+          title={removeLabel}
+          aria-label={removeLabel}
+          className="rounded-md p-1.5 text-muted transition-colors hover:bg-raised hover:text-red-400"
+        >
+          <X className="size-4" />
+        </button>
+      </div>
+      {children}
+    </section>
+  );
+}
+
 function MessageStep({
   draft,
   setDraft,
   onImageStatus,
   imageBroken,
   insertRef,
+  preview,
 }: {
   draft: Draft;
   setDraft: (update: (d: Draft) => Draft) => void;
   onImageStatus: (url: string, ok: boolean) => void;
   imageBroken: boolean;
   insertRef: { current: ((token: string) => void) | null };
+  /** Shown beside the editor (below it on narrower screens). */
+  preview: ReactNode;
 }) {
   const { t } = useI18n();
   const e = t.ads.editor;
+  const g = t.ads.gallery;
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const [emoji, setEmoji] = useState(false);
   const [cat, setCat] = useState<'all' | AdCat>('all');
+  /** Back in the gallery with a message under way: it stays as it is until another template is picked. */
+  const [browsing, setBrowsing] = useState(false);
+  const [imageOpen, setImageOpen] = useState(false);
   const saved = useQuery({ queryKey: qk.templates, queryFn: ({ signal }) => api<Template[]>('/api/templates', { signal }) });
 
-  const originalBody = (source: Draft['source']) => (source && source !== 'blank' && source !== 'saved' ? t.ads.templates[source].body : '');
-  const dirty = draft.source !== null && draft.body.trim() !== '' && draft.body !== originalBody(draft.source);
+  const adDraft = (ad: AdStyle): Draft => {
+    const text = t.ads.templates[ad.id];
+    return { source: ad.id, body: text.body, imageUrl: ad.imageUrl ?? '', buttons: text.buttons ?? [], buttonsTitle: text.buttonsTitle ?? '' };
+  };
+  const ad = ADS.find((a) => a.id === draft.source);
+  const original = ad ? adDraft(ad) : null;
+  const edited =
+    original !== null &&
+    (draft.body !== original.body || draft.imageUrl !== original.imageUrl || draft.buttonsTitle !== original.buttonsTitle || draft.buttons.join('\n') !== original.buttons.join('\n'));
+  // Leaving a message that has text of its own asks first; an untouched template just switches.
+  const dirty = draft.source !== null && draft.body.trim() !== '' && (original ? edited : true);
 
-  const pick = (next: Draft) => {
+  const toStepTop = () =>
+    requestAnimationFrame(() => document.getElementById('ads-step-1')?.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' }));
+  const openGallery = () => {
+    setBrowsing(true);
+    toStepTop();
+  };
+  const backToMessage = () => {
+    setBrowsing(false);
+    toStepTop();
+  };
+  const choose = (next: Draft) => {
     if (dirty && !confirm(t.templates.discardChanges)) return;
     setDraft(() => next);
-    requestAnimationFrame(() => bodyRef.current?.focus());
+    setImageOpen(false);
+    setBrowsing(false);
+    toStepTop();
+    requestAnimationFrame(() => bodyRef.current?.focus({ preventScroll: true }));
   };
-  const pickAd = (ad: AdStyle) => {
-    const text = t.ads.templates[ad.id];
-    pick({ source: ad.id, body: text.body, imageUrl: ad.imageUrl ?? '', buttons: text.buttons ?? [], buttonsTitle: text.buttonsTitle ?? '' });
+  const pickAd = (picked: AdStyle) => (draft.source === picked.id ? backToMessage() : choose(adDraft(picked)));
+  const pickBlank = () => (draft.source === 'blank' ? backToMessage() : choose({ ...EMPTY_DRAFT, source: 'blank' }));
+  const restore = () => {
+    if (original && confirm(e.restoreConfirm)) setDraft(() => original);
   };
 
   /** Replaces the selection with `before + selection + after` and keeps the selection on the same text. */
@@ -444,14 +837,27 @@ function MessageStep({
 
   const setButton = (i: number, value: string) => setDraft((d) => ({ ...d, buttons: d.buttons.map((b, j) => (j === i ? value : b)) }));
 
-  if (draft.source === null) {
-    const shown = cat === 'all' ? ADS : ADS.filter((ad) => ad.cat === cat);
+  if (draft.source === null || browsing) {
+    const shown = cat === 'all' ? ADS : ADS.filter((a) => a.cat === cat);
+    const origin = draft.source === null ? null : draftOrigin(draft, t);
     return (
-      <div className="space-y-4">
-        <div className="code-scroll -mx-1 flex gap-2 overflow-x-auto px-1 pb-1" role="tablist" aria-label={t.ads.gallery.categoriesLabel}>
+      <div className="animate-fade-in space-y-4">
+        {origin && (
+          <div className="animate-fade-in flex flex-wrap items-center gap-3 rounded-xl border border-brand/30 bg-brand/5 p-3">
+            <OriginIcon origin={origin} className="size-10" />
+            <span className="min-w-0 flex-1 basis-40">
+              <span className="block text-xs text-muted">{g.current}</span>
+              <span className="block truncate text-sm font-semibold">{origin.title}</span>
+            </span>
+            <Button variant="brand" size="sm" icon={<PenLine className="size-4" />} onClick={backToMessage}>
+              {g.backToMessage}
+            </Button>
+          </div>
+        )}
+        <div className="code-scroll -mx-1 flex gap-2 overflow-x-auto px-1 pb-1" role="tablist" aria-label={g.categoriesLabel}>
           {AD_CATS.map(({ id, icon: Icon }) => {
             const active = cat === id;
-            const count = id === 'all' ? ADS.length : ADS.filter((ad) => ad.cat === id).length;
+            const count = id === 'all' ? ADS.length : ADS.filter((a) => a.cat === id).length;
             return (
               <button
                 key={id}
@@ -467,41 +873,45 @@ function MessageStep({
                 <span className={cx('flex size-7 items-center justify-center rounded-full', active ? 'bg-brand text-black' : 'bg-raised text-ink-2')}>
                   <Icon className="size-3.5" />
                 </span>
-                {t.ads.gallery.categories[id]}
+                {g.categories[id]}
                 <span className={cx('rounded-full px-1.5 py-0.5 text-[11px] leading-none tabular-nums', active ? 'bg-brand/20 text-ink' : 'bg-raised text-muted')}>{count}</span>
               </button>
             );
           })}
         </div>
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {shown.map((ad, i) => (
-            <AdCard key={ad.id} ad={ad} index={i} selected={false} onPick={() => pickAd(ad)} />
+          {shown.map((a, i) => (
+            <AdCard key={a.id} ad={a} index={i} selected={draft.source === a.id} onPick={() => pickAd(a)} />
           ))}
           <button
             type="button"
-            onClick={() => pick({ ...EMPTY_DRAFT, source: 'blank' })}
-            className="lift group animate-fade-up flex min-h-56 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-line-strong text-center outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            onClick={pickBlank}
+            aria-pressed={draft.source === 'blank'}
+            className={cx(
+              'lift group animate-fade-up flex min-h-56 flex-col items-center justify-center gap-3 rounded-xl border border-dashed text-center outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+              draft.source === 'blank' ? 'border-brand ring-2 ring-brand/40' : 'border-line-strong',
+            )}
             style={delay(shown.length * 40)}
           >
-            <span className="flex size-12 items-center justify-center rounded-full border border-dashed border-white/25 text-white/60 transition-colors duration-200 group-hover:border-brand/70 group-hover:text-brand">
-              <Plus className="size-5" />
+            <span className="flex size-12 items-center justify-center rounded-full border border-dashed border-line-strong text-muted transition-colors duration-200 group-hover:border-brand/70 group-hover:text-brand">
+              {draft.source === 'blank' ? <Check className="size-5 text-brand" /> : <Plus className="size-5" />}
             </span>
-            <span className="block text-sm font-semibold">{t.ads.gallery.blank}</span>
-            <span className="block text-xs text-muted">{t.ads.gallery.blankHint}</span>
+            <span className="block text-sm font-semibold">{g.blank}</span>
+            <span className="block text-xs text-muted">{g.blankHint}</span>
           </button>
         </div>
         {saved.data && saved.data.length > 0 && (
           <div className="flex flex-wrap items-center gap-3">
-            <span className="text-sm text-muted">{t.ads.gallery.saved}</span>
+            <span className="text-sm text-muted">{g.saved}</span>
             <Select
               className="w-64 max-w-full"
-              aria-label={t.ads.gallery.savedPick}
+              aria-label={g.savedPick}
               value=""
               onChange={(id) => {
                 const tpl = saved.data.find((x) => x.id === id);
-                if (tpl) pick({ source: 'saved', body: tpl.body, imageUrl: tpl.imageUrl ?? '', buttons: tpl.buttons ?? [], buttonsTitle: tpl.buttonsTitle ?? '' });
+                if (tpl) choose({ source: 'saved', savedName: tpl.name, body: tpl.body, imageUrl: tpl.imageUrl ?? '', buttons: tpl.buttons ?? [], buttonsTitle: tpl.buttonsTitle ?? '' });
               }}
-              options={[{ value: '', label: <span className="text-muted">{t.ads.gallery.savedPick}</span> }, ...saved.data.map((x) => ({ value: x.id, label: <span className="ltr font-mono">{x.name}</span> }))]}
+              options={[{ value: '', label: <span className="text-muted">{g.savedPick}</span> }, ...saved.data.map((x) => ({ value: x.id, label: <span className="ltr font-mono">{x.name}</span> }))]}
             />
           </div>
         )}
@@ -509,193 +919,225 @@ function MessageStep({
     );
   }
 
+  const origin = draftOrigin(draft, t);
+  const showImage = imageOpen || draft.imageUrl !== '';
+  const showButtons = draft.buttons.length > 0;
   const toolbar = [
     { label: e.bold, icon: Bold, run: () => edit('*', '*') },
     { label: e.italic, icon: Italic, run: () => edit('_', '_') },
     { label: e.strike, icon: Strikethrough, run: () => edit('~', '~') },
     { label: e.mono, icon: Code, run: () => edit('```', '```') },
   ];
+  const tool = 'flex h-8 items-center justify-center gap-1.5 rounded-md text-ink-2 transition-colors hover:bg-raised hover:text-ink';
 
   return (
     <div className="animate-fade-in space-y-5">
-      {/* Quick switch between templates once one is chosen. */}
-      <div className="code-scroll -mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-        {ADS.map((ad) => {
-          const active = draft.source === ad.id;
-          return (
-            <button
-              key={ad.id}
-              type="button"
-              onClick={() => !active && pickAd(ad)}
-              aria-pressed={active}
-              className={cx(
-                'flex h-9 shrink-0 items-center gap-2 rounded-full border ps-1 pe-3 text-sm whitespace-nowrap transition-all duration-200 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
-                active ? 'border-brand/60 bg-brand/10 text-ink' : 'border-line text-ink-2 hover:border-line-strong hover:bg-raised/40',
-              )}
-            >
-              <span className="flex size-7 items-center justify-center rounded-full text-white" style={{ background: `linear-gradient(135deg, ${ad.from}, ${ad.to})` }}>
-                <ad.icon className="size-3.5" />
-              </span>
-              {t.ads.templates[ad.id].title}
-            </button>
-          );
-        })}
-        <button
-          type="button"
-          onClick={() => pick({ ...EMPTY_DRAFT, source: 'blank' })}
-          className={cx(
-            'flex h-9 shrink-0 items-center gap-2 rounded-full border border-dashed ps-1 pe-3 text-sm whitespace-nowrap transition-colors',
-            draft.source === 'blank' ? 'border-brand/60 text-ink' : 'border-line-strong text-ink-2 hover:text-ink',
-          )}
-        >
-          <span className="flex size-7 items-center justify-center rounded-full bg-raised">
-            <PenLine className="size-3.5" />
+      {/* The template the message started from, and the way back to the gallery. */}
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-raised/20 p-3">
+        <OriginIcon origin={origin} />
+        <span className="min-w-0 flex-1 basis-48">
+          <span className="flex items-center gap-2 text-xs text-muted">
+            {e.chosen}
+            {edited && <Badge tone="info">{e.edited}</Badge>}
           </span>
-          {t.ads.gallery.blank}
-        </button>
-      </div>
-
-      <div className="space-y-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-sm leading-none font-medium">{e.body}</span>
-          <div className="flex flex-wrap items-center gap-1">
-            {toolbar.map(({ label, icon: Icon, run }) => (
-              <button
-                key={label}
-                type="button"
-                onClick={run}
-                title={label}
-                aria-label={label}
-                className="flex size-8 items-center justify-center rounded-md text-ink-2 transition-colors hover:bg-raised hover:text-ink"
-              >
-                <Icon className="size-4" />
-              </button>
-            ))}
-            <span className="mx-1 h-5 w-px bg-line" />
-            <button
-              type="button"
-              onClick={() => edit('{{name}}')}
-              className="flex h-8 items-center gap-1.5 rounded-md px-2 text-xs text-ink-2 transition-colors hover:bg-raised hover:text-ink"
-            >
-              <UserRound className="size-3.5" /> {e.insertName}
-            </button>
-            <button
-              type="button"
-              onClick={() => setEmoji((v) => !v)}
-              aria-expanded={emoji}
-              title={e.emoji}
-              aria-label={e.emoji}
-              className={cx('flex size-8 items-center justify-center rounded-md transition-colors hover:bg-raised', emoji ? 'bg-raised text-brand' : 'text-ink-2')}
-            >
-              <Smile className="size-4" />
-            </button>
-          </div>
-        </div>
-        {emoji && (
-          <div className="animate-scale-in flex flex-wrap gap-1 rounded-lg border border-line bg-raised/30 p-2">
-            {EMOJIS.map((em) => (
-              <button key={em} type="button" onClick={() => edit(em)} className="flex size-8 items-center justify-center rounded-md text-lg transition-transform hover:scale-125 hover:bg-raised">
-                {em}
-              </button>
-            ))}
-          </div>
-        )}
-        <textarea
-          ref={bodyRef}
-          value={draft.body}
-          onChange={(ev) => setDraft((d) => ({ ...d, body: ev.target.value }))}
-          rows={9}
-          dir="auto"
-          maxLength={4096}
-          aria-label={e.body}
-          className={cx(inputClass, 'h-auto min-h-40 py-2 leading-relaxed')}
-        />
-        <div className="flex items-start justify-between gap-3 text-xs text-muted">
-          <span>{e.bodyHint}</span>
-          <span className="ltr shrink-0 tabular-nums">{e.chars(draft.body.length)}</span>
-        </div>
-      </div>
-
-      <label className="grid gap-2">
-        <span className="flex items-center gap-2 text-sm leading-none font-medium">
-          <ImageIcon className="size-4 text-muted" /> {e.image}
+          <span className="block truncate font-semibold">{origin.title}</span>
+          <span className="block truncate text-xs text-muted">{origin.hint}</span>
         </span>
-        <span className="flex gap-2">
-          <input
-            type="url"
-            value={draft.imageUrl}
-            onChange={(ev) => setDraft((d) => ({ ...d, imageUrl: ev.target.value }))}
-            placeholder="https://example.com/offer.jpg"
-            dir="ltr"
-            className={inputClass}
-          />
-          {draft.imageUrl && (
-            <Button variant="ghost" size="sm" className="h-9" onClick={() => setDraft((d) => ({ ...d, imageUrl: '' }))} aria-label={t.common.delete}>
-              <X className="size-4" />
+        <span className="flex flex-wrap gap-2">
+          {edited && (
+            <Button variant="ghost" size="sm" icon={<RotateCcw className="size-4" />} onClick={restore}>
+              {e.restore}
             </Button>
           )}
+          <Button variant="outline" size="sm" icon={<ArrowLeft className={cx('size-4', flip)} />} onClick={openGallery}>
+            {e.back}
+          </Button>
         </span>
-        <span className="text-sm text-muted">{e.imageHint}</span>
-        {imageBroken && <span className="animate-fade-in block text-sm text-destructive-ink">{t.templates.imageNotImage}</span>}
-      </label>
-      {/* Loads the image off-screen too, so a broken link is caught even when the preview is scrolled away. */}
-      {draft.imageUrl.trim() && (
-        <img src={draft.imageUrl.trim()} alt="" hidden referrerPolicy="no-referrer" onLoad={() => onImageStatus(draft.imageUrl.trim(), true)} onError={() => onImageStatus(draft.imageUrl.trim(), false)} />
-      )}
+      </div>
 
-      <fieldset className="space-y-2.5">
-        <legend className="mb-2 flex items-center gap-2 text-sm leading-none font-medium">
-          <ListChecks className="size-4 text-muted" /> {e.buttons}
-        </legend>
-        <p className="text-sm text-muted">{e.buttonsHint}</p>
-        {draft.buttons.length > 0 && (
-          <div className="animate-fade-in space-y-2">
-            <input
-              value={draft.buttonsTitle}
-              onChange={(ev) => setDraft((d) => ({ ...d, buttonsTitle: ev.target.value }))}
-              placeholder={e.buttonsTitle}
-              aria-label={e.buttonsTitle}
-              maxLength={POLL_LIMITS.question}
-              dir="auto"
-              className={cx(inputClass, 'font-medium')}
-            />
-            {draft.buttons.map((label, i) => (
-              <span key={i} className="animate-fade-in flex items-center gap-2">
-                <span className="size-4 shrink-0 rounded-full border-2 border-line-strong" />
-                <input
-                  value={label}
-                  onChange={(ev) => setButton(i, ev.target.value)}
-                  placeholder={e.buttonLabel(i + 1)}
-                  aria-label={e.buttonLabel(i + 1)}
-                  maxLength={POLL_LIMITS.option}
-                  dir="auto"
-                  className={inputClass}
-                />
+      <div className="grid items-start gap-6 2xl:grid-cols-[minmax(0,1fr)_19rem]">
+        <div className="min-w-0 space-y-4">
+          <div className="space-y-2">
+            <span className="block text-sm leading-none font-medium">{e.body}</span>
+            <div className="overflow-hidden rounded-xl border border-line shadow-xs transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50">
+              <div className="flex flex-wrap items-center gap-0.5 border-b border-line bg-raised/30 px-1.5 py-1">
+                {toolbar.map(({ label, icon: Icon, run }) => (
+                  <button key={label} type="button" onClick={run} title={label} aria-label={label} className={cx(tool, 'w-8')}>
+                    <Icon className="size-4" />
+                  </button>
+                ))}
+                <span className="mx-1 h-5 w-px bg-line" />
+                <button type="button" onClick={() => edit('{{name}}')} className={cx(tool, 'px-2 text-xs')}>
+                  <UserRound className="size-3.5" /> {e.insertName}
+                </button>
                 <button
                   type="button"
-                  onClick={() => setDraft((d) => ({ ...d, buttons: d.buttons.filter((_, j) => j !== i) }))}
-                  aria-label={e.removeButton}
-                  className="rounded-md p-1.5 text-muted transition-colors hover:bg-raised hover:text-red-400"
+                  onClick={() => setEmoji((v) => !v)}
+                  aria-expanded={emoji}
+                  title={e.emoji}
+                  aria-label={e.emoji}
+                  className={cx(tool, 'w-8', emoji && 'bg-raised text-brand')}
                 >
-                  <X className="size-4" />
+                  <Smile className="size-4" />
                 </button>
-              </span>
-            ))}
+                <span className="ltr ms-auto pe-1.5 text-xs text-muted tabular-nums">{e.chars(draft.body.length)}</span>
+              </div>
+              {emoji && (
+                <div className="animate-fade-in flex flex-wrap gap-1 border-b border-line bg-raised/20 p-2">
+                  {EMOJIS.map((em) => (
+                    <button key={em} type="button" onClick={() => edit(em)} className="flex size-8 items-center justify-center rounded-md text-lg transition-transform hover:scale-125 hover:bg-raised">
+                      {em}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <textarea
+                ref={bodyRef}
+                value={draft.body}
+                onChange={(ev) => setDraft((d) => ({ ...d, body: ev.target.value }))}
+                rows={10}
+                dir="auto"
+                maxLength={4096}
+                aria-label={e.body}
+                placeholder={e.bodyPlaceholder}
+                className="block min-h-48 w-full resize-y bg-transparent px-3.5 py-3 text-base leading-relaxed text-ink outline-none placeholder:text-muted md:text-sm"
+              />
+            </div>
+            <p className="text-xs text-muted">{e.bodyHint}</p>
           </div>
-        )}
-        {draft.buttons.length < POLL_LIMITS.maxOptions && (
-          <Button
-            variant="outline"
-            size="sm"
-            icon={<Plus className="size-4" />}
-            onClick={() =>
-              setDraft((d) => ({ ...d, buttons: d.buttons.length === 0 ? ['', ''] : [...d.buttons, ''], buttonsTitle: d.buttonsTitle || e.buttonsTitleDefault }))
-            }
-          >
-            {e.addButton}
-          </Button>
-        )}
-      </fieldset>
+
+          {showImage && (
+            <PartCard
+              icon={ImageIcon}
+              title={e.image}
+              removeLabel={e.removeImage}
+              onRemove={() => {
+                setDraft((d) => ({ ...d, imageUrl: '' }));
+                setImageOpen(false);
+              }}
+            >
+              <input
+                type="url"
+                value={draft.imageUrl}
+                onChange={(ev) => setDraft((d) => ({ ...d, imageUrl: ev.target.value }))}
+                placeholder="https://example.com/offer.jpg"
+                aria-label={e.image}
+                dir="ltr"
+                autoFocus={imageOpen && !draft.imageUrl}
+                className={inputClass}
+              />
+              <p className="text-xs text-muted">{e.imageHint}</p>
+              {imageBroken && <p className="animate-fade-in text-sm text-destructive-ink">{t.templates.imageNotImage}</p>}
+            </PartCard>
+          )}
+          {/* Loads the image off-screen too, so a broken link is caught even when the preview is scrolled away. */}
+          {draft.imageUrl.trim() && (
+            <img src={draft.imageUrl.trim()} alt="" hidden referrerPolicy="no-referrer" onLoad={() => onImageStatus(draft.imageUrl.trim(), true)} onError={() => onImageStatus(draft.imageUrl.trim(), false)} />
+          )}
+
+          {showButtons && (
+            <PartCard icon={ListChecks} title={e.buttons} removeLabel={e.removeButtons} onRemove={() => setDraft((d) => ({ ...d, buttons: [], buttonsTitle: '' }))}>
+              <p className="text-xs text-muted">{e.buttonsHint}</p>
+              <input
+                value={draft.buttonsTitle}
+                onChange={(ev) => setDraft((d) => ({ ...d, buttonsTitle: ev.target.value }))}
+                placeholder={e.buttonsTitle}
+                aria-label={e.buttonsTitle}
+                maxLength={POLL_LIMITS.question}
+                dir="auto"
+                className={cx(inputClass, 'font-medium')}
+              />
+              {draft.buttons.map((label, i) => (
+                <span key={i} className="animate-fade-in flex items-center gap-2">
+                  <span className="size-4 shrink-0 rounded-full border-2 border-line-strong" />
+                  <input
+                    value={label}
+                    onChange={(ev) => setButton(i, ev.target.value)}
+                    placeholder={e.buttonLabel(i + 1)}
+                    aria-label={e.buttonLabel(i + 1)}
+                    maxLength={POLL_LIMITS.option}
+                    dir="auto"
+                    className={inputClass}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setDraft((d) => ({ ...d, buttons: d.buttons.filter((_, j) => j !== i) }))}
+                    aria-label={e.removeButton}
+                    className="rounded-md p-1.5 text-muted transition-colors hover:bg-raised hover:text-red-400"
+                  >
+                    <X className="size-4" />
+                  </button>
+                </span>
+              ))}
+              {draft.buttons.length < POLL_LIMITS.maxOptions && (
+                <Button variant="outline" size="sm" icon={<Plus className="size-4" />} onClick={() => setDraft((d) => ({ ...d, buttons: [...d.buttons, ''] }))}>
+                  {e.addButton}
+                </Button>
+              )}
+            </PartCard>
+          )}
+
+          {(!showImage || !showButtons) && (
+            <div className={cx('grid gap-2', !showImage && !showButtons && 'sm:grid-cols-2')}>
+              {!showImage && <AddOn icon={ImageIcon} title={e.addImage} text={e.imageHint} onClick={() => setImageOpen(true)} />}
+              {!showButtons && (
+                <AddOn
+                  icon={ListChecks}
+                  title={e.addButtons}
+                  text={e.buttonsHint}
+                  onClick={() => setDraft((d) => ({ ...d, buttons: ['', ''], buttonsTitle: d.buttonsTitle || e.buttonsTitleDefault }))}
+                />
+              )}
+            </div>
+          )}
+        </div>
+        <div className="2xl:sticky 2xl:top-6">{preview}</div>
+      </div>
+    </div>
+  );
+}
+
+/** The message as the first recipient will see it, inside a WhatsApp-style chat. */
+function MessagePreview({
+  parts,
+  values,
+  phone,
+  name,
+  onImageStatus,
+}: {
+  parts: TemplateParts;
+  values: Record<string, string>;
+  phone: string | null;
+  name: string | null;
+  onImageStatus: (url: string, ok: boolean) => void;
+}) {
+  const { t } = useI18n();
+  const s = t.ads.summary;
+  return (
+    <div className="overflow-hidden rounded-xl border border-line bg-card shadow-sm">
+      <p className="border-b border-line px-4 py-2.5 text-sm font-medium">{s.preview}</p>
+      <div className="flex items-center gap-3 bg-[#202c33] px-3 py-2">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#6a7175] text-[#d1d7db]">
+          <UserRound className="size-5" />
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-medium text-[#e9edef]">
+            <bdi>{name || phone || s.previewContact}</bdi>
+          </span>
+          {name && phone && <span className="ltr block truncate text-xs text-[#8696a0]">{phone}</span>}
+        </span>
+      </div>
+      {parts.body.trim() || parts.imageUrl ? (
+        <TemplatePreview template={parts} values={values} onImageStatus={onImageStatus} className="max-h-[28rem] overflow-y-auto p-4" />
+      ) : (
+        <div
+          className="flex h-40 flex-col items-center justify-center gap-2 bg-[#0b141a] text-sm text-white/40"
+          style={{ backgroundImage: 'radial-gradient(rgb(255 255 255 / 0.07) 1px, transparent 1px)', backgroundSize: '16px 16px' }}
+        >
+          <Megaphone className="animate-float size-7" />
+          {s.needs.body}
+        </div>
+      )}
     </div>
   );
 }
@@ -949,6 +1391,7 @@ function AudienceStep({
 
 function NumbersStep({
   sessions,
+  loads,
   picked,
   setPicked,
   rotate,
@@ -956,10 +1399,11 @@ function NumbersStep({
   every,
   setEvery,
   pace,
-  setPace,
   split,
+  now,
 }: {
   sessions: { data?: Session[]; error: unknown; isPending: boolean; isFetching: boolean; refetch: () => unknown };
+  loads: ReadonlyMap<string, NumberLoad>;
   picked: Set<string>;
   setPicked: (s: Set<string>) => void;
   rotate: boolean;
@@ -967,8 +1411,8 @@ function NumbersStep({
   every: number;
   setEvery: (v: number) => void;
   pace: BroadcastPace;
-  setPace: (p: BroadcastPace) => void;
   split: { session: Session; count: number }[];
+  now: number;
 }) {
   const { t, fmt } = useI18n();
   const n = t.ads.numbers;
@@ -988,7 +1432,8 @@ function NumbersStep({
       />
     );
   }
-  const available = list.filter(sendableSession);
+  const usable = (s: Session) => sendableSession(s) && !restingUntil(loads.get(s.id), now);
+  const available = list.filter(usable);
   const chosen = available.filter((s) => picked.has(s.id));
   const toggle = (id: string) => {
     const next = new Set(picked);
@@ -1016,8 +1461,14 @@ function NumbersStep({
 
       <div className="grid gap-3 sm:grid-cols-2">
         {list.map((s, i) => {
-          const ok = sendableSession(s);
+          const load = loads.get(s.id);
+          const resting = restingUntil(load, now);
+          const ok = usable(s);
           const on = ok && picked.has(s.id);
+          const addedAt = new Date(s.createdAt).getTime();
+          const warming = isWarmingUp(addedAt, now);
+          const cap = dailyCap(pace, addedAt, now);
+          const used = load?.sent24h ?? 0;
           return (
             <button
               key={s.id}
@@ -1025,16 +1476,17 @@ function NumbersStep({
               disabled={!ok}
               aria-pressed={on}
               onClick={() => toggle(s.id)}
+              title={resting ? n.restingHint : undefined}
               className={cx(
-                'animate-fade-up flex items-center gap-3 rounded-xl border p-3 text-start transition-all duration-200 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                'animate-fade-up flex items-start gap-3 rounded-xl border p-3 text-start transition-all duration-200 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
                 on ? 'border-brand/60 bg-brand/10 shadow-[0_0_30px_-14px] shadow-brand' : 'border-line hover:border-line-strong hover:bg-raised/30',
-                !ok && 'cursor-not-allowed opacity-55',
+                !ok && 'cursor-not-allowed opacity-60',
               )}
               style={delay(i * 40)}
             >
               <span
                 className={cx(
-                  'flex size-5 shrink-0 items-center justify-center rounded-md border transition-colors duration-200',
+                  'mt-2.5 flex size-5 shrink-0 items-center justify-center rounded-md border transition-colors duration-200',
                   on ? 'border-brand bg-brand text-black' : 'border-line-strong',
                 )}
               >
@@ -1044,11 +1496,38 @@ function NumbersStep({
                 <Smartphone className="size-5" />
                 {s.status === 'connected' && <span className="absolute end-0 bottom-0 size-2.5 rounded-full border-2 border-card bg-green-500" />}
               </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium">{s.name}</span>
+              <span className="min-w-0 flex-1 space-y-1.5">
+                <span className="flex items-center gap-2">
+                  <span className="truncate text-sm font-medium">{s.name}</span>
+                  {warming && (
+                    <span title={n.warmup(cap)} className="inline-flex shrink-0 items-center gap-1 rounded-full bg-sky-500/10 px-1.5 py-0.5 text-[11px] text-sky-400">
+                      <Sprout className="size-3" /> {n.newNumber}
+                    </span>
+                  )}
+                </span>
                 <span className="ltr block truncate font-mono text-xs text-muted">{s.phoneNumber ?? n.noPhone}</span>
+                {resting ? (
+                  <span className="flex items-center gap-1.5 text-xs text-amber-300">
+                    <ShieldAlert className="size-3.5 shrink-0" /> {n.resting(fmt.upcoming(resting))}
+                  </span>
+                ) : (
+                  sendableSession(s) && (
+                    <span className="block space-y-1">
+                      <span className="flex items-center justify-between gap-2 text-[11px] text-muted">
+                        <span className="tabular-nums">{n.today(fmt.number.format(used), fmt.number.format(cap))}</span>
+                        {(load?.queued ?? 0) > 0 && <span className="tabular-nums">{n.queued(fmt.number.format(load!.queued))}</span>}
+                      </span>
+                      <span className="block h-1 overflow-hidden rounded-full bg-raised">
+                        <span
+                          className={cx('block h-full rounded-full transition-[width] duration-500', used >= cap ? 'bg-amber-400' : 'bg-brand')}
+                          style={{ width: `${Math.min(100, (used / Math.max(1, cap)) * 100)}%` }}
+                        />
+                      </span>
+                    </span>
+                  )
+                )}
               </span>
-              {!ok && <SessionStatusBadge status={s.status} />}
+              {!sendableSession(s) && <SessionStatusBadge status={s.status} />}
             </button>
           );
         })}
@@ -1097,13 +1576,50 @@ function NumbersStep({
           </div>
         )}
       </div>
+    </div>
+  );
+}
 
+// --- step 4: protection & schedule -----------------------------------------------------------------
+
+type Hours = { from: number; to: number };
+
+function ProtectionStep({
+  pace,
+  setPace,
+  hoursOn,
+  setHoursOn,
+  hours,
+  setHours,
+  timeZone,
+  optOut,
+  setOptOut,
+}: {
+  pace: BroadcastPace;
+  setPace: (p: BroadcastPace) => void;
+  hoursOn: boolean;
+  setHoursOn: (v: boolean) => void;
+  hours: Hours;
+  setHours: (h: Hours) => void;
+  timeZone: string;
+  optOut: boolean;
+  setOptOut: (v: boolean) => void;
+}) {
+  const { t, fmt } = useI18n();
+  const p = t.ads.protection;
+  const range = (r: { min: number; max: number }, unit = 1) => `${r.min / unit}–${r.max / unit}`;
+  const hourOptions = (from: number, to: number) =>
+    Array.from({ length: to - from + 1 }, (_, i) => from + i).map((h) => ({ value: String(h), label: <span className="tabular-nums">{fmt.hour(h)}</span> }));
+
+  return (
+    <div className="space-y-5">
       <div className="space-y-2">
-        <p className="text-sm font-medium">{n.pace}</p>
-        <div className="grid gap-2 sm:grid-cols-3">
+        <p className="text-sm font-medium">{p.pace}</p>
+        <div className="grid gap-3 md:grid-cols-3">
           {BROADCAST_PACE_IDS.map((id) => {
             const Icon = PACE_ICONS[id];
             const active = pace === id;
+            const profile = BROADCAST_PACES[id];
             return (
               <button
                 key={id}
@@ -1111,20 +1627,86 @@ function NumbersStep({
                 aria-pressed={active}
                 onClick={() => setPace(id)}
                 className={cx(
-                  'flex items-start gap-3 rounded-xl border p-3 text-start transition-all duration-200 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
-                  active ? 'border-brand/60 bg-brand/10' : 'border-line hover:border-line-strong hover:bg-raised/30',
+                  'flex flex-col gap-3 rounded-xl border p-4 text-start transition-all duration-200 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                  active ? 'border-brand/60 bg-brand/10 shadow-[0_0_30px_-14px] shadow-brand' : 'border-line hover:border-line-strong hover:bg-raised/30',
                 )}
               >
-                <span className={cx('flex size-8 shrink-0 items-center justify-center rounded-lg', active ? 'bg-brand text-black' : 'bg-raised text-muted')}>
-                  <Icon className="size-4" />
+                <span className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-2.5">
+                    <span className={cx('flex size-8 shrink-0 items-center justify-center rounded-lg', active ? 'bg-brand text-black' : 'bg-raised text-muted')}>
+                      <Icon className="size-4" />
+                    </span>
+                    <span className="text-sm font-semibold">{t.ads.paces[id]!.label}</span>
+                  </span>
+                  {id === 'safe' && <Badge tone="good">{p.recommended}</Badge>}
+                  {id === 'fast' && <Badge tone="warning">{p.risky}</Badge>}
                 </span>
-                <span className="min-w-0">
-                  <span className="block text-sm font-medium">{t.ads.paces[id]!.label}</span>
-                  <span className="block text-xs text-muted">{t.ads.paces[id]!.hint}</span>
+                <span className="text-xs text-muted">{t.ads.paces[id]!.hint}</span>
+                <span className="mt-auto block space-y-1.5 border-t border-line pt-3 text-xs text-ink-2">
+                  <span className="flex items-center gap-2">
+                    <Shuffle className="size-3.5 shrink-0 text-muted" /> {p.gap(profile.gap.min, profile.gap.max)}
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <Coffee className="size-3.5 shrink-0 text-muted" /> {p.rest(range(profile.rest, 60), range(profile.burst))}
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <CalendarClock className="size-3.5 shrink-0 text-muted" /> {p.daily(profile.daily)}
+                  </span>
                 </span>
               </button>
             );
           })}
+        </div>
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        <div className="space-y-3 rounded-xl border border-line bg-raised/20 p-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <p className="flex items-center gap-2 text-sm font-medium">
+                <MoonStar className="size-4 text-muted" /> {p.hoursToggle}
+              </p>
+              <p className={cx('text-sm', hoursOn ? 'text-muted' : 'text-amber-300')}>{hoursOn ? p.hoursOn(timeZone) : p.hoursOff}</p>
+            </div>
+            <Switch checked={hoursOn} onChange={setHoursOn} label={p.hoursToggle} />
+          </div>
+          {hoursOn && (
+            <div className="animate-fade-in flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-muted">{p.from}</span>
+              <Select
+                className="w-28"
+                aria-label={`${p.hours} — ${p.from}`}
+                value={String(hours.from)}
+                onChange={(v) => setHours({ from: Number(v), to: Math.max(hours.to, Number(v) + 1) })}
+                options={hourOptions(0, 23)}
+              />
+              <span className="text-muted">{p.to}</span>
+              <Select
+                className="w-28"
+                aria-label={`${p.hours} — ${p.to}`}
+                value={String(hours.to)}
+                onChange={(v) => setHours({ ...hours, to: Number(v) })}
+                options={hourOptions(hours.from + 1, 24)}
+              />
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-3 rounded-xl border border-line bg-raised/20 p-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <p className="flex items-center gap-2 text-sm font-medium">
+                <BellOff className="size-4 text-muted" /> {p.optOut}
+              </p>
+              <p className={cx('text-sm', optOut ? 'text-muted' : 'text-amber-300')}>{optOut ? p.optOutOn : p.optOutOff}</p>
+            </div>
+            <Switch checked={optOut} onChange={setOptOut} label={p.optOut} />
+          </div>
+          {optOut && (
+            <p dir="auto" className="animate-fade-in inline-block rounded-lg rounded-se-sm bg-[#005c4b] px-3 py-1.5 text-sm text-[#e9edef]">
+              {p.optOutLine}
+            </p>
+          )}
         </div>
       </div>
     </div>
@@ -1136,6 +1718,7 @@ function NumbersStep({
 function Composer({ onLaunched }: { onLaunched: (created: Created) => void }) {
   const { t, fmt } = useI18n();
   const s = t.ads.summary;
+  const p = t.ads.protection;
   const queryClient = useQueryClient();
 
   const [draft, setDraftState] = useState<Draft>(EMPTY_DRAFT);
@@ -1151,22 +1734,36 @@ function Composer({ onLaunched }: { onLaunched: (created: Created) => void }) {
   const [defaults, setDefaults] = useState<Record<string, string>>({});
 
   const sessions = useQuery({ queryKey: qk.sessions, queryFn: ({ signal }) => api<Session[]>('/api/whatsapp-sessions', { signal }) });
+  const numbers = useQuery({
+    queryKey: qk.admin.broadcastNumbers,
+    queryFn: ({ signal }) => api<NumberLoad[]>('/api/broadcasts/numbers', { signal }),
+    refetchInterval: 60_000,
+  });
+  const loads = useMemo(() => new Map((numbers.data ?? []).map((n) => [n.id, n])), [numbers.data]);
+  const now = useNow();
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const touched = useRef(false);
-  // Start with every connected number selected; after that the admin's choice stands.
+  // Start with every connected number selected, except those resting; after that the admin's choice stands.
   useEffect(() => {
-    if (touched.current || !sessions.data) return;
+    if (touched.current || !sessions.data || numbers.isPending) return;
     touched.current = true;
-    setPicked(new Set(sessions.data.filter(sendableSession).map((x) => x.id)));
-  }, [sessions.data]);
+    setPicked(new Set(sessions.data.filter((x) => sendableSession(x) && !restingUntil(loads.get(x.id), now)).map((x) => x.id)));
+  }, [sessions.data, numbers.isPending, loads, now]);
   const [rotate, setRotate] = useState(true);
   const [every, setEvery] = useState(1);
   const [pace, setPace] = useState<BroadcastPace>('safe');
+  const [hoursOn, setHoursOn] = useState(true);
+  const [hours, setHours] = useState<Hours>({ ...DEFAULT_SENDING_HOURS });
+  const [timeZone] = useState(deviceTimeZone);
+  const [optOut, setOptOut] = useState(true);
   const [name, setName] = useState('');
   const [confirming, setConfirming] = useState(false);
+  const [consent, setConsent] = useState(false);
 
+  // What goes out: the draft, plus the unsubscribe line when it's on.
+  const body = withOptOut(draft.body, p.optOutLine, optOut);
   const buttons = draft.buttons.map((b) => b.trim()).filter(Boolean);
-  const parts: TemplateParts = { body: draft.body, imageUrl: draft.imageUrl.trim() || null, buttons, buttonsTitle: draft.buttonsTitle };
+  const parts: TemplateParts = { body, imageUrl: draft.imageUrl.trim() || null, buttons, buttonsTitle: draft.buttonsTitle };
   const variables = templatePartsVariables(parts);
   const imageBroken = parts.imageUrl !== null && parts.imageUrl === badImage;
   const buttonsInvalid =
@@ -1182,13 +1779,45 @@ function Composer({ onLaunched }: { onLaunched: (created: Created) => void }) {
   const complete = audience.recipients.filter((r) => variables.every((v) => valueOf(r.variables, v)));
   const willSkip = audience.recipients.length - complete.length;
   const recipients = complete.slice(0, BROADCAST_LIMITS.recipients);
+  const recipientCount = recipients.length;
 
-  const chosen = (sessions.data ?? []).filter((x) => sendableSession(x) && picked.has(x.id));
-  const rotateEvery = rotate && chosen.length > 1 ? every : Math.max(1, Math.ceil(recipients.length / Math.max(1, chosen.length)));
+  const chosen = useMemo(
+    () => (sessions.data ?? []).filter((x) => sendableSession(x) && !restingUntil(loads.get(x.id), now) && picked.has(x.id)),
+    [sessions.data, loads, picked, now],
+  );
+  const rotateEvery = rotate && chosen.length > 1 ? every : Math.max(1, Math.ceil(recipientCount / Math.max(1, chosen.length)));
   const split = useMemo(() => {
-    const counts = rotationSplit(recipients.length, chosen.length, rotateEvery);
+    const counts = rotationSplit(recipientCount, chosen.length, rotateEvery);
     return chosen.map((session, i) => ({ session, count: counts[i] ?? 0 }));
-  }, [recipients.length, chosen, rotateEvery]);
+  }, [recipientCount, chosen, rotateEvery]);
+
+  // The same planner the server runs: gaps, rests, each number's daily cap and history, the sending hours.
+  const sendingWindow = useMemo<SendingWindow | null>(() => (hoursOn ? { ...hours, timeZone } : null), [hoursOn, hours, timeZone]);
+  const finishAt = useMemo(() => {
+    if (!split.some((x) => x.count > 0)) return null;
+    return estimateFinish(
+      split.map(({ session, count }) => ({ count, addedAt: new Date(session.createdAt).getTime(), history: loads.get(session.id)?.history })),
+      { pace, window: sendingWindow, now },
+    );
+  }, [split, pace, sendingWindow, loads, now]);
+  // Days, rounded like the estimated duration so the two always agree.
+  const spreadDays = finishAt === null || finishAt - now < DAY_MS ? 0 : Math.round((finishAt - now) / DAY_MS);
+
+  const listed = audience.recipients.length + audience.invalid.length;
+  const report = safetyReport(
+    {
+      pace,
+      hours: hoursOn,
+      body,
+      personal: variables.length > 0,
+      optOut: optOut || UNSUBSCRIBE.test(draft.body),
+      poll: buttons.length > 0,
+      invalidShare: listed ? audience.invalid.length / listed : 0,
+      warming: chosen.filter((x) => isWarmingUp(new Date(x.createdAt).getTime(), now)).length,
+      spread: spreadDays ? t.ads.days(spreadDays) : null,
+    },
+    t.ads.safety.checks,
+  );
 
   const templateTitle = draft.source && draft.source !== 'blank' && draft.source !== 'saved' ? t.ads.templates[draft.source].title : t.ads.title;
   const defaultName = `${templateTitle} · ${fmt.dayShort.format(new Date())}`;
@@ -1209,6 +1838,7 @@ function Composer({ onLaunched }: { onLaunched: (created: Created) => void }) {
     { n: 1, icon: PenLine, title: t.ads.steps.message.title, done: messageDone, missing: needs.find((x) => [s.needs.body, s.needs.buttons, t.templates.imageNotImage].includes(x)) },
     { n: 2, icon: UserRound, title: t.ads.steps.audience.title, done: audienceDone, missing: s.needs.recipients },
     { n: 3, icon: Smartphone, title: t.ads.steps.numbers.title, done: numbersDone, missing: s.needs.numbers },
+    { n: 4, icon: ShieldCheck, title: t.ads.steps.protection.title, done: true, missing: undefined },
   ];
 
   const launch = useMutation({
@@ -1221,7 +1851,8 @@ function Composer({ onLaunched }: { onLaunched: (created: Created) => void }) {
           sessionIds: chosen.map((x) => x.id),
           rotateEvery,
           pace,
-          body: draft.body,
+          window: sendingWindow,
+          body,
           imageUrl: parts.imageUrl,
           buttons: buttons.length ? buttons : null,
           buttonsTitle: buttons.length ? draft.buttonsTitle.trim() : null,
@@ -1237,26 +1868,35 @@ function Composer({ onLaunched }: { onLaunched: (created: Created) => void }) {
   const first = recipients[0];
   const previewValues = first ? Object.fromEntries(variables.map((v) => [v, valueOf(first.variables, v)])) : defaults;
   const perRecipient = buttons.length ? 2 : 1;
+  const duration = finishAt === null ? '—' : t.ads.duration((finishAt - now) / 1000);
   const summaryStats = [
     { icon: UserRound, label: s.recipients, value: fmt.number.format(recipients.length) },
     { icon: Smartphone, label: s.numbers, value: fmt.number.format(chosen.length) },
     { icon: Send, label: s.messages, value: fmt.number.format(recipients.length * perRecipient) },
-    { icon: Timer, label: s.duration, value: recipients.length ? t.ads.duration(estimateDuration(recipients.length, chosen.length, rotateEvery, pace)) : '—' },
+    { icon: Timer, label: s.duration, value: duration },
+  ];
+  const profile = BROADCAST_PACES[pace];
+  const plan = [
+    { icon: PACE_ICONS[pace], text: `${t.ads.paces[pace]!.label} — ${p.gap(profile.gap.min, profile.gap.max)}` },
+    { icon: Coffee, text: p.rest(`${profile.rest.min / 60}–${profile.rest.max / 60}`, `${profile.burst.min}–${profile.burst.max}`) },
+    { icon: CalendarClock, text: p.daily(profile.daily) },
+    { icon: MoonStar, text: hoursOn ? `${p.hours}: ${fmt.hour(hours.from)} – ${fmt.hour(hours.to)}` : p.hoursOff },
+    { icon: BellOff, text: optOut ? `${p.optOut}: ${p.optOutLine}` : p.optOutOff },
+    ...(finishAt === null ? [] : [{ icon: Timer, text: `${s.duration}: ${duration} · ${s.finishes(fmt.upcoming(finishAt))}` }]),
   ];
 
   return (
     <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
       <div className="min-w-0 space-y-6">
-        <div className="animate-fade-up flex items-start gap-3 rounded-xl border border-amber-500/25 bg-amber-500/10 p-4">
-          <TriangleAlert className="mt-0.5 size-5 shrink-0 text-amber-300" />
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-amber-200">{t.ads.warning.title}</p>
-            <p className="text-sm text-muted">{t.ads.warning.text}</p>
-          </div>
-        </div>
-
         <Step n={1} index={0} title={t.ads.steps.message.title} text={t.ads.steps.message.text} done={messageDone} current={currentStep === 1}>
-          <MessageStep draft={draft} setDraft={setDraft} onImageStatus={onImageStatus} imageBroken={imageBroken} insertRef={insertRef} />
+          <MessageStep
+            draft={draft}
+            setDraft={setDraft}
+            onImageStatus={onImageStatus}
+            imageBroken={imageBroken}
+            insertRef={insertRef}
+            preview={<MessagePreview parts={parts} values={previewValues} phone={first?.phone ?? null} name={first?.variables.name?.trim() || null} onImageStatus={onImageStatus} />}
+          />
         </Step>
 
         <Step n={2} index={1} title={t.ads.steps.audience.title} text={t.ads.steps.audience.text} done={audienceDone} current={currentStep === 2}>
@@ -1279,6 +1919,7 @@ function Composer({ onLaunched }: { onLaunched: (created: Created) => void }) {
         <Step n={3} index={2} title={t.ads.steps.numbers.title} text={t.ads.steps.numbers.text} done={numbersDone} current={currentStep === 3}>
           <NumbersStep
             sessions={sessions}
+            loads={loads}
             picked={picked}
             setPicked={setPicked}
             rotate={rotate}
@@ -1286,56 +1927,52 @@ function Composer({ onLaunched }: { onLaunched: (created: Created) => void }) {
             every={every}
             setEvery={setEvery}
             pace={pace}
-            setPace={setPace}
             split={split}
+            now={now}
+          />
+        </Step>
+
+        <Step n={4} index={3} title={t.ads.steps.protection.title} text={t.ads.steps.protection.text} done current={false}>
+          <ProtectionStep
+            pace={pace}
+            setPace={setPace}
+            hoursOn={hoursOn}
+            setHoursOn={setHoursOn}
+            hours={hours}
+            setHours={setHours}
+            timeZone={timeZone}
+            optOut={optOut}
+            setOptOut={setOptOut}
           />
         </Step>
       </div>
 
       <aside className="animate-fade-up space-y-4 lg:sticky lg:top-6" style={delay(160)}>
-        <div className="overflow-hidden rounded-xl border border-line bg-card shadow-sm">
-          <div className="flex items-center justify-between gap-2 border-b border-line px-4 py-3">
-            <p className="text-sm font-medium">{s.preview}</p>
-            {first && <p className="ltr truncate text-xs text-muted">{first.phone}</p>}
-          </div>
-          {draft.body.trim() || parts.imageUrl ? (
-            <TemplatePreview template={parts} values={previewValues} onImageStatus={onImageStatus} className="max-h-[26rem] overflow-y-auto p-4" />
-          ) : (
-            <div
-              className="flex h-40 flex-col items-center justify-center gap-2 bg-[#0b141a] text-sm text-white/40"
-              style={{ backgroundImage: 'radial-gradient(rgb(255 255 255 / 0.07) 1px, transparent 1px)', backgroundSize: '16px 16px' }}
-            >
-              <Megaphone className="animate-float size-7" />
-              {s.needs.body}
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-1.5 rounded-xl border border-line bg-card p-4 shadow-sm">
-          <p className="mb-1 font-semibold">{s.checklist}</p>
-          {checklist.map(({ n, icon: Icon, title, done, missing }) => (
-            <button
-              key={n}
-              type="button"
-              onClick={() => document.getElementById(`ads-step-${n}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-              className="group flex w-full items-center gap-3 rounded-lg px-2 py-2 text-start transition-colors hover:bg-raised/40"
-            >
-              <span
-                className={cx(
-                  'flex size-7 shrink-0 items-center justify-center rounded-full transition-colors duration-300',
-                  done ? 'bg-brand/15 text-brand' : 'bg-raised text-muted group-hover:text-ink-2',
-                )}
-              >
-                {done ? <Check className="size-4" /> : <Icon className="size-3.5" />}
-              </span>
-              <span className="flex-1 text-sm font-medium">{title}</span>
-              <span className={cx('text-xs', done ? 'font-medium text-brand' : 'text-muted')}>{done ? s.ready : missing}</span>
-            </button>
-          ))}
-        </div>
+        <SafetyCard report={report} />
 
         <div className="space-y-4 rounded-xl border border-line bg-card p-4 shadow-sm">
           <p className="font-semibold">{s.title}</p>
+          <div className="-mx-2 space-y-0.5">
+            {checklist.map(({ n, icon: Icon, title, done, missing }) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => document.getElementById(`ads-step-${n}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                className="group flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-start transition-colors hover:bg-raised/40"
+              >
+                <span
+                  className={cx(
+                    'flex size-6 shrink-0 items-center justify-center rounded-full transition-colors duration-300',
+                    done ? 'bg-brand/15 text-brand' : 'bg-raised text-muted group-hover:text-ink-2',
+                  )}
+                >
+                  {done ? <Check className="size-3.5" /> : <Icon className="size-3" />}
+                </span>
+                <span className="flex-1 text-sm">{title}</span>
+                <span className={cx('text-xs', done ? 'font-medium text-brand' : 'text-muted')}>{done ? s.ready : missing}</span>
+              </button>
+            ))}
+          </div>
           <label className="grid gap-2">
             <span className="text-xs text-muted">{s.name}</span>
             <input value={name} onChange={(ev) => setName(ev.target.value)} placeholder={defaultName} maxLength={120} className={inputClass} />
@@ -1350,6 +1987,11 @@ function Composer({ onLaunched }: { onLaunched: (created: Created) => void }) {
               </div>
             ))}
           </div>
+          {finishAt !== null && (
+            <p className="flex items-center gap-1.5 text-xs text-muted">
+              <CalendarClock className="size-3.5 shrink-0" /> {s.finishes(fmt.upcoming(finishAt))}
+            </p>
+          )}
           {willSkip > 0 && <p className="text-xs text-amber-300">{t.ads.audience.willSkip(willSkip)}</p>}
           {complete.length > BROADCAST_LIMITS.recipients && (
             <p className="text-xs text-amber-300">{t.ads.audience.tooMany(fmt.number.format(BROADCAST_LIMITS.recipients))}</p>
@@ -1359,6 +2001,7 @@ function Composer({ onLaunched }: { onLaunched: (created: Created) => void }) {
             disabled={!ready}
             onClick={() => {
               launch.reset();
+              setConsent(false);
               setConfirming(true);
             }}
             className={cx(
@@ -1382,12 +2025,26 @@ function Composer({ onLaunched }: { onLaunched: (created: Created) => void }) {
             </span>
             <p className="text-sm text-ink-2">{t.ads.confirm.text(recipients.length, chosen.length)}</p>
           </div>
+          <div className="space-y-2.5 rounded-lg border border-brand/25 bg-brand/5 p-4">
+            <p className="flex items-center gap-2 text-sm font-semibold">
+              <ShieldCheck className="size-4 text-brand" /> {t.ads.confirm.plan}
+            </p>
+            <ul className="space-y-1.5">
+              {plan.map(({ icon: Icon, text }) => (
+                <li key={text} className="flex items-start gap-2 text-sm text-ink-2">
+                  <Icon className="mt-0.5 size-4 shrink-0 text-muted" />
+                  {text}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <Checkbox label={t.ads.confirm.consent} checked={consent} onChange={setConsent} />
           <ErrorNote>{launch.error ? errorMessage(launch.error) : null}</ErrorNote>
           <div className="flex justify-end gap-2">
             <Button variant="outline" disabled={launch.isPending} onClick={() => setConfirming(false)}>
               {t.common.cancel}
             </Button>
-            <Button variant="brand" loading={launch.isPending} icon={<Send className="size-4 rtl:-scale-x-100" />} onClick={() => launch.mutate()}>
+            <Button variant="brand" disabled={!consent} loading={launch.isPending} icon={<Send className="size-4 rtl:-scale-x-100" />} onClick={() => launch.mutate()}>
               {t.ads.confirm.submit}
             </Button>
           </div>
@@ -1566,6 +2223,7 @@ function LiveCampaign({ id }: { id: string }) {
     },
   });
   const [copied, setCopied] = useState(false);
+  const now = useNow(15_000);
 
   if (query.error && !data) return <LoadError error={query.error} onRetry={() => void query.refetch()} retrying={query.isFetching} />;
   if (!data) return <Loading className="py-24" />;
@@ -1576,6 +2234,19 @@ function LiveCampaign({ id }: { id: string }) {
   const running = data.state === 'running';
   const active = running ? (data.recent.find((m) => m.status === 'sending') ?? data.recent[0])?.sessionId : undefined;
   const failedPhones = data.failures.map((f) => f.phone).filter((p): p is string => Boolean(p));
+  const reason = (error: string | null) => (error && KNOWN_ERRORS[error] ? l.reasons[KNOWN_ERRORS[error]] : error);
+  const shielded = data.sessions.filter((lane) => lane.shield);
+  // A wait longer than a few gaps is the shield at work: a rest, the daily cap, or the night.
+  const nextAt = running && data.nextAt ? new Date(data.nextAt).getTime() : null;
+  const waiting = nextAt !== null && nextAt - now > 5 * 60_000;
+  const meta = [
+    fmt.dateTime(data.createdAt),
+    t.ads.recipientsCount(data.recipients),
+    t.ads.numbersCount(data.sessionIds.length),
+    t.ads.paces[data.pace]?.label,
+    data.window && `${fmt.hour(data.window.from)} – ${fmt.hour(data.window.to)}`,
+    running && data.finishesAt && new Date(data.finishesAt).getTime() > now && l.finishesAt(fmt.upcoming(data.finishesAt)),
+  ].filter(Boolean);
 
   const copyFailed = async () => {
     try {
@@ -1611,6 +2282,25 @@ function LiveCampaign({ id }: { id: string }) {
       {cancel.data && <SuccessNote>{l.cancelledCount(cancel.data.cancelled)}</SuccessNote>}
       <ErrorNote>{cancel.error ? errorMessage(cancel.error) : null}</ErrorNote>
 
+      {shielded.length > 0 && (
+        <section role="alert" className="animate-fade-up space-y-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+          <p className="flex items-center gap-2 font-semibold text-amber-200">
+            <ShieldAlert className="size-5 shrink-0 text-amber-300" /> {l.shield.title}
+          </p>
+          <ul className="space-y-2">
+            {shielded.map((lane) => (
+              <li key={lane.id} className="space-y-0.5 text-sm">
+                <span className="flex flex-wrap items-baseline gap-x-2">
+                  <span className="font-medium text-ink">{lane.name}</span>
+                  {lane.phone && <span className="ltr font-mono text-xs text-muted">{lane.phone}</span>}
+                </span>
+                <span className="block text-muted">{l.shield[lane.shield!]}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <section className="animate-fade-up relative overflow-hidden rounded-2xl border border-line bg-card shadow-sm">
         <div aria-hidden className="pointer-events-none absolute -top-24 start-1/3 size-72 rounded-full bg-brand/10 blur-3xl" />
         <header className="relative flex flex-wrap items-start justify-between gap-4 border-b border-line px-6 py-5">
@@ -1619,10 +2309,13 @@ function LiveCampaign({ id }: { id: string }) {
               <h2 className="truncate text-xl font-semibold">{data.name}</h2>
               <StateBadge state={data.state} />
             </div>
-            <p className="text-sm text-muted">
-              {fmt.dateTime(data.createdAt)} · {t.ads.recipientsCount(data.recipients)} · {t.ads.numbersCount(data.sessionIds.length)} · {t.ads.paces[data.pace]?.label}
-              {running && data.finishesAt && new Date(data.finishesAt).getTime() > Date.now() && ` · ${l.finishesAt(fmt.time(data.finishesAt))}`}
-            </p>
+            <p className="text-sm text-muted">{meta.join(' · ')}</p>
+            {nextAt !== null && nextAt > now && (
+              <p className={cx('flex items-center gap-1.5 text-sm', waiting ? 'text-sky-300' : 'text-muted')}>
+                {waiting ? <Coffee className="size-4 shrink-0" /> : <Clock className="size-4 shrink-0" />}
+                {waiting ? l.pausedUntil(fmt.upcoming(nextAt)) : l.next(fmt.upcoming(nextAt))}
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
             {running && (
@@ -1688,7 +2381,7 @@ function LiveCampaign({ id }: { id: string }) {
                     <StatusIcon tone={meta.tone} icon={meta.icon} spin={m.status === 'sending'} />
                     <div className="min-w-0 flex-1">
                       <p className="ltr truncate font-mono text-sm">{m.phone ?? '—'}</p>
-                      {m.error && <p className="truncate text-xs text-red-400">{m.error}</p>}
+                      {m.error && <p className="truncate text-xs text-red-400">{reason(m.error)}</p>}
                     </div>
                     <span className="shrink-0 text-xs text-muted">{fmt.timeAgo(m.updatedAt)}</span>
                   </li>
@@ -1704,6 +2397,22 @@ function LiveCampaign({ id }: { id: string }) {
             <ul className="space-y-4">
               {data.sessions.map((lane) => {
                 const now = lane.id === active;
+                const offline = running && lane.pending > 0 && lane.status !== 'connected';
+                const status = lane.shield ? (
+                  <span className="flex items-center gap-1 text-xs font-normal text-amber-300">
+                    <OctagonX className="size-3.5" /> {l.reasons[lane.shield]}
+                  </span>
+                ) : lane.restingUntil ? (
+                  <span className="flex items-center gap-1 text-xs font-normal text-amber-300">
+                    <ShieldAlert className="size-3.5" /> {t.ads.numbers.resting(fmt.upcoming(lane.restingUntil))}
+                  </span>
+                ) : offline ? (
+                  <span className="flex items-center gap-1 text-xs font-normal text-muted">
+                    <Unplug className="size-3.5" /> {l.offline}
+                  </span>
+                ) : now ? (
+                  <span className="text-xs font-normal text-brand">{l.sendingNow}</span>
+                ) : null;
                 return (
                   <li key={lane.id} className="space-y-2">
                     <div className="flex items-center gap-3">
@@ -1712,9 +2421,9 @@ function LiveCampaign({ id }: { id: string }) {
                         {now && <span className="absolute inset-0 animate-ping rounded-full bg-brand/30" />}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="flex items-center gap-2 truncate text-sm font-medium">
-                          {lane.name}
-                          {now && <span className="text-xs font-normal text-brand">{l.sendingNow}</span>}
+                        <p className="flex flex-wrap items-center gap-x-2 text-sm font-medium">
+                          <span className="truncate">{lane.name}</span>
+                          {status}
                         </p>
                         <p className="ltr truncate font-mono text-xs text-muted">{lane.phone ?? '—'}</p>
                       </div>
@@ -1749,7 +2458,7 @@ function LiveCampaign({ id }: { id: string }) {
             {data.failures.map((f, i) => (
               <li key={i} className="flex flex-wrap items-center justify-between gap-2 py-2">
                 <span className="ltr font-mono">{f.phone ?? '—'}</span>
-                <span className="text-xs text-red-400">{f.error}</span>
+                <span className="text-xs text-red-400">{reason(f.error)}</span>
               </li>
             ))}
           </ul>
@@ -1950,7 +2659,8 @@ export function AdsPage() {
           </div>
         }
       />
-      <div className={tab === 'compose' ? undefined : 'hidden'}>
+      <div className={tab === 'compose' ? 'space-y-6' : 'hidden'}>
+        <ShieldBanner />
         <Composer
           key={composerKey}
           onLaunched={(created) => {

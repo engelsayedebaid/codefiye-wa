@@ -15,6 +15,7 @@ import {
   LogOut,
   Mail,
   Megaphone,
+  MessagesSquare,
   PanelLeft,
   PhoneCall,
   ShieldCheck,
@@ -69,7 +70,10 @@ function useNav() {
       { href: '/ads', label: n.ads, icon: Megaphone, badge: adsBadge },
       { href: '/subscription', label: n.subscription, icon: CircleDollarSign },
     ] as NavItem[],
-    admin: [{ href: '/admin', label: n.admin, icon: ShieldCheck }] as NavItem[],
+    admin: [
+      { href: '/chats', label: n.chats, icon: MessagesSquare },
+      { href: '/admin', label: n.admin, icon: ShieldCheck },
+    ] as NavItem[],
     secondary: [
       { href: '/docs', label: t.app.secondary.docs, icon: BookOpen, newTab: true },
       { href: '/#faq', label: t.app.secondary.help, icon: CircleHelp, newTab: false },
@@ -455,6 +459,7 @@ function useLiveCache() {
         break;
       }
       case 'messages.received':
+      case 'messages.created':
       case 'messages.update':
       case 'poll.vote':
         invalidate(qk.messages(event.sessionId));

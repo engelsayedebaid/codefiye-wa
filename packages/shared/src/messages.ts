@@ -2,8 +2,11 @@ import { z } from 'zod';
 import { POLL_LIMITS } from './template-text';
 import { templateName, templateVariablesInput } from './templates';
 
+/** The message an outbound message replies to (chats page): enough for WhatsApp to show the quote. */
+export type OutboundQuote = { id: string; fromMe: boolean; participant?: string; text?: string | null };
+
 /** Provider-agnostic outbound content. Stored in `messages.content` and consumed by workers. */
-export type OutboundContent =
+export type OutboundContent = (
   | { type: 'text'; text: string }
   | { type: 'image'; url: string; caption?: string }
   | { type: 'video'; url: string; caption?: string }
@@ -13,7 +16,8 @@ export type OutboundContent =
   | { type: 'location'; latitude: number; longitude: number; name?: string; address?: string }
   | { type: 'contact'; name: string; phone: string }
   /** WhatsApp poll; `selectableCount` 0 = any number of answers. Votes land in `content.votes` (voter → chosen options). */
-  | { type: 'poll'; name: string; options: string[]; selectableCount: number };
+  | { type: 'poll'; name: string; options: string[]; selectableCount: number }
+) & { quote?: OutboundQuote };
 
 const httpUrl = z.url({ protocol: /^https?$/, error: 'Must be an http(s) URL' });
 

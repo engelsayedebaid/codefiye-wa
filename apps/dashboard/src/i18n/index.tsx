@@ -31,6 +31,8 @@ export function formatters(lang: Lang) {
   const dateTime = new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' });
   const date = new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'long', day: 'numeric' });
   const time = new Intl.DateTimeFormat(locale, { hour: 'numeric', minute: '2-digit' });
+  const hour = new Intl.DateTimeFormat(locale, { hour: 'numeric' });
+  const dayTime = new Intl.DateTimeFormat(locale, { weekday: 'long', hour: 'numeric', minute: '2-digit' });
   const dayLong = new Intl.DateTimeFormat(locale, { weekday: 'long', day: 'numeric', month: 'long' });
   const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   return {
@@ -38,6 +40,14 @@ export function formatters(lang: Lang) {
     date: (iso: string | Date) => date.format(new Date(iso)),
     dateTime: (iso: string | Date) => dateTime.format(new Date(iso)),
     time: (iso: string | Date) => time.format(new Date(iso)),
+    /** An hour of the day ("9 AM"); 24 is midnight. */
+    hour: (h: number) => hour.format(new Date(2000, 0, 1, h % 24)),
+    /** A moment ahead: the time today, the weekday and time within the week, else the full date. */
+    upcoming(at: string | Date | number): string {
+      const d = new Date(at);
+      const days = Math.round((startOfDay(d) - startOfDay(new Date())) / 86_400_000);
+      return days === 0 ? time.format(d) : days > 0 && days < 7 ? dayTime.format(d) : dateTime.format(d);
+    },
     dayShort: new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' }),
     dayLong,
     /** "Today", "Yesterday", else the weekday and date — for day separators. */

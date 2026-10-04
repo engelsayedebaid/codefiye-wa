@@ -1,16 +1,21 @@
 import { randomBytes } from 'node:crypto';
 import { memoryAuthStore, useEncryptedAuthState } from '@wa/provider';
+import { type BroadcastPace, SHIELD_STOPS } from '@wa/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   advanceStatus,
+  campaignHistory,
   claimNextOutbound,
   createDb,
   failInterrupted,
   markSent,
   pgAuthStore,
+  recordOptOut,
+  replanCampaigns,
   requeue,
   runMigrations,
   type Sql,
+  stopCampaigns,
 } from '../src';
 
 const url = process.env.TEST_DATABASE_URL;
@@ -99,6 +104,88 @@ describe.skipIf(!url)('db (integration)', () => {
       expect(await advanceStatus(sql, sessionId, 'WAID-1', 'delivered')).toBeNull();
       const [row] = await sql<{ status: string }[]>`select status from messages where id = ${id}`;
       expect(row!.status).toBe('read');
+    });
+  });
+
+  describe('campaigns', () => {
+    const newSession = async () =>
+      (await sql<{ id: string }[]>`insert into sessions (workspace_id, name) values (${workspaceId}, ${`c-${randomBytes(4).toString('hex')}`}) returning id`)[0]!.id;
+    const newCampaign = async (session: string, pace: BroadcastPace) =>
+      (
+        await sql<{ id: string }[]>`
+          insert into broadcasts (workspace_id, name, template, session_ids, pace, recipients)
+          values (${workspaceId}, 'c', ${sql.json({ body: 'x' })}, ${[session]}::uuid[], ${pace}, 1)
+          returning id`
+      )[0]!.id;
+    /** `at`: when it's due, relative to now (e.g. '-2 hours'). */
+    const queue = async (session: string, broadcast: string, to: string, at: string, type: 'text' | 'poll' = 'text') =>
+      (
+        await sql<{ id: number }[]>`
+          insert into messages (workspace_id, session_id, direction, remote_jid, type, content, status, broadcast_id, not_before)
+          values (${workspaceId}, ${session}, 'out', ${`${to}@s.whatsapp.net`}, ${type}, ${sql.json({ type, text: 'x' })}, 'queued', ${broadcast}, now() + ${at}::interval)
+          returning id`
+      )[0]!.id;
+    const due = async (ids: number[]) =>
+      (await sql<{ id: number; at: Date; status: string; error: string | null }[]>`select id, not_before as at, status, error from messages where id = any(${ids}::bigint[]) order by id`);
+
+    it('claims a campaign message with its pace and how late it is', async () => {
+      const session = await newSession();
+      const id = await queue(session, await newCampaign(session, 'safe'), '201000000001', '-5 minutes');
+      const job = await claimNextOutbound(sql, session);
+      expect(job).toMatchObject({ id, pace: 'safe' });
+      expect(job!.broadcast_id).not.toBeNull();
+      expect(job!.late_ms).toBeGreaterThan(295_000);
+      expect(job!.late_ms).toBeLessThan(400_000);
+    });
+
+    it('re-plans an overdue backlog from now at the campaign’s pace, a card and its poll together', async () => {
+      const session = await newSession();
+      const broadcast = await newCampaign(session, 'normal');
+      const ids = [
+        await queue(session, broadcast, '201000000001', '-2 hours'),
+        await queue(session, broadcast, '201000000001', '-2 hours', 'poll'),
+        await queue(session, broadcast, '201000000002', '-119 minutes'),
+        await queue(session, broadcast, '201000000003', '-118 minutes'),
+      ];
+      const [clock] = await sql<{ now: Date }[]>`select now() as now`;
+      expect(await replanCampaigns(sql, session, (min) => min)).toBe(3);
+      const rows = await due(ids);
+      const at = rows.map((r) => r.at.getTime() - rows[0]!.at.getTime());
+      // normal: 15 s apart at the least.
+      expect(at).toEqual([0, 0, 15_000, 30_000]);
+      expect(rows[0]!.at.getTime()).toBeGreaterThanOrEqual(clock!.now.getTime() - 1_000);
+    });
+
+    it('counts recent sends and the schedule, not polls', async () => {
+      const session = await newSession();
+      const broadcast = await newCampaign(session, 'normal');
+      const [sent] = await sql<{ id: number; at: Date }[]>`
+        insert into messages (workspace_id, session_id, direction, remote_jid, type, content, status, broadcast_id, sent_at)
+        values (${workspaceId}, ${session}, 'out', '201000000009@s.whatsapp.net', 'text', ${sql.json({ type: 'text', text: 'x' })}, 'delivered', ${broadcast}, now() - interval '1 hour')
+        returning id, sent_at as at`;
+      const later = await queue(session, broadcast, '201000000010', '1 hour');
+      await queue(session, broadcast, '201000000010', '1 hour', 'poll');
+      const [scheduled] = await due([later]);
+      expect((await campaignHistory(sql, [session])).get(session)).toEqual([sent!.at.getTime(), scheduled!.at.getTime()]);
+      expect((await campaignHistory(sql, [session], { queued: false })).get(session)).toEqual([sent!.at.getTime()]);
+    });
+
+    it('stops a number’s queued campaign messages, saying why', async () => {
+      const session = await newSession();
+      const id = await queue(session, await newCampaign(session, 'safe'), '201000000001', '1 hour');
+      expect(await stopCampaigns(sql, session, 'restricted')).toEqual([id]);
+      expect(await due([id])).toMatchObject([{ status: 'failed', error: SHIELD_STOPS.restricted }]);
+    });
+
+    it('drops a recipient who replied stop, until they reply start', async () => {
+      const session = await newSession();
+      const id = await queue(session, await newCampaign(session, 'safe'), '201099999999', '1 hour');
+      expect(await recordOptOut(sql, workspaceId, '+201099999999', 'out')).toEqual([id]);
+      expect(await due([id])).toMatchObject([{ status: 'failed', error: SHIELD_STOPS.optedOut }]);
+      const listed = async () => (await sql`select 1 from opt_outs where workspace_id = ${workspaceId} and phone = '+201099999999'`).length;
+      expect(await listed()).toBe(1);
+      await recordOptOut(sql, workspaceId, '+201099999999', 'in');
+      expect(await listed()).toBe(0);
     });
   });
 });

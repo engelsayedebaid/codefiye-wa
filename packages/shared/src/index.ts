@@ -1,4 +1,5 @@
 export * from './broadcasts';
+export * from './chats';
 export * from './constants';
 export * from './contracts';
 export * from './events';

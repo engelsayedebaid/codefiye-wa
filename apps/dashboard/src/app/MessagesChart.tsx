@@ -6,18 +6,19 @@ import { cx } from '../ui';
 export type DailyPoint = { day: string; sent: number; received: number; failed: number };
 
 /**
- * Two categorical series on the dark card surface (#0a0a0a). Validated with the dataviz skill's
- * validator against #171717 (lightness band, chroma, CVD ΔE 25.1, contrast); the darker card only
- * raises contrast.
+ * Two categorical series on the card surface. Validated with the dataviz skill's validator against
+ * #171717 (lightness band, chroma, CVD ΔE 25.1, contrast). Grid/axis/halo follow --color-ink, so the
+ * same chart reads on the dark and the light card.
  */
 const SERIES = [
   { key: 'sent', color: 'var(--color-series-sent)' },
   { key: 'received', color: 'var(--color-series-received)' },
 ] as const;
 
-const SURFACE = '#0a0a0a';
-const GRID = 'rgb(255 255 255 / 0.07)';
-const AXIS = 'rgb(255 255 255 / 0.18)';
+const SURFACE = 'var(--color-card)';
+const GRID = 'color-mix(in oklab, var(--color-ink) 8%, transparent)';
+const AXIS = 'color-mix(in oklab, var(--color-ink) 22%, transparent)';
+const HOVER = 'color-mix(in oklab, var(--color-ink) 38%, transparent)';
 const HEIGHT = 260;
 const PAD = { top: 16, right: 44, bottom: 30, left: 40 };
 
@@ -109,7 +110,7 @@ export function MessagesChart({ data, loading }: { data: DailyPoint[]; loading?:
               key={v}
               onClick={() => setView(v)}
               aria-pressed={view === v}
-              className={cx('flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium', view === v ? 'bg-white/[0.08] text-ink' : 'text-muted hover:text-ink')}
+              className={cx('flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium', view === v ? 'bg-ink/[0.08] text-ink' : 'text-muted hover:text-ink')}
             >
               <Icon className="size-3.5" /> {label}
             </button>
@@ -148,7 +149,7 @@ export function MessagesChart({ data, loading }: { data: DailyPoint[]; loading?:
             role="img"
             aria-label={t.chart.aria(numberFormat.format(totals.sent), numberFormat.format(totals.received))}
             tabIndex={0}
-            className="block touch-none outline-none focus-visible:ring-2 focus-visible:ring-white/20"
+            className="block touch-none outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             onPointerMove={onPointer}
             onPointerLeave={() => setHover(null)}
             onFocus={() => setHover(last)}
@@ -171,7 +172,7 @@ export function MessagesChart({ data, loading }: { data: DailyPoint[]; loading?:
               ) : null,
             )}
 
-            {hover !== null && <line x1={x(hover)} x2={x(hover)} y1={PAD.top} y2={PAD.top + innerH} stroke="rgb(255 255 255 / 0.35)" strokeWidth={1} />}
+            {hover !== null && <line x1={x(hover)} x2={x(hover)} y1={PAD.top} y2={PAD.top + innerH} stroke={HOVER} strokeWidth={1} />}
 
             {SERIES.map((s) => (
               <polyline
@@ -204,7 +205,7 @@ export function MessagesChart({ data, loading }: { data: DailyPoint[]; loading?:
           {hovered && hover !== null && (
             <div
               role="status"
-              className="pointer-events-none absolute top-2 z-10 min-w-40 rounded-lg border border-line-strong bg-[#0f0f0f]/95 px-3 py-2 text-sm shadow-xl"
+              className="pointer-events-none absolute top-2 z-10 min-w-40 rounded-lg border border-line-strong bg-card/95 px-3 py-2 text-sm shadow-xl backdrop-blur-sm"
               style={x(hover) > width / 2 ? { right: width - x(hover) + 12 } : { left: x(hover) + 12 }}
               dir={dir}
             >

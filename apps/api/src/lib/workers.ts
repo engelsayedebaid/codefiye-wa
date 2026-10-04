@@ -3,7 +3,7 @@ import { ApiError, conflict, unprocessable } from './errors';
 
 const LIVE = '30 seconds';
 
-export type WorkerAction = 'on-whatsapp' | 'pairing-code' | 'logout' | 'send-text';
+export type WorkerAction = 'on-whatsapp' | 'pairing-code' | 'logout' | 'send-text' | 'watch-chat' | 'chat-state' | 'read' | 'profile' | 'reupload-media' | 'fetch-history' | 'pictures';
 
 /** Calls the worker that currently holds a session's socket (see apps/worker/src/rpc.ts). */
 export class WorkerClient {

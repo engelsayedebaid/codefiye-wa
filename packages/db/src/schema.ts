@@ -5,6 +5,7 @@ import type {
   MessageStatus,
   MessageType,
   OutboundContent,
+  SendingWindow,
   SessionStatus,
   TemplateCategory,
   TemplateParts,
@@ -199,6 +200,8 @@ export const sessions = pgTable(
     pairingCode: text(),
     lastError: text(),
     settings: jsonb().$type<SessionSettings>().notNull().default({}),
+    /** Last time WhatsApp refused to let this number start new chats (error 463); campaigns rest a day after. */
+    restrictedAt: timestamp({ withTimezone: true }),
     connectedAt: timestamp({ withTimezone: true }),
     lastSeenAt: timestamp({ withTimezone: true }),
     createdAt: createdAt(),
@@ -273,12 +276,30 @@ export const broadcasts = pgTable(
     /** Recipients sent from one session before switching to the next. */
     rotateEvery: integer().notNull().default(1),
     pace: text().$type<BroadcastPace>().notNull().default('normal'),
+    /** Local hours the campaign may send in; null = any time. Kept so the worker can re-plan it. */
+    sendingWindow: jsonb().$type<SendingWindow>(),
     /** Recipients queued (after dropping invalid numbers and duplicates). */
     recipients: integer().notNull(),
     cancelledAt: timestamp({ withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [index().on(t.workspaceId, t.createdAt)],
+);
+
+/**
+ * Numbers that replied "stop" to a campaign (see `optOutReply`): later campaigns of the workspace
+ * skip them until they reply "start". Phones in E.164.
+ */
+export const optOuts = pgTable(
+  'opt_outs',
+  {
+    workspaceId: uuid()
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    phone: text().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.workspaceId, t.phone] })],
 );
 
 /** Outbound rows double as the per-session send queue (status `queued` → `sending` → …). */
@@ -316,6 +337,12 @@ export const messages = pgTable(
     index().on(t.workspaceId, t.createdAt),
     index().on(t.sessionId, t.createdAt),
     index().on(t.broadcastId).where(sql`${t.broadcastId} is not null`),
+    /** A number's recent campaign sends, for its daily cap. */
+    index('messages_campaign_sent_idx').on(t.sessionId, t.sentAt).where(sql`${t.broadcastId} is not null`),
+    /** A conversation's history, newest first (the chats page). */
+    index('messages_chat_idx').on(t.sessionId, t.remoteJid, t.id),
+    /** …and by time: synced history arrives after newer messages. */
+    index('messages_chat_time_idx').on(t.sessionId, t.remoteJid, t.createdAt, t.id),
     uniqueIndex().on(t.sessionId, t.waMessageId),
     uniqueIndex().on(t.sessionId, t.idempotencyKey),
   ],
@@ -371,5 +398,68 @@ export type MessageTemplate = typeof messageTemplates.$inferSelect;
 export type Session = typeof sessions.$inferSelect;
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type Broadcast = typeof broadcasts.$inferSelect;
+export type OptOut = typeof optOuts.$inferSelect;
 export type Message = typeof messages.$inferSelect;
 export type Worker = typeof workers.$inferSelect;
+
+/**
+ * The admin inbox (`/chats`): one row per conversation of a session. A trigger on `messages`
+ * (migration 0010) keeps it current, so every way a message is written — the API, campaigns,
+ * inbound, the phone itself — counts. A contact WhatsApp addresses by LID is filed under its phone
+ * number when known, with the LID in `alt_jid` (history is read under both).
+ */
+export const chats = pgTable(
+  'chats',
+  {
+    sessionId: uuid()
+      .notNull()
+      .references(() => sessions.id, { onDelete: 'cascade' }),
+    jid: text().notNull(),
+    workspaceId: uuid()
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    /** The LID this contact's messages arrive under, when the chat is filed under the phone number. */
+    altJid: text(),
+    /** Group subject, or the contact's WhatsApp name (from their latest message). */
+    name: text(),
+    lastMessageId: bigint({ mode: 'number' }),
+    lastMessageAt: timestamp({ withTimezone: true }).notNull(),
+    lastInboundAt: timestamp({ withTimezone: true }),
+    lastOutboundAt: timestamp({ withTimezone: true }),
+    inboundCount: integer().notNull().default(0),
+    outboundCount: integer().notNull().default(0),
+    /** Inbound messages since the chat was last read (here or on the phone). */
+    unreadCount: integer().notNull().default(0),
+    pinnedAt: timestamp({ withTimezone: true }),
+    archivedAt: timestamp({ withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.sessionId, t.jid] }),
+    index().on(t.sessionId, t.lastMessageAt),
+    index().on(t.sessionId, t.altJid).where(sql`${t.altJid} is not null`),
+  ],
+);
+
+/**
+ * Files attached on the chats page, kept until sent: outbound content points at them as
+ * `upload:<id>` and the worker reads them from here instead of downloading a URL. Pruned after a few days.
+ */
+export const mediaUploads = pgTable(
+  'media_uploads',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    workspaceId: uuid()
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    fileName: text(),
+    mimetype: text().notNull(),
+    size: integer().notNull(),
+    data: bytea().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index().on(t.createdAt)],
+);
+
+export type Chat = typeof chats.$inferSelect;
+export type MediaUpload = typeof mediaUploads.$inferSelect;

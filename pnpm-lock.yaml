@@ -230,6 +230,9 @@ importers:
       '@wa/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@wa/provider':
+        specifier: workspace:*
+        version: link:../../packages/provider
       '@wa/shared':
         specifier: workspace:*
         version: link:../../packages/shared

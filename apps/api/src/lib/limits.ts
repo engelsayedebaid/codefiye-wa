@@ -34,7 +34,8 @@ export async function assertDailyQuota(sql: Sql, auth: AuthContext) {
   if (plan.dailyMessages === null) return;
   const [row] = await sql<{ n: number }[]>`
     select count(*)::int as n from messages
-    where workspace_id = ${auth.workspaceId} and direction = 'out' and created_at >= date_trunc('day', now())`;
+    where workspace_id = ${auth.workspaceId} and direction = 'out' and created_at >= date_trunc('day', now())
+      and content->>'sentFrom' is distinct from 'phone'`;
   if ((row?.n ?? 0) >= plan.dailyMessages) {
     throw new ApiError(429, `Daily limit of ${plan.dailyMessages} messages reached on the ${plan.name} plan`, undefined, { code: 'daily_limit' });
   }

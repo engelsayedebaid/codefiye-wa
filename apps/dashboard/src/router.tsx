@@ -27,7 +27,7 @@ export function usePath() {
 }
 
 // Not /api-keys: the dev proxy and the API's SPA fallback treat every /api… path as an API call.
-const APP_PATHS = ['/dashboard', '/sessions', '/templates', '/keys', '/subscription', '/admin', '/ads'];
+const APP_PATHS = ['/dashboard', '/sessions', '/templates', '/keys', '/subscription', '/admin', '/ads', '/chats'];
 export const isAppPath = (path: string) => APP_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
 
 /** Where to go after logging in: the `next` query param when it's one of our app pages. */

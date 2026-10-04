@@ -16,7 +16,7 @@ export function PlanCards({ currentPlanId, action }: { currentPlanId?: string; a
           <Reveal key={plan.id} delay={i * 90} className="h-full">
             <article
               className={cx(
-                'lift relative flex h-full flex-col rounded-3xl border bg-[#161616] p-6',
+                'lift relative flex h-full flex-col rounded-3xl border bg-card p-6',
                 plan.popular ? 'border-brand/60 shadow-[0_0_60px_-25px_rgba(36,211,102,0.6)] xl:-mt-4' : 'border-line',
               )}
             >
@@ -24,7 +24,7 @@ export function PlanCards({ currentPlanId, action }: { currentPlanId?: string; a
                 <span
                   className={cx(
                     'absolute -top-3 left-1/2 -translate-x-1/2 rounded-full border px-3 py-0.5 text-xs font-bold whitespace-nowrap',
-                    current ? 'border-sky-400/50 bg-sky-950 text-sky-200' : 'animate-glow border-brand/60 bg-[#0d1f14] text-brand',
+                    current ? 'border-sky-400/50 bg-sky-500/15 text-sky-300' : 'animate-glow border-brand/60 bg-brand/15 text-brand',
                   )}
                 >
                   {current ? t.plans.current : t.plans.popular}

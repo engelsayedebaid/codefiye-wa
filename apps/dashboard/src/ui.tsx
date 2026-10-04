@@ -45,7 +45,7 @@ type Variant = 'white' | 'brand' | 'outline' | 'secondary' | 'ghost' | 'danger';
 type Size = 'sm' | 'md' | 'lg';
 
 const VARIANTS: Record<Variant, string> = {
-  white: 'bg-ink text-[#171717] shadow-xs hover:bg-ink/90',
+  white: 'bg-ink text-bg shadow-xs hover:bg-ink/90',
   brand: 'bg-brand text-black shadow-xs hover:bg-brand-strong hover:shadow-[0_8px_30px_-8px] hover:shadow-brand/60',
   outline: 'border border-line bg-bg text-ink shadow-xs hover:bg-raised',
   secondary: 'bg-raised text-ink shadow-xs hover:bg-raised/80',
@@ -80,7 +80,7 @@ export function Button({ variant = 'white', size = 'md', loading, icon, classNam
 
 // --- brand ---------------------------------------------------------------------------------------
 
-/** The mark: a chat bubble carrying `</>` — WhatsApp messaging, for developers. */
+/** The mark: a paper plane — messages, sent. */
 export function LogoMark({ className }: { className?: string }) {
   const id = useId();
   return (
@@ -92,23 +92,20 @@ export function LogoMark({ className }: { className?: string }) {
         </linearGradient>
       </defs>
       <rect width="40" height="40" rx="11" fill={`url(#${id})`} />
-      <path
-        d="M12 10.5h16a5 5 0 0 1 5 5v8a5 5 0 0 1-5 5h-8.2l-5.6 4.3a.8.8 0 0 1-1.3-.63V28.4A5 5 0 0 1 7 23.5v-8a5 5 0 0 1 5-5Z"
-        fill="#fff"
-      />
-      <path d="m16.4 16.4-3 3.1 3 3.1M23.6 16.4l3 3.1-3 3.1M21.1 15.4l-2.2 8.2" stroke="#0B8F6B" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M7 19.5 33 6.5 25.5 33.5 19.5 23Z" fill="#fff" />
+      <path d="M19.5 23 33 6.5" stroke="#0B8F6B" strokeWidth="1.8" strokeLinecap="round" />
     </svg>
   );
 }
 
 export function Logo({ className }: { className?: string }) {
-  const [first, ...rest] = BRAND.name.split('-');
+  const [first, ...rest] = BRAND.name.split(' ');
   return (
     <span className={cx('group/logo inline-flex items-center gap-2.5', className)}>
       <LogoMark className="transition-transform duration-500 group-hover/logo:-rotate-6 group-hover/logo:scale-105" />
       <span dir="ltr" className="text-lg font-bold tracking-tight">
         <span className="text-brand">{first}</span>
-        {rest.length > 0 && <span>-{rest.join('-')}</span>}
+        {rest.length > 0 && <span> {rest.join(' ')}</span>}
       </span>
     </span>
   );

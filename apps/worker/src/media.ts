@@ -2,6 +2,7 @@ import { type LookupAddress, lookup as dnsLookup } from 'node:dns';
 import http from 'node:http';
 import https from 'node:https';
 import { BlockList, isIP } from 'node:net';
+import { loadUpload, type Sql } from '@wa/db';
 import type { MediaKind } from '@wa/provider';
 
 export class MediaError extends Error {
@@ -193,4 +194,11 @@ export async function fetchMedia(url: string, options: FetchMediaOptions): Promi
     return { data, mimetype: res.headers['content-type']?.trim() || null };
   }
   throw new MediaError('Too many redirects');
+}
+
+/** A file attached on the chats page (`upload:<id>`), read from `media_uploads`. */
+export async function fetchUpload(sql: Sql, id: string): Promise<{ data: Buffer; mimetype: string | null }> {
+  const upload = await loadUpload(sql, id);
+  if (!upload) throw new MediaError('The attached file is no longer available. Attach it again.');
+  return { data: upload.data, mimetype: upload.mimetype };
 }

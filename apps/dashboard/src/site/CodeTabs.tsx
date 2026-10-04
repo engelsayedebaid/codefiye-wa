@@ -114,7 +114,7 @@ export function CodeTabs({ className }: { className?: string }) {
     <div
       dir="ltr"
       className={cx(
-        'rounded-2xl border border-brand/30 bg-gradient-to-b from-[#0f1d17] to-[#0d141d] p-4 shadow-[0_0_80px_-20px_rgba(36,211,102,0.35)] sm:p-7',
+        'rounded-2xl border border-brand/30 bg-gradient-to-b from-brand/10 to-surface p-4 shadow-[0_0_80px_-20px_rgba(36,211,102,0.35)] sm:p-7',
         className,
       )}
     >

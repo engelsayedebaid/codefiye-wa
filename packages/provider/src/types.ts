@@ -1,4 +1,4 @@
-import type { MessageType, OutboundContent } from '@wa/shared';
+import type { MessageExtras, MessageType, OutboundContent, Presence } from '@wa/shared';
 
 export type InboundMessage = {
   waMessageId: string;
@@ -13,10 +13,21 @@ export type InboundMessage = {
   type: MessageType;
   /** Text body, caption, or reaction emoji. */
   text: string | null;
+  /** Media details, location, contact cards, quoted message, reaction target… */
+  extras: MessageExtras;
   timestamp: number;
   /** Full WAMessage, JSON-safe (BufferJSON), kept for media download/decrypt later. */
   raw: unknown;
 };
+
+/** A message the account sent from the phone or another linked device (not through us). */
+export type EchoMessage = Pick<InboundMessage, 'waMessageId' | 'isGroup' | 'type' | 'text' | 'extras' | 'timestamp' | 'raw'> & {
+  /** The chat, by phone-number JID when WhatsApp gives one. */
+  chatJid: string;
+};
+
+/** A contact's profile as far as their privacy settings let us see it. */
+export type ContactProfile = { pictureUrl: string | null; about: string | null; name: string | null };
 
 export type CloseReason = 'logged_out' | 'restart_required' | 'connection_replaced' | 'qr_timeout' | 'error';
 
@@ -31,7 +42,23 @@ export type ProviderEvents = {
   receipt: { waMessageId: string; chatJid: string; status: ReceiptStatus; error?: string };
   /** Someone answered one of our polls. `selected` is their whole current choice (empty = withdrawn). */
   pollVote: { waMessageId: string; chatJid: string; voter: string; voterPhone: string | null; selected: string[] };
+  /** Sent from the phone or another linked device. */
+  echo: EchoMessage;
+  /** A contact (or a group member, `jid`) is online, typing… Only for chats we subscribed to. */
+  presence: { chatJid: string; jid: string; presence: Presence; lastSeen: number | null };
+  /** The chat was read on the phone or another linked device. */
+  chatRead: { chatJid: string };
+  /**
+   * Past messages the phone sent us: right after linking, or on request (`fetchHistory`). `names`:
+   * contact and group names it knows.
+   */
+  history: { messages: HistoryMessage[]; names: { jid: string; name: string }[]; onDemand: boolean };
 };
+
+export type HistoryMessage = (InboundMessage & { fromMe: false }) | (EchoMessage & { fromMe: true });
+
+/** The oldest message we have of a chat, as WhatsApp addresses it: history is fetched from before it. */
+export type HistoryAnchor = { chatJid: string; id: string; fromMe: boolean; timestampMs: number };
 
 export type OnWhatsAppResult = { input: string; exists: boolean; jid: string | null };
 

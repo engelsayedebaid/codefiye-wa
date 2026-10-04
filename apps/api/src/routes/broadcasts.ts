@@ -1,20 +1,26 @@
-import { notify, type SqlFragment } from '@wa/db';
+import { campaignHistory, notify, type SqlFragment } from '@wa/db';
 import {
   BROADCAST_LIMITS,
   BROADCAST_PACE_IDS,
   type BroadcastPace,
   CHANNELS,
   getPlan,
+  isTimeZone,
   jidToPhone,
   MESSAGE_STATUSES,
   type MessageStatus,
   ok,
   planHasFeature,
   POLL_LIMITS,
+  RESTRICTION_REST_MS,
+  type SendingWindow,
+  SHIELD_STOPS,
+  type ShieldStop,
   successSchema,
   templateBody,
   type TemplateParts,
   templateVariablesInput,
+  toJid,
 } from '@wa/shared';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -32,6 +38,15 @@ const schemaBase = { tags: ['Admin'], hide: true };
 const SENDABLE = new Set(['connected', 'connecting']);
 const httpUrl = z.url({ protocol: /^https?$/, error: 'Must be an http(s) URL' }).max(2048);
 const idParams = z.object({ id: z.uuid() });
+const DAY_MS = 86_400_000;
+
+const windowSchema = z
+  .object({
+    from: z.number().int().min(0).max(23),
+    to: z.number().int().min(1).max(24),
+    timeZone: z.string().max(64).refine(isTimeZone, 'Unknown time zone'),
+  })
+  .refine((w) => w.from < w.to, { message: 'Must end after it starts', path: ['to'] });
 
 const createBody = z
   .object({
@@ -40,6 +55,8 @@ const createBody = z
     sessionIds: z.array(z.uuid()).min(1).max(BROADCAST_LIMITS.sessions),
     rotateEvery: z.number().int().min(1).max(BROADCAST_LIMITS.rotateEvery).default(1),
     pace: z.enum(BROADCAST_PACE_IDS).default('normal'),
+    /** Local hours to send in (e.g. 9–21 in the sender's time zone); null = any time. */
+    window: windowSchema.nullable().default(null),
     body: templateBody,
     imageUrl: httpUrl.nullable().optional(),
     buttons: z.array(z.string().trim().min(1).max(POLL_LIMITS.option)).max(POLL_LIMITS.maxOptions).nullable().optional(),
@@ -58,6 +75,10 @@ const createBody = z
   });
 
 const statsDto = z.object({ queued: z.number(), sending: z.number(), sent: z.number(), delivered: z.number(), read: z.number(), failed: z.number() });
+/** Why the shield stops a whole number (a recipient's unsubscribe only drops that recipient). */
+const NUMBER_STOPS = ['restricted', 'loggedOut', 'failures'] as const satisfies readonly ShieldStop[];
+/** The shield's reason behind a `messages.error`, if it stopped the number. */
+const shieldReason = (error: string | null) => NUMBER_STOPS.find((reason) => SHIELD_STOPS[reason] === error) ?? null;
 
 const broadcastDto = z.object({
   id: z.uuid(),
@@ -66,11 +87,13 @@ const broadcastDto = z.object({
   sessionIds: z.array(z.uuid()),
   rotateEvery: z.number(),
   pace: z.enum(BROADCAST_PACE_IDS),
+  window: z.object({ from: z.number(), to: z.number(), timeZone: z.string() }).nullable(),
   recipients: z.number(),
   state: z.enum(['running', 'done', 'cancelled']),
   /** Per recipient (the buttons poll that follows a card isn't counted twice). */
   stats: statsDto,
-  /** When the last scheduled message is due; null for `fast`. */
+  /** When the next queued message is due, and the last one; null once nothing is queued / unscheduled. */
+  nextAt: z.string().nullable(),
   finishesAt: z.string().nullable(),
   createdAt: z.string(),
   cancelledAt: z.string().nullable(),
@@ -78,11 +101,34 @@ const broadcastDto = z.object({
 
 const detailDto = broadcastDto.extend({
   sessions: z.array(
-    z.object({ id: z.uuid(), name: z.string(), phone: z.string().nullable(), status: z.string(), total: z.number(), done: z.number(), failed: z.number(), pending: z.number() }),
+    z.object({
+      id: z.uuid(),
+      name: z.string(),
+      phone: z.string().nullable(),
+      status: z.string(),
+      total: z.number(),
+      done: z.number(),
+      failed: z.number(),
+      pending: z.number(),
+      /** Why the shield stopped this number's share, if it did. */
+      shield: z.enum(NUMBER_STOPS).nullable(),
+      /** Until when the number rests after WhatsApp restricted it. */
+      restingUntil: z.string().nullable(),
+    }),
   ),
   /** Latest status changes, newest first: the live feed. */
   recent: z.array(z.object({ id: z.number(), phone: z.string().nullable(), sessionId: z.uuid(), status: z.enum(MESSAGE_STATUSES), error: z.string().nullable(), updatedAt: z.string() })),
   failures: z.array(z.object({ phone: z.string().nullable(), error: z.string().nullable() })),
+});
+
+const numberDto = z.object({
+  id: z.uuid(),
+  /** Campaign recipients reached in the last 24 hours, and queued for later. */
+  sent24h: z.number(),
+  queued: z.number(),
+  /** What the dashboard's planner needs (epoch ms, ascending): the latest day of sends and schedule. */
+  history: z.array(z.number()),
+  restingUntil: z.string().nullable(),
 });
 
 type BroadcastRow = {
@@ -92,9 +138,11 @@ type BroadcastRow = {
   session_ids: string[];
   rotate_every: number;
   pace: BroadcastPace;
+  sending_window: SendingWindow | null;
   recipients: number;
   created_at: Date;
   cancelled_at: Date | null;
+  next_at: Date | null;
   finishes_at: Date | null;
 } & z.infer<typeof statsDto>;
 
@@ -105,22 +153,31 @@ const toBroadcastDto = (r: BroadcastRow): z.infer<typeof broadcastDto> => ({
   sessionIds: r.session_ids,
   rotateEvery: r.rotate_every,
   pace: r.pace,
+  window: r.sending_window,
   recipients: r.recipients,
   state: r.cancelled_at ? 'cancelled' : r.queued + r.sending > 0 ? 'running' : 'done',
   stats: { queued: r.queued, sending: r.sending, sent: r.sent, delivered: r.delivered, read: r.read, failed: r.failed },
+  nextAt: r.next_at?.toISOString() ?? null,
   finishesAt: r.finishes_at?.toISOString() ?? null,
   createdAt: r.created_at.toISOString(),
   cancelledAt: r.cancelled_at?.toISOString() ?? null,
 });
 
+const restingUntil = (restrictedAt: Date | null, now: number) => {
+  const until = restrictedAt ? restrictedAt.getTime() + RESTRICTION_REST_MS : 0;
+  return until > now ? new Date(until) : null;
+};
+
 /**
  * Bulk "ads" campaigns (dashboard `/ads`): one message per recipient from the workspace's own
- * sessions, rotating between them and paced per session so the numbers don't look automated.
+ * sessions, rotating between them and paced by the campaign shield so the numbers don't look
+ * automated: random gaps and rests, a daily cap per number (lower while it warms up), sending hours,
+ * and a day's rest for a number WhatsApp restricted (the worker stops its campaigns when that happens).
  */
 export function broadcastRoutes({ sql }: Deps): FastifyPluginAsyncZod {
   const selectBroadcasts = (where: SqlFragment, limit: number) => sql<BroadcastRow[]>`
-    select b.id, b.name, b.template, b.session_ids, b.rotate_every, b.pace, b.recipients, b.created_at, b.cancelled_at,
-      s.queued, s.sending, s.sent, s.delivered, s.read, s.failed, s.finishes_at
+    select b.id, b.name, b.template, b.session_ids, b.rotate_every, b.pace, b.sending_window, b.recipients, b.created_at, b.cancelled_at,
+      s.queued, s.sending, s.sent, s.delivered, s.read, s.failed, s.next_at, s.finishes_at
     from broadcasts b
     cross join lateral (
       select
@@ -130,6 +187,7 @@ export function broadcastRoutes({ sql }: Deps): FastifyPluginAsyncZod {
         count(*) filter (where m.status = 'delivered')::int as delivered,
         count(*) filter (where m.status = 'read')::int as "read",
         count(*) filter (where m.status = 'failed')::int as failed,
+        min(m.not_before) filter (where m.status = 'queued') as next_at,
         max(m.not_before) as finishes_at
       from messages m where m.broadcast_id = b.id and m.type <> 'poll'
     ) s
@@ -166,7 +224,7 @@ export function broadcastRoutes({ sql }: Deps): FastifyPluginAsyncZod {
               z.object({
                 id: z.uuid(),
                 recipients: z.number(),
-                skipped: z.array(z.object({ to: z.string(), reason: z.enum(['invalid_number', 'duplicate', 'missing_variables', 'invalid_buttons']) })),
+                skipped: z.array(z.object({ to: z.string(), reason: z.enum(['invalid_number', 'duplicate', 'missing_variables', 'invalid_buttons', 'opted_out']) })),
                 skippedCount: z.number(),
                 finishesAt: z.string().nullable(),
               }),
@@ -179,8 +237,8 @@ export function broadcastRoutes({ sql }: Deps): FastifyPluginAsyncZod {
         const input = req.body;
         const workspaceId = req.auth.workspaceId;
 
-        const found = await sql<{ id: string; name: string; status: string; desired_state: string }[]>`
-          select id, name, status, desired_state from sessions
+        const found = await sql<{ id: string; name: string; status: string; desired_state: string; created_at: Date; restricted_at: Date | null; now: Date }[]>`
+          select id, name, status, desired_state, created_at, restricted_at, now() as now from sessions
           where workspace_id = ${workspaceId} and id = any(${input.sessionIds}::uuid[])`;
         if (found.length !== input.sessionIds.length) throw notFound('Session not found');
         const offline = found.filter((s) => s.desired_state !== 'running' || !SENDABLE.has(s.status));
@@ -189,6 +247,12 @@ export function broadcastRoutes({ sql }: Deps): FastifyPluginAsyncZod {
             sessionIds: offline.map((s) => `${s.name} is ${s.status}`),
           });
         }
+        const now = found[0]!.now.getTime();
+        const resting = found.flatMap((s) => {
+          const until = restingUntil(s.restricted_at, now);
+          return until ? [`${s.name} was restricted by WhatsApp; it can run campaigns again after ${until.toISOString()}`] : [];
+        });
+        if (resting.length) throw conflict('A number is resting after WhatsApp restricted it', 'number_resting', { sessionIds: resting });
 
         const template: TemplateParts = {
           body: input.body,
@@ -196,21 +260,20 @@ export function broadcastRoutes({ sql }: Deps): FastifyPluginAsyncZod {
           buttons: input.buttons?.length ? input.buttons : null,
           buttonsTitle: input.buttons?.length ? input.buttonsTitle! : null,
         };
-        const { planned, skipped } = planRecipients(template, input.recipients);
+        const phones = [...new Set(input.recipients.flatMap((r) => jidToPhone(toJid(r.to)) ?? []))];
+        const optedOut = await sql<{ phone: string }[]>`select phone from opt_outs where workspace_id = ${workspaceId} and phone = any(${phones}::text[])`;
+        const { planned, skipped } = planRecipients(template, input.recipients, new Set(optedOut.map((o) => o.phone)));
         if (!planned.length) {
-          throw unprocessable('No recipient can receive this campaign', { recipients: ['Every number is invalid, repeated, or missing a variable'] });
+          throw unprocessable('No recipient can receive this campaign', { recipients: ['Every number is invalid, repeated, unsubscribed, or missing a variable'] });
         }
 
-        const [clock] = await sql<{ now: Date }[]>`select now() as now`;
-        const backlog = await sql<{ session_id: string; last: Date }[]>`
-          select session_id, max(not_before) as last from messages
-          where session_id = any(${input.sessionIds}::uuid[]) and status = 'queued' and not_before is not null
-          group by session_id`;
+        const history = await campaignHistory(sql, input.sessionIds);
         const rows = scheduleBroadcast(planned, input.sessionIds, {
           rotateEvery: input.rotateEvery,
           pace: input.pace,
-          now: clock!.now.getTime(),
-          backlog: new Map(backlog.map((b) => [b.session_id, b.last.getTime()])),
+          window: input.window,
+          now,
+          numbers: new Map(found.map((s) => [s.id, { addedAt: s.created_at.getTime(), history: history.get(s.id) ?? [] }])),
         });
 
         const plan = getPlan(req.auth.planId);
@@ -229,20 +292,20 @@ export function broadcastRoutes({ sql }: Deps): FastifyPluginAsyncZod {
 
         const created = await sql.begin(async (tx) => {
           const [broadcast] = await tx<{ id: string }[]>`
-            insert into broadcasts (workspace_id, created_by, name, template, session_ids, rotate_every, pace, recipients)
+            insert into broadcasts (workspace_id, created_by, name, template, session_ids, rotate_every, pace, sending_window, recipients)
             values (${workspaceId}, ${req.auth.userId}, ${input.name}, ${tx.json(template as never)}, ${input.sessionIds}::uuid[],
-                    ${input.rotateEvery}, ${input.pace}, ${planned.length})
+                    ${input.rotateEvery}, ${input.pace}, ${input.window ? tx.json(input.window) : null}, ${planned.length})
             returning id`;
           // One statement for the whole list; ordinality keeps ids (= send order) as scheduled.
           await tx`
             insert into messages (workspace_id, session_id, direction, remote_jid, type, content, status, broadcast_id, not_before)
-            select ${workspaceId}, r.session_id, 'out', r.jid, r.type, r.content::jsonb, 'queued', ${broadcast!.id}, nullif(r.not_before, '')::timestamptz
+            select ${workspaceId}, r.session_id, 'out', r.jid, r.type, r.content::jsonb, 'queued', ${broadcast!.id}, r.not_before::timestamptz
             from unnest(
               ${rows.map((r) => r.sessionId)}::uuid[],
               ${rows.map((r) => r.jid)}::text[],
               ${rows.map((r) => r.content.type)}::text[],
               ${rows.map((r) => JSON.stringify(r.content))}::text[],
-              ${rows.map((r) => r.notBefore?.toISOString() ?? '')}::text[]
+              ${rows.map((r) => r.notBefore.toISOString())}::text[]
             ) with ordinality as r(session_id, jid, type, content, not_before, ord)
             order by r.ord`;
           await audit(tx, req, {
@@ -250,15 +313,15 @@ export function broadcastRoutes({ sql }: Deps): FastifyPluginAsyncZod {
             targetType: 'broadcast',
             targetId: broadcast!.id,
             targetLabel: input.name,
-            details: { recipients: planned.length, skipped: skipped.length, sessions: input.sessionIds.length, pace: input.pace, rotateEvery: input.rotateEvery },
+            details: { recipients: planned.length, skipped: skipped.length, sessions: input.sessionIds.length, pace: input.pace, rotateEvery: input.rotateEvery, window: input.window },
           });
           return broadcast!;
         });
 
         await Promise.all(input.sessionIds.map((sessionId) => notify(sql, CHANNELS.control, { type: 'message.queued', sessionId }).catch(() => {})));
-        const last = rows.reduce<Date | null>((max, r) => (r.notBefore && (!max || r.notBefore > max) ? r.notBefore : max), null);
+        const last = rows.reduce((max, r) => Math.max(max, r.notBefore.getTime()), now);
         reply.code(201);
-        return ok({ id: created.id, recipients: planned.length, skipped: skipped.slice(0, 200), skippedCount: skipped.length, finishesAt: last?.toISOString() ?? null });
+        return ok({ id: created.id, recipients: planned.length, skipped: skipped.slice(0, 200), skippedCount: skipped.length, finishesAt: new Date(last).toISOString() });
       },
     );
 
@@ -269,16 +332,51 @@ export function broadcastRoutes({ sql }: Deps): FastifyPluginAsyncZod {
     );
 
     app.get(
+      '/numbers',
+      { schema: { ...schemaBase, summary: 'Each number’s campaign load and shield state', response: { 200: successSchema(z.array(numberDto)) } } },
+      async (req) => {
+        const numbers = await sql<{ id: string; restricted_at: Date | null; now: Date; sent24h: number; queued: number }[]>`
+          select s.id, s.restricted_at, now() as now,
+            count(m.id) filter (where m.sent_at > now() - interval '24 hours')::int as sent24h,
+            count(m.id) filter (where m.status = 'queued')::int as queued
+          from sessions s
+          left join messages m on m.session_id = s.id and m.broadcast_id is not null and m.type <> 'poll'
+            and (m.status = 'queued' or m.sent_at > now() - interval '24 hours')
+          where s.workspace_id = ${req.auth.workspaceId}
+          group by s.id`;
+        const history = await campaignHistory(
+          sql,
+          numbers.map((n) => n.id),
+        );
+        return ok(
+          numbers.map((n) => {
+            const times = history.get(n.id) ?? [];
+            // The planner only looks a day back from the last send or schedule.
+            const since = (times.at(-1) ?? 0) - DAY_MS;
+            return {
+              id: n.id,
+              sent24h: n.sent24h,
+              queued: n.queued,
+              history: times.filter((t) => t > since),
+              restingUntil: restingUntil(n.restricted_at, n.now.getTime())?.toISOString() ?? null,
+            };
+          }),
+        );
+      },
+    );
+
+    app.get(
       '/:id',
       { schema: { ...schemaBase, summary: 'A campaign with live progress', params: idParams, response: { 200: successSchema(detailDto) } } },
       async (req) => {
         const row = await load(req.auth.workspaceId, req.params.id);
         const [sessions, recent, failures] = await Promise.all([
-          sql<{ id: string; name: string; phone: string | null; status: string; total: number; done: number; failed: number; pending: number }[]>`
-            select s.id, s.name, s.phone, s.status, count(*)::int as total,
+          sql<{ id: string; name: string; phone: string | null; status: string; restricted_at: Date | null; now: Date; total: number; done: number; failed: number; pending: number; shield_error: string | null }[]>`
+            select s.id, s.name, s.phone, s.status, s.restricted_at, now() as now, count(*)::int as total,
               count(*) filter (where m.status in ('sent', 'delivered', 'read'))::int as done,
               count(*) filter (where m.status = 'failed')::int as failed,
-              count(*) filter (where m.status in ('queued', 'sending'))::int as pending
+              count(*) filter (where m.status in ('queued', 'sending'))::int as pending,
+              (array_agg(m.error order by m.updated_at desc) filter (where m.error = any(${NUMBER_STOPS.map((reason) => SHIELD_STOPS[reason])}::text[])))[1] as shield_error
             from messages m join sessions s on s.id = m.session_id
             where m.broadcast_id = ${row.id} and m.type <> 'poll'
             group by s.id`,
@@ -296,7 +394,13 @@ export function broadcastRoutes({ sql }: Deps): FastifyPluginAsyncZod {
         const order = new Map(row.session_ids.map((id, i) => [id, i]));
         return ok({
           ...toBroadcastDto(row),
-          sessions: sessions.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0)),
+          sessions: sessions
+            .sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
+            .map(({ restricted_at, now, shield_error, ...lane }) => ({
+              ...lane,
+              shield: shieldReason(shield_error),
+              restingUntil: restingUntil(restricted_at, now.getTime())?.toISOString() ?? null,
+            })),
           recent: recent.map((m) => ({ id: m.id, phone: jidToPhone(m.remote_jid), sessionId: m.session_id, status: m.status, error: m.error, updatedAt: m.updated_at.toISOString() })),
           failures: failures.map((m) => ({ phone: jidToPhone(m.remote_jid), error: m.error })),
         });

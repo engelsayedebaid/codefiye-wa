@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import type { Boom } from '@hapi/boom';
-import type { MessageType, OutboundContent } from '@wa/shared';
-import { jidToPhone } from '@wa/shared';
+import type { ChatMedia, MessageExtras, MessageType, OutboundContent, Presence } from '@wa/shared';
+import { jidToPhone, PRESENCES } from '@wa/shared';
 import makeWASocket, {
   type AnyMessageContent,
   Browsers,
@@ -10,9 +10,12 @@ import makeWASocket, {
   type CacheStore,
   decryptPollVote,
   DisconnectReason,
+  downloadMediaMessage,
+  extractMessageContent,
   fetchLatestWaWebVersion,
   getContentType,
   getKeyAuthor,
+  isJidBroadcast,
   isJidGroup,
   isJidNewsletter,
   isJidStatusBroadcast,
@@ -21,6 +24,7 @@ import makeWASocket, {
   makeCacheableSignalKeyStore,
   normalizeMessageContent,
   proto,
+  toNumber,
   type WAMessage,
   type WASocket,
   type WAVersion,
@@ -29,6 +33,10 @@ import pino, { type Logger } from 'pino';
 import type { EncryptedAuthState } from './auth-state';
 import {
   type CloseReason,
+  type ContactProfile,
+  type EchoMessage,
+  type HistoryAnchor,
+  type HistoryMessage,
   type InboundMessage,
   type MediaFetcher,
   type OnWhatsAppResult,
@@ -131,20 +139,54 @@ const CONTENT_TYPES: Partial<Record<keyof proto.IMessage, MessageType>> = {
 /** Message kinds that are protocol plumbing, not something a user sent. */
 const IGNORED = new Set<keyof proto.IMessage>(['protocolMessage', 'pollUpdateMessage', 'keepInChatMessage']);
 
-export function toInbound(msg: WAMessage): InboundMessage | null {
-  const { key } = msg;
-  const chatJid = key.remoteJid;
-  if (!chatJid || !key.id || key.fromMe) return null;
-  if (isJidStatusBroadcast(chatJid) || isJidNewsletter(chatJid)) return null;
+/** Outbound kinds whose sent WAMessage we keep: it holds the keys to download the file again. */
+const STORED_MEDIA = new Set<OutboundContent['type']>(['image', 'video', 'audio', 'document', 'sticker']);
 
-  const content = normalizeMessageContent(msg.message);
-  const kind = getContentType(content);
-  if (!content || !kind || IGNORED.has(kind)) return null;
+/** Embedded previews larger than this are dropped: they're stored with every message. */
+const MAX_THUMB_BYTES = 12_000;
 
-  const isGroup = Boolean(isJidGroup(chatJid));
-  const pick = (jid?: string | null, alt?: string | null) => (jid && isLidUser(jid) && alt ? alt : jid);
-  const from = (isGroup ? pick(key.participant, key.participantAlt) : pick(chatJid, key.remoteJidAlt)) ?? chatJid;
-  const text =
+type MediaFields = {
+  mimetype?: string | null;
+  fileLength?: unknown;
+  seconds?: number | null;
+  width?: number | null;
+  height?: number | null;
+  fileName?: string | null;
+  ptt?: boolean | null;
+  gifPlayback?: boolean | null;
+  jpegThumbnail?: Uint8Array | null;
+  viewOnce?: boolean | null;
+  contextInfo?: proto.IContextInfo | null;
+};
+
+/** Drops empty fields, so stored content stays small. */
+const compact = <T extends object>(o: T) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== null && v !== '')) as T;
+
+function mediaOf(m: MediaFields): ChatMedia {
+  const thumb = m.jpegThumbnail?.length && m.jpegThumbnail.length <= MAX_THUMB_BYTES ? Buffer.from(m.jpegThumbnail).toString('base64') : undefined;
+  return compact({
+    mimetype: m.mimetype ?? undefined,
+    size: m.fileLength != null ? toNumber(m.fileLength as number) || undefined : undefined,
+    seconds: m.seconds ?? undefined,
+    width: m.width ?? undefined,
+    height: m.height ?? undefined,
+    fileName: m.fileName ?? undefined,
+    ptt: m.ptt || undefined,
+    gif: m.gifPlayback || undefined,
+    thumb,
+  });
+}
+
+/** Contact cards carry a vCard; WhatsApp puts the number in `waid=`. */
+function vcardPhone(vcard: string | null | undefined): string | null {
+  const waid = /waid=(\d+)/.exec(vcard ?? '')?.[1];
+  if (waid) return `+${waid}`;
+  const tel = /TEL[^:\n]*:([+\d][\d\s().-]{5,})/.exec(vcard ?? '')?.[1]?.replace(/[^\d+]/g, '');
+  return tel || null;
+}
+
+function textOf(content: proto.IMessage): string | null {
+  return (
     content.conversation ??
     content.extendedTextMessage?.text ??
     content.imageMessage?.caption ??
@@ -152,20 +194,107 @@ export function toInbound(msg: WAMessage): InboundMessage | null {
     content.documentMessage?.caption ??
     content.documentWithCaptionMessage?.message?.documentMessage?.caption ??
     content.reactionMessage?.text ??
-    null;
+    null
+  );
+}
 
+/** Everything a chat view needs to draw the message besides its text (see `MessageExtras`). */
+export function extrasOf(content: proto.IMessage, kind: keyof proto.IMessage, wrapper?: proto.IMessage | null): MessageExtras {
+  const extras: MessageExtras = {};
+  const inner = content[kind] as MediaFields | null | undefined;
+  const media = content.imageMessage ?? content.videoMessage ?? content.ptvMessage ?? content.audioMessage ?? content.documentMessage ?? content.stickerMessage;
+  if (media) extras.media = mediaOf({ ...(media as MediaFields), ptt: content.audioMessage?.ptt ?? (content.ptvMessage ? true : null) });
+  const location = content.locationMessage ?? content.liveLocationMessage;
+  if (location && location.degreesLatitude != null && location.degreesLongitude != null) {
+    extras.location = compact({
+      latitude: location.degreesLatitude,
+      longitude: location.degreesLongitude,
+      name: content.locationMessage?.name ?? undefined,
+      address: content.locationMessage?.address ?? undefined,
+      live: content.liveLocationMessage ? true : undefined,
+    });
+  }
+  const cards = content.contactMessage ? [content.contactMessage] : (content.contactsArrayMessage?.contacts ?? []);
+  if (cards.length) extras.contacts = cards.map((c) => ({ name: c.displayName ?? '', phone: vcardPhone(c.vcard) }));
+  if (content.reactionMessage?.key?.id) extras.reactTo = content.reactionMessage.key.id;
+  const poll = content.pollCreationMessage ?? content.pollCreationMessageV3 ?? content.pollCreationMessageV2;
+  if (poll?.name) extras.poll = { name: poll.name, options: (poll.options ?? []).map((o) => o.optionName ?? '') };
+
+  const context = inner && typeof inner === 'object' ? inner.contextInfo : null;
+  if (context?.stanzaId && context.quotedMessage) {
+    const quoted = normalizeMessageContent(context.quotedMessage);
+    const quotedKind = getContentType(quoted);
+    if (quoted && quotedKind) {
+      extras.quoted = { id: context.stanzaId, type: CONTENT_TYPES[quotedKind] ?? 'unknown', text: textOf(quoted), participant: context.participant ?? null };
+    }
+  }
+  if (context?.isForwarded) extras.forwarded = true;
+  if (wrapper?.viewOnceMessage || wrapper?.viewOnceMessageV2 || wrapper?.viewOnceMessageV2Extension || inner?.viewOnce) extras.viewOnce = true;
+  return extras;
+}
+
+/** What inbound and phone-sent messages have in common; null for anything that isn't a chat message. */
+function parse(msg: WAMessage) {
+  const { key } = msg;
+  const chatJid = key.remoteJid;
+  if (!chatJid || !key.id) return null;
+  if (isJidStatusBroadcast(chatJid) || isJidNewsletter(chatJid) || isJidBroadcast(chatJid)) return null;
+  const content = normalizeMessageContent(msg.message);
+  const kind = getContentType(content);
+  if (!content || !kind || IGNORED.has(kind)) return null;
   return {
     waMessageId: key.id,
     chatJid,
-    from,
-    participant: isGroup ? (key.participant ?? undefined) : undefined,
-    pushName: msg.pushName ?? null,
-    isGroup,
-    type: CONTENT_TYPES[kind] ?? 'unknown',
-    text,
-    timestamp: Number(msg.messageTimestamp ?? Math.floor(Date.now() / 1000)),
-    raw: JSON.parse(JSON.stringify(msg, BufferJSON.replacer)),
+    isGroup: Boolean(isJidGroup(chatJid)),
+    type: CONTENT_TYPES[kind] ?? ('unknown' as MessageType),
+    text: textOf(content),
+    extras: extrasOf(content, kind, msg.message),
+    timestamp: toNumber(msg.messageTimestamp as number) || Math.floor(Date.now() / 1000),
+    raw: JSON.parse(JSON.stringify(msg, BufferJSON.replacer)) as unknown,
   };
+}
+
+/** The phone-number JID when WhatsApp gives one alongside a LID. */
+const pick = (jid?: string | null, alt?: string | null) => (jid && isLidUser(jid) && alt ? alt : jid);
+
+export function toInbound(msg: WAMessage): InboundMessage | null {
+  const { key } = msg;
+  if (key.fromMe) return null;
+  const base = parse(msg);
+  if (!base) return null;
+  const from = (base.isGroup ? pick(key.participant, key.participantAlt) : pick(base.chatJid, key.remoteJidAlt)) ?? base.chatJid;
+  return { ...base, from, participant: base.isGroup ? (key.participant ?? undefined) : undefined, pushName: msg.pushName ?? null };
+}
+
+/** A message we sent from the phone (or another linked device). The chat is addressed by phone number when WhatsApp says which. */
+export function toEcho(msg: WAMessage): EchoMessage | null {
+  const { key } = msg;
+  if (!key.fromMe) return null;
+  const base = parse(msg);
+  if (!base) return null;
+  return { ...base, chatJid: (base.isGroup ? base.chatJid : pick(base.chatJid, key.remoteJidAlt)) ?? base.chatJid };
+}
+
+/** Statuses of a media download that mean WhatsApp's link expired and the phone must upload the file again. */
+const EXPIRED_MEDIA = new Set([403, 404, 410]);
+
+export function isMediaExpired(err: unknown): boolean {
+  const status = (err as Boom | undefined)?.output?.statusCode ?? (err as { status?: number } | undefined)?.status;
+  return typeof status === 'number' && EXPIRED_MEDIA.has(status);
+}
+
+/**
+ * Downloads and decrypts the media of a stored WAMessage (`messages.raw`, BufferJSON). Needs no
+ * socket; once WhatsApp's link has expired it throws an error `isMediaExpired` recognises, and
+ * `BaileysProvider.reuploadMedia` asks the phone for a fresh link.
+ */
+export async function downloadMedia(raw: unknown): Promise<{ data: Buffer; mimetype: string | null }> {
+  const msg = JSON.parse(JSON.stringify(raw), BufferJSON.reviver) as WAMessage;
+  const content = extractMessageContent(msg.message);
+  const kind = getContentType(content ?? undefined);
+  const media = kind ? (content?.[kind] as MediaFields | undefined) : undefined;
+  const data = (await downloadMediaMessage(msg, 'buffer', {})) as Buffer;
+  return { data, mimetype: media?.mimetype ?? null };
 }
 
 const sha256Hex = (text: string) => createHash('sha256').update(text).digest('hex');
@@ -311,13 +440,61 @@ export class BaileysProvider implements Provider {
         }
         if (type !== 'notify') continue;
         const inbound = toInbound(msg);
-        if (inbound) this.emit('message', inbound);
+        if (inbound) {
+          this.emit('message', inbound);
+          continue;
+        }
+        // Sent from the phone. Our own sends arrive as 'append', and are remembered in `recent` besides.
+        const echo = msg.key.id && !this.recent.get(msg.key.id) ? toEcho(msg) : null;
+        if (echo) this.emit('echo', echo);
+      }
+    });
+
+    // History the phone shares: a batch right after linking, and what `fetchHistory` asks for.
+    sock.ev.on('messaging-history.set', ({ messages, contacts, chats, syncType }) => {
+      if (!current()) return;
+      const items = messages.flatMap((m): HistoryMessage[] => {
+        const inbound = toInbound(m);
+        if (inbound) return [{ ...inbound, fromMe: false }];
+        const echo = toEcho(m);
+        return echo ? [{ ...echo, fromMe: true }] : [];
+      });
+      const names = [
+        ...contacts.map((c) => ({ jid: c.id, name: c.name ?? c.notify ?? c.verifiedName ?? '' })),
+        ...chats.map((c) => ({ jid: c.id, name: c.name ?? '' })),
+      ].filter((n): n is { jid: string; name: string } => Boolean(n.jid && n.name));
+      if (items.length || names.length) this.emit('history', { messages: items, names, onDemand: syncType === proto.HistorySync.HistorySyncType.ON_DEMAND });
+    });
+
+    sock.ev.on('presence.update', ({ id, presences }) => {
+      if (!current()) return;
+      for (const [jid, p] of Object.entries(presences)) {
+        if (!PRESENCES.includes(p.lastKnownPresence as Presence)) continue;
+        this.track(
+          Promise.all([this.phoneJid(id), this.phoneJid(jid)]).then(([chatJid, who]) =>
+            this.emit('presence', { chatJid, jid: who, presence: p.lastKnownPresence as Presence, lastSeen: p.lastSeen ?? null }),
+          ),
+        );
+      }
+    });
+
+    // Read on the phone: WhatsApp syncs "mark as read" to linked devices.
+    sock.ev.on('chats.update', (updates) => {
+      if (!current()) return;
+      for (const chat of updates) {
+        if (chat.id && chat.unreadCount === 0) this.track(this.phoneJid(chat.id).then((chatJid) => this.emit('chatRead', { chatJid })));
       }
     });
 
     sock.ev.on('messages.update', (updates) => {
       if (!current()) return;
       for (const { key, update } of updates) {
+        // Another device of ours read (or played) a message we received.
+        if (!key.fromMe && key.remoteJid && update.status != null && update.status >= proto.WebMessageInfo.Status.READ) {
+          const remote = key.remoteJid;
+          this.track(this.phoneJid(remote).then((chatJid) => this.emit('chatRead', { chatJid })));
+          continue;
+        }
         const status = update.status != null ? RECEIPTS[update.status] : undefined;
         if (!key.fromMe || !key.id || !key.remoteJid || !status) continue;
         // A rejected message (error ack) carries WhatsApp's code first in messageStubParameters.
@@ -346,6 +523,81 @@ export class BaileysProvider implements Provider {
     const vote = readPollVote(msg, poll, [me?.id, me?.lid]);
     if (!vote) return this.logger.warn({ pollId }, 'could not decrypt poll vote');
     this.emit('pollVote', vote);
+  }
+
+  private track(promise: Promise<unknown>) {
+    promise.catch((err) => this.logger.warn({ err }, 'event handler failed'));
+  }
+
+  /** The phone-number JID of a LID when Baileys knows it; anything else unchanged. */
+  private async phoneJid(jid: string): Promise<string> {
+    if (!isLidUser(jid) || !this.sock) return jid;
+    const pn = await this.sock.signalRepository.lidMapping.getPNForLID(jid).catch(() => null);
+    return pn ? jidNormalizedUser(pn) : jid;
+  }
+
+  // --- chats (the admin inbox) -------------------------------------------------------------------
+
+  /** Asks WhatsApp for this contact's presence updates (online, typing…); lasts while we're online. */
+  async subscribePresence(jid: string): Promise<void> {
+    await this.requireOpen().presenceSubscribe(jid);
+  }
+
+  /**
+   * Shows the account as online (or not). WhatsApp only delivers presence to online clients, but an
+   * online linked device silences notifications on the phone, so callers keep this short-lived.
+   */
+  async setOnline(online: boolean): Promise<void> {
+    await this.requireOpen().sendPresenceUpdate(online ? 'available' : 'unavailable');
+  }
+
+  /** "typing…" / "recording audio…" in the contact's chat, or stop showing it. */
+  async sendChatState(jid: string, state: 'composing' | 'recording' | 'paused'): Promise<void> {
+    await this.requireOpen().sendPresenceUpdate(state, jid);
+  }
+
+  /** Profile picture (a temporary URL) and "about" text, as far as the contact's privacy allows. */
+  async profile(jid: string): Promise<ContactProfile> {
+    const sock = this.requireOpen();
+    const [picture, status, group] = await Promise.allSettled([
+      sock.profilePictureUrl(jid, 'image', 10_000),
+      isJidGroup(jid) ? Promise.resolve(undefined) : sock.fetchStatus(jid),
+      isJidGroup(jid) ? sock.groupMetadata(jid) : Promise.resolve(undefined),
+    ]);
+    const about = status.status === 'fulfilled' ? (status.value?.[0] as { status?: { status?: string } } | undefined)?.status?.status : undefined;
+    return {
+      pictureUrl: picture.status === 'fulfilled' ? (picture.value ?? null) : null,
+      about: about || (group.status === 'fulfilled' ? (group.value?.desc ?? null) : null),
+      name: group.status === 'fulfilled' ? (group.value?.subject ?? null) : null,
+    };
+  }
+
+  /**
+   * Asks the phone for up to `count` messages of a chat older than `oldest`. They arrive later as a
+   * `history` event (the phone must be online).
+   */
+  async fetchHistory(oldest: HistoryAnchor, count = 50): Promise<void> {
+    await this.requireOpen().fetchMessageHistory(count, { remoteJid: oldest.chatJid, id: oldest.id, fromMe: oldest.fromMe }, oldest.timestampMs);
+  }
+
+  /** A contact's or group's picture (a temporary URL; `preview` = small), or null when hidden or unset. */
+  async pictureUrl(jid: string, type: 'preview' | 'image' = 'preview'): Promise<string | null> {
+    return (await this.requireOpen().profilePictureUrl(jid, type, 8_000).catch(() => undefined)) ?? null;
+  }
+
+  /** A group's name. */
+  async groupSubject(jid: string): Promise<string | null> {
+    return (await this.requireOpen().groupMetadata(jid)).subject || null;
+  }
+
+  /**
+   * WhatsApp keeps media for a limited time; after that the phone has to upload it again. Returns the
+   * stored WAMessage with a fresh link (BufferJSON), to save and download with `downloadMedia`.
+   */
+  async reuploadMedia(raw: unknown): Promise<unknown> {
+    const msg = JSON.parse(JSON.stringify(raw), BufferJSON.reviver) as WAMessage;
+    const updated = await this.requireOpen().updateMediaMessage(msg);
+    return JSON.parse(JSON.stringify(updated, BufferJSON.replacer));
   }
 
   async close(): Promise<void> {
@@ -420,12 +672,19 @@ export class BaileysProvider implements Provider {
   async send(jid: string, content: OutboundContent): Promise<{ waMessageId: string; raw?: unknown }> {
     const payload = await this.toBaileys(content);
     const sock = this.requireOpen();
-    const msg = await sock.sendMessage(jid, payload);
+    const msg = await sock.sendMessage(jid, payload, content.quote ? { quoted: this.quoted(jid, content.quote) } : undefined);
     if (!msg?.key.id) throw new ProviderError('send_failed', 'WhatsApp returned no message id');
     if (msg.message) this.recent.set(msg.key.id, msg.message);
-    // Polls carry the secret that votes are encrypted with; the caller persists it.
-    const raw = content.type === 'poll' ? JSON.parse(JSON.stringify(msg, BufferJSON.replacer)) : undefined;
+    // Polls carry the secret that votes are encrypted with, media the keys to download it again (the
+    // chats page shows it); the caller persists them.
+    const raw = content.type === 'poll' || STORED_MEDIA.has(content.type) ? JSON.parse(JSON.stringify(msg, BufferJSON.replacer)) : undefined;
     return { waMessageId: msg.key.id, raw };
+  }
+
+  /** The replied-to message as Baileys wants it; the quote shows its text (media quotes show their caption). */
+  private quoted(jid: string, quote: NonNullable<OutboundContent['quote']>): WAMessage {
+    const message = this.recent.get(quote.id) ?? { conversation: quote.text ?? '' };
+    return { key: { remoteJid: jid, id: quote.id, fromMe: quote.fromMe, participant: quote.participant }, message };
   }
 
   async setTyping(jid: string, typing: boolean): Promise<void> {

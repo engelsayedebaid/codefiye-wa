@@ -1,8 +1,9 @@
 import { createDb, createListener, databaseUrls, runMigrations } from '@wa/db';
 import { parseKey } from '@wa/provider';
+import { UPLOAD_SCHEME } from '@wa/shared';
 import pino from 'pino';
 import { loadConfig } from './config';
-import { fetchMedia } from './media';
+import { fetchMedia, fetchUpload } from './media';
 import { buildRpcServer } from './rpc';
 import { Supervisor } from './supervisor';
 
@@ -28,7 +29,8 @@ const supervisor = new Supervisor({
   logger,
   baileysLogger: logger.child({ module: 'baileys' }, { level: config.BAILEYS_LOG_LEVEL }),
   sendDelay: { min: config.SEND_DELAY_MIN_MS, max: Math.max(config.SEND_DELAY_MIN_MS, config.SEND_DELAY_MAX_MS) },
-  fetchMedia: (url, kind) => fetchMedia(url, { maxBytes: config.MEDIA_MAX_BYTES, kind }),
+  // Files attached on the chats page come from the database, not a URL.
+  fetchMedia: (url, kind) => (url.startsWith(UPLOAD_SCHEME) ? fetchUpload(sql, url.slice(UPLOAD_SCHEME.length)) : fetchMedia(url, { maxBytes: config.MEDIA_MAX_BYTES, kind })),
 });
 
 const rpc = buildRpcServer(supervisor, config.WORKER_SECRET, logger);

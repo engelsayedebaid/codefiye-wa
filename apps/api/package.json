@@ -16,6 +16,7 @@
     "@fastify/swagger": "9.9.0",
     "@scalar/fastify-api-reference": "1.72.1",
     "@wa/db": "workspace:*",
+    "@wa/provider": "workspace:*",
     "@wa/shared": "workspace:*",
     "fastify": "5.12.5",
     "fastify-type-provider-zod": "7.0.0",

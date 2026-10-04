@@ -38,6 +38,7 @@ const KeysPage = lazy(() => loadChunk(() => import('./pages/Keys')).then((m) => 
 const SubscriptionPage = lazy(() => loadChunk(() => import('./pages/Subscription')).then((m) => ({ default: m.SubscriptionPage })));
 const AdminPage = lazy(() => loadChunk(() => import('./pages/Admin')).then((m) => ({ default: m.AdminPage })));
 const AdsPage = lazy(() => loadChunk(() => import('./pages/Ads')).then((m) => ({ default: m.AdsPage })));
+const ChatsPage = lazy(() => loadChunk(() => import('./pages/Chats')).then((m) => ({ default: m.ChatsPage })));
 
 const subscribeOnline = (notify: () => void) => {
   window.addEventListener('online', notify);
@@ -71,7 +72,9 @@ function Redirect({ to }: { to: string }) {
 function Centered({ children }: { children: ReactNode }) {
   return (
     <main className="relative flex min-h-svh flex-col items-center justify-center gap-6 p-6 text-center">
-      <LangSwitch className="absolute top-4 end-4" />
+      <div className="absolute top-4 end-4 flex items-center gap-1">
+        <LangSwitch />
+      </div>
       {children}
     </main>
   );
@@ -188,6 +191,8 @@ function AppPage({ path }: { path: string }) {
       return <AdminPage />;
     case '/ads':
       return <AdsPage />;
+    case '/chats':
+      return <ChatsPage />;
     default:
       return <Redirect to="/dashboard" />;
   }

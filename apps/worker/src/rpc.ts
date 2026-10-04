@@ -61,6 +61,54 @@ export function buildRpcServer(supervisor: Supervisor, secret: string, logger: L
     return runnerFor(req.params).sendDirect(to, text);
   });
 
+  // --- the admin chats page ---
+  const jid = z.string().min(5).max(128).regex(/^[\w.:-]+@(s\.whatsapp\.net|g\.us|lid)$/);
+
+  app.post('/sessions/:id/watch-chat', async (req) => {
+    const body = z.object({ jid }).parse(req.body);
+    await runnerFor(req.params).watchChat(body.jid);
+    return { ok: true };
+  });
+
+  app.post('/sessions/:id/chat-state', async (req) => {
+    const body = z.object({ jid, state: z.enum(['composing', 'recording', 'paused']) }).parse(req.body);
+    await runnerFor(req.params).chatState(body.jid, body.state);
+    return { ok: true };
+  });
+
+  app.post('/sessions/:id/read', async (req) => {
+    const { messages } = z
+      .object({ messages: z.array(z.object({ chatJid: jid, waMessageId: z.string().min(1).max(128), participant: z.string().max(128).optional() })).min(1).max(100) })
+      .parse(req.body);
+    await runnerFor(req.params).readMessages(messages);
+    return { ok: true };
+  });
+
+  app.post('/sessions/:id/profile', async (req) => {
+    const body = z.object({ jid }).parse(req.body);
+    return runnerFor(req.params).profile(body.jid);
+  });
+
+  app.post('/sessions/:id/pictures', async (req) => {
+    const { jids } = z.object({ jids: z.array(jid).min(1).max(50) }).parse(req.body);
+    return { pictures: await runnerFor(req.params).pictures(jids) };
+  });
+
+  app.post('/sessions/:id/fetch-history', async (req) => {
+    const { anchors } = z
+      .object({
+        anchors: z.array(z.object({ chatJid: jid, id: z.string().min(1).max(128), fromMe: z.boolean(), timestampMs: z.number().int().positive() })).min(1).max(50),
+      })
+      .parse(req.body);
+    runnerFor(req.params).fetchHistory(anchors);
+    return { requested: anchors.length };
+  });
+
+  app.post('/sessions/:id/reupload-media', async (req) => {
+    const { raw } = z.object({ raw: z.record(z.string(), z.unknown()) }).parse(req.body);
+    return { raw: await runnerFor(req.params).reuploadMedia(raw) };
+  });
+
   app.post('/sessions/:id/logout', async (req) => {
     await runnerFor(req.params).logout();
     return { ok: true };

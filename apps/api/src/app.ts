@@ -23,6 +23,7 @@ import { ApiError, codeForStatus, notFound, tooMany } from './lib/errors';
 import { accountRoutes, publicAccountRoutes } from './routes/account';
 import { adminRoutes } from './routes/admin';
 import { broadcastRoutes } from './routes/broadcasts';
+import { chatRoutes } from './routes/chats';
 import { eventRoutes } from './routes/events';
 import { keyRoutes } from './routes/keys';
 import { messageRoutes } from './routes/messages';
@@ -126,7 +127,8 @@ export async function buildApp(deps: Deps, options: AppOptions) {
     reply.header('cross-origin-opener-policy', 'same-origin');
     reply.header('permissions-policy', 'camera=(), microphone=(), geolocation=(), payment=()');
     if (req.protocol === 'https') reply.header('strict-transport-security', 'max-age=15552000; includeSubDomains');
-    if (req.url.startsWith('/api')) reply.header('cache-control', 'no-store');
+    // Chat media sets its own (immutable per message); everything else under /api is never cached.
+    if (req.url.startsWith('/api') && !reply.hasHeader('cache-control')) reply.header('cache-control', 'no-store');
     const type = reply.getHeader('content-type');
     if (csp && typeof type === 'string' && type.startsWith('text/html') && !req.url.startsWith('/docs')) reply.header('content-security-policy', csp);
     return payload;
@@ -142,7 +144,7 @@ export async function buildApp(deps: Deps, options: AppOptions) {
   await app.register(swagger, {
     openapi: {
       info: {
-        title: 'wa-platform API',
+        title: 'WA CodeFiye API',
         version: '2026-09-01',
         description:
           'WhatsApp REST API. Authenticate with `Authorization: Bearer <key>`: a session key (`was_…`) acts on its own ' +
@@ -233,6 +235,7 @@ export async function buildApp(deps: Deps, options: AppOptions) {
       await api.register(accountRoutes(deps));
       await api.register(adminRoutes(deps), { prefix: '/admin' });
       await api.register(broadcastRoutes(deps), { prefix: '/broadcasts' });
+      await api.register(chatRoutes(deps), { prefix: '/chats' });
       api.setNotFoundHandler(() => {
         throw notFound('Route not found', 'route_not_found');
       });

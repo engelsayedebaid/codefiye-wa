@@ -3,7 +3,7 @@ dist/
 .env
 .env.*
 !.env.example
-auth/
+/auth/
 *.log
 .DS_Store
 .neon

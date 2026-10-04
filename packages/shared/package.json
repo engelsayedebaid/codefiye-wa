@@ -10,7 +10,8 @@
     "./constants": "./src/constants.ts",
     "./name-suggestions": "./src/name-suggestions.ts",
     "./phone": "./src/phone.ts",
-    "./template-text": "./src/template-text.ts"
+    "./template-text": "./src/template-text.ts",
+    "./chats": "./src/chats.ts"
   },
   "scripts": {
     "typecheck": "tsc -p ."
