@@ -18,6 +18,7 @@ import {
   UPLOAD_SCHEME,
   type WaEvent,
 } from '@wa/shared';
+import type { GroupMember } from '@wa/provider';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { Deps } from '../deps';
@@ -89,6 +90,10 @@ const chatMessageDto = z.object({
   sentAt: z.string().nullable(),
   createdAt: z.string(),
 });
+
+/** Someone in a group: a name to show (null = none known) and their number (null for a hidden LID). */
+const personDto = z.object({ name: z.string().nullable(), phone: z.string().nullable() });
+type Person = z.infer<typeof personDto>;
 
 type ChatRow = {
   jid: string;
@@ -196,6 +201,28 @@ export function chatRoutes(deps: Deps): FastifyPluginAsyncZod {
   };
   /** Both addresses a conversation's messages may be stored under. */
   const jidsOf = (chat: { jid: string; alt_jid: string | null } | null, jid: string) => (chat ? [chat.jid, ...(chat.alt_jid ? [chat.alt_jid] : [])] : [jid]);
+  /**
+   * People in groups, by address (phone number or LID): their phone number when known, and a name —
+   * saved on the phone, else a business's verified name, else the latest WhatsApp name they wrote under.
+   */
+  const peopleOf = async (sessionId: string, addresses: string[]): Promise<Record<string, Person>> => {
+    if (!addresses.length) return {};
+    const rows = await sql<{ jid: string; pn: string | null; name: string | null }[]>`
+      with x as (
+        select a.jid,
+          case when a.jid like '%@lid' then (select pn from contact_lids where session_id = ${sessionId} and lid = a.jid) else a.jid end as pn,
+          case when a.jid like '%@lid' then a.jid else (select lid from contact_lids where session_id = ${sessionId} and pn = a.jid limit 1) end as lid
+        from (select distinct unnest(${addresses}::text[]) as jid) a)
+      select x.jid, x.pn, coalesce(
+        (select coalesce(n.saved_name, n.verified_name) from contact_names n
+         where n.session_id = ${sessionId} and n.jid in (x.pn, x.lid) and coalesce(n.saved_name, n.verified_name) is not null
+         order by (n.saved_name is not null) desc limit 1),
+        (select m.content->>'pushName' from messages m
+         where m.session_id = ${sessionId} and m.direction = 'in' and m.content->>'from' in (x.pn, x.lid) and usable_contact_name(m.content->>'pushName')
+         order by m.id desc limit 1)) as name
+      from x`;
+    return Object.fromEntries(rows.map((r) => [r.jid, { name: r.name, phone: jidToPhone(r.pn) }]));
+  };
 
   return async (app) => {
     // Admins always get in; customers need a plan that bundles `chats` (Business and up).
@@ -405,7 +432,16 @@ export function chatRoutes(deps: Deps): FastifyPluginAsyncZod {
             kind: z.enum(['media', 'documents', 'audio']).optional(),
             limit: z.coerce.number().int().min(1).max(100).default(50),
           }),
-          response: { 200: successSchema(z.object({ messages: z.array(chatMessageDto), nextBefore: z.number().nullable() })) },
+          response: {
+            200: successSchema(
+              z.object({
+                messages: z.array(chatMessageDto),
+                nextBefore: z.number().nullable(),
+                /** Groups: who sent the page's incoming messages, by their `content.from`. */
+                senders: z.record(z.string(), personDto),
+              }),
+            ),
+          },
         },
       },
       async (req) => {
@@ -423,7 +459,8 @@ export function chatRoutes(deps: Deps): FastifyPluginAsyncZod {
             ${kind ? sql`and type = any(${kinds[kind]})` : sql``}
           order by created_at desc, id desc
           limit ${limit}`;
-        return ok({ messages: rows.map(toMessageDto), nextBefore: rows.length === limit ? rows.at(-1)!.id : null });
+        const froms = jid.endsWith('@g.us') ? rows.flatMap((m) => (m.direction === 'in' && typeof m.content.from === 'string' && !m.content.from.endsWith('@g.us') ? [m.content.from] : [])) : [];
+        return ok({ messages: rows.map(toMessageDto), nextBefore: rows.length === limit ? rows.at(-1)!.id : null, senders: await peopleOf(session.id, froms) });
       },
     );
 
@@ -696,6 +733,43 @@ export function chatRoutes(deps: Deps): FastifyPluginAsyncZod {
         profiles.set(key, { at: Date.now(), value });
         if (value.name && req.query.jid.endsWith('@g.us')) await setChatName(sql, session.id, req.query.jid, value.name);
         return ok(value);
+      },
+    );
+
+    app.get(
+      '/:sessionId/group-members',
+      {
+        schema: {
+          ...schemaBase,
+          summary: "A group's members (live from WhatsApp): admins first, then by name",
+          params: sessionParams,
+          querystring: z.object({ jid: jidSchema.refine((j) => j.endsWith('@g.us'), 'Not a group') }),
+          response: {
+            200: successSchema(
+              z.object({
+                members: z.array(
+                  personDto.extend({ jid: z.string(), role: z.enum(['superadmin', 'admin', 'member']), isMe: z.boolean() }),
+                ),
+              }),
+            ),
+          },
+        },
+      },
+      async (req) => {
+        const session = await ownedSession(sql, req, req.params.sessionId);
+        if (session.status !== 'connected') throw conflict('Connect the number to see the group members', 'session_not_connected');
+        const { members } = await workers.call<{ members: GroupMember[] }>(session.id, 'group-members', { jid: req.query.jid }, { timeoutMs: 25_000 });
+        const people = await peopleOf(session.id, members.flatMap((m) => [m.phoneJid ?? m.jid, ...(m.lid ? [m.lid] : [])]));
+        const me = session.phone?.replace(/\D/g, '');
+        const rank = { superadmin: 0, admin: 1, member: 2 };
+        const list = members.map((m) => {
+          const person = people[m.phoneJid ?? m.jid];
+          const viaLid = m.lid ? people[m.lid] : undefined;
+          const phone = person?.phone ?? viaLid?.phone ?? null;
+          return { jid: m.jid, role: m.role, name: person?.name ?? viaLid?.name ?? null, phone, isMe: Boolean(me && phone?.replace(/\D/g, '') === me) };
+        });
+        list.sort((a, b) => Number(b.isMe) - Number(a.isMe) || rank[a.role] - rank[b.role] || Number(!a.name) - Number(!b.name) || (a.name ?? a.phone ?? a.jid).localeCompare(b.name ?? b.phone ?? b.jid));
+        return ok({ members: list });
       },
     );
 

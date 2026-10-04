@@ -29,6 +29,9 @@ export type EchoMessage = Pick<InboundMessage, 'waMessageId' | 'isGroup' | 'type
 /** A contact's profile as far as their privacy settings let us see it. */
 export type ContactProfile = { pictureUrl: string | null; about: string | null; name: string | null };
 
+/** A group member: their address (LID or phone-number JID), number when WhatsApp shares it, and role. */
+export type GroupMember = { jid: string; phoneJid: string | null; lid: string | null; role: 'superadmin' | 'admin' | 'member' };
+
 export type CloseReason = 'logged_out' | 'restart_required' | 'connection_replaced' | 'qr_timeout' | 'error';
 
 export type ReceiptStatus = 'sent' | 'delivered' | 'read' | 'failed';

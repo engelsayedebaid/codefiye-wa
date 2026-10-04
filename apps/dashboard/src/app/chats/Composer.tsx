@@ -192,7 +192,7 @@ export const Composer = memo(function Composer({ sessionId, jid, connected, titl
   const iconButton = 'flex size-9 shrink-0 items-center justify-center rounded-xl text-muted transition-colors hover:bg-raised hover:text-ink disabled:opacity-40 disabled:hover:bg-transparent';
 
   return (
-    <form onSubmit={submit} className="relative shrink-0 border-t border-line/60 bg-card/80 px-2 py-2.5 backdrop-blur md:px-4">
+    <form onSubmit={submit} className="chat-composer relative shrink-0 border-t border-line/60 bg-card/80 px-2 py-2.5 backdrop-blur md:px-4">
       {panel === 'voice' && <VoiceRecorder onSend={(blob, seconds) => void sendVoice(blob, seconds)} onClose={closePanel} onRecording={onRecording} />}
       {!connected && (
         <p className="mb-2 flex items-center gap-2 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-400">

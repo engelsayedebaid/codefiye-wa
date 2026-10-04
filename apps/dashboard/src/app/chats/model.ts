@@ -78,7 +78,19 @@ export type MessageContent = {
   phone?: string;
 };
 
-export type MessagesPage = { messages: ChatMessage[]; nextBefore: number | null };
+/** Someone in a group: a name to show (null = none known) and their number (null for a hidden LID). */
+export type Person = { name: string | null; phone: string | null };
+
+/** `senders`: groups only, who sent the page's incoming messages, by `content.from`. */
+export type MessagesPage = { messages: ChatMessage[]; nextBefore: number | null; senders?: Record<string, Person> };
+
+export type GroupMember = Person & { jid: string; role: 'superadmin' | 'admin' | 'member'; isMe: boolean };
+
+/** A group message's sender on its bubble (`key` picks the name's color; `phone` shows beside a name; `unknown`: not stored). */
+export type Sender = { key: string; name: string; phone: string | null; unknown?: boolean };
+
+/** `+20100…` for a phone-number JID; null for a LID or a group. */
+export const jidPhone = (jid: string) => (jid.endsWith('@s.whatsapp.net') ? `+${jid.split('@')[0]!.split(':')[0]}` : null);
 
 export type ChatInfo = {
   chat: ChatSummary | null;

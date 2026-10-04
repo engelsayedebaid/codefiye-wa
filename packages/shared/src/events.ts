@@ -23,7 +23,7 @@ export type WaEvent =
   /** A chat was read: on the phone, or from another dashboard tab. */
   | Base<'chat.read', { chatJid: string }>
   /** Past messages arrived from the phone (sync): `added` new ones, for one chat or (null) several. */
-  | Base<'chats.synced', { chatJid: string | null; added: number }>
+  | Base<'chats.synced', { chatJid: string | null; added: number; /** Group messages whose sender a sync filled in. */ repaired?: number }>
   /** A conversation sync job moved (status, counters, the conversation in progress). */
   | Base<'sync.progress', SyncProgress>
   /** One line of a sync job's log. */

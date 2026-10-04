@@ -113,6 +113,13 @@
       "when": 1791117353938,
       "tag": "0015_contact_names",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1791156610728,
+      "tag": "0016_group_senders",
+      "breakpoints": true
     }
   ]
 }

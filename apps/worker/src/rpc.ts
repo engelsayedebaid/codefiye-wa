@@ -91,6 +91,11 @@ export function buildRpcServer(supervisor: Supervisor, secret: string, logger: L
     return runnerFor(req.params).profile(body.jid);
   });
 
+  app.post('/sessions/:id/group-members', async (req) => {
+    const body = z.object({ jid: jid.refine((j) => j.endsWith('@g.us'), 'not a group') }).parse(req.body);
+    return { members: await runnerFor(req.params).groupMembers(body.jid) };
+  });
+
   app.post('/sessions/:id/pictures', async (req) => {
     const { jids } = z.object({ jids: z.array(jid).min(1).max(50) }).parse(req.body);
     return { pictures: await runnerFor(req.params).pictures(jids) };

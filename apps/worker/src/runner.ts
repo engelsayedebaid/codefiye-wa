@@ -438,12 +438,15 @@ export class SessionRunner {
   private async onHistory({ messages, names, onDemand, chatJids: asked }: ProviderEvents['history']) {
     const { sql } = this.ctx;
     let added = 0;
+    let repaired = 0;
     const chatJids = new Set<string>();
-    /** Per conversation: messages in the batch, and how many were new (for the sync job waiting on them). */
+    /** Per conversation: messages in the batch, how many were new, and how many got their sender (for the sync job waiting on them). */
     const perChat = new Map<string, PageAnswer>();
-    for (const m of messages) perChat.set(m.chatJid, { received: (perChat.get(m.chatJid)?.received ?? 0) + 1, added: 0 });
+    for (const m of messages) perChat.set(m.chatJid, { received: (perChat.get(m.chatJid)?.received ?? 0) + 1, added: 0, repaired: 0 });
     for (let i = 0; i < messages.length; i += HISTORY_CHUNK) {
-      const rows = messages.slice(i, i + HISTORY_CHUNK).map((m) => ({
+      // One row per message id: the upsert below may not touch a row twice in one statement.
+      const chunk = [...new Map(messages.slice(i, i + HISTORY_CHUNK).map((m) => [m.waMessageId, m])).values()];
+      const rows = chunk.map((m) => ({
         direction: m.fromMe ? 'out' : 'in',
         remote_jid: m.chatJid,
         wa: m.waMessageId,
@@ -455,21 +458,25 @@ export class SessionRunner {
         status: m.fromMe ? 'sent' : 'received',
         ts: m.timestamp,
       }));
-      const inserted = await this.persist(
+      const stored = await this.persist(
         'store history',
-        () => sql<{ remote_jid: string }[]>`
+        () => sql<{ remote_jid: string; inserted: boolean }[]>`
           insert into messages (workspace_id, session_id, direction, remote_jid, wa_message_id, type, content, raw, status, created_at, sent_at)
           select ${this.workspaceId}, ${this.sessionId}, x.direction, x.remote_jid, x.wa, x.type, x.content, x.raw, x.status,
             to_timestamp(x.ts), case when x.direction = 'out' then to_timestamp(x.ts) end
           from jsonb_to_recordset(${sql.json(rows as never)}) as x(direction text, remote_jid text, wa text, type text, content jsonb, raw jsonb, status text, ts float8)
-          on conflict (session_id, wa_message_id) do nothing
-          returning remote_jid`,
+          on conflict (session_id, wa_message_id) do update
+            set content = messages.content || jsonb_build_object('from', excluded.content->'from', 'fromPhone', excluded.content->'fromPhone')
+            -- A group message stored before senders were read from history (filed as from the group itself).
+            where messages.direction = 'in' and messages.content->>'from' like '%@g.us' and excluded.content->>'from' not like '%@g.us'
+          returning remote_jid, (xmax = 0) as inserted`,
       );
-      added += inserted.length;
-      for (const r of inserted) {
+      for (const r of stored) {
         chatJids.add(r.remote_jid);
         const counts = perChat.get(r.remote_jid);
-        if (counts) counts.added += 1;
+        if (r.inserted) added += 1;
+        else repaired += 1;
+        if (counts) counts[r.inserted ? 'added' : 'repaired'] += 1;
       }
     }
     if (names.length) {
@@ -480,9 +487,9 @@ export class SessionRunner {
         where c.session_id = ${this.sessionId} and (c.jid = n.jid or c.alt_jid = n.jid)
           and (c.name is null or c.jid like '%@g.us') and c.name is distinct from n.name`;
     }
-    this.log.info({ messages: messages.length, added, names: names.length }, 'history sync');
+    this.log.info({ messages: messages.length, added, repaired, names: names.length }, 'history sync');
     const [only] = chatJids;
-    await this.publish({ type: 'chats.synced', data: { chatJid: chatJids.size === 1 ? only! : null, added } });
+    await this.publish({ type: 'chats.synced', data: { chatJid: chatJids.size === 1 ? only! : null, added, repaired } });
     if (onDemand) this.sync.onHistory(asked, perChat);
   }
 
@@ -925,6 +932,10 @@ export class SessionRunner {
 
   profile(jid: string) {
     return withTimeout(this.live().profile(jid), LOOKUP_TIMEOUT_MS + 5_000, 'profile lookup timed out');
+  }
+
+  groupMembers(jid: string) {
+    return withTimeout(this.live().groupMembers(jid), LOOKUP_TIMEOUT_MS + 5_000, 'group lookup timed out');
   }
 
   /** Asks the phone to upload expired media again; returns the stored WAMessage with a fresh link. */

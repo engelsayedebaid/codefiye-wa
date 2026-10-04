@@ -240,3 +240,28 @@ export async function oldestAnchor(sql: Sql, sessionId: string, jids: string[]):
     order by created_at, id limit 1`;
   return row ? { chatJid: row.remote_jid, id: row.wa_message_id, fromMe: row.direction === 'out', timestampMs: Math.round(row.ts) } : null;
 }
+
+/**
+ * The newest group message stored without its sender (filed as from the group itself), older than
+ * message `belowId` when given, and where to ask the phone from so its answer includes that message:
+ * the next message after it (an answer is what's older than the anchor), or itself when it's the newest.
+ */
+export async function senderlessTarget(sql: Sql, sessionId: string, jids: string[], belowId: number | null): Promise<{ id: number; anchor: SyncAnchor } | null> {
+  const [target] = await sql<{ id: number }[]>`
+    select id from messages
+    where session_id = ${sessionId} and remote_jid = any(${jids}) and direction = 'in' and content->>'from' like '%@g.us'
+      ${belowId ? sql`and (created_at, id) < (select created_at, id from messages where id = ${belowId})` : sql``}
+    order by created_at desc, id desc limit 1`;
+  if (!target) return null;
+  const ts = sql`coalesce((content->>'timestamp')::float8 * 1000, extract(epoch from created_at) * 1000)::float8 as ts`;
+  const [row] = await sql<{ remote_jid: string; wa_message_id: string; direction: string; ts: number }[]>`
+    (select remote_jid, wa_message_id, direction, ${ts}, 0 as pref from messages
+     where session_id = ${sessionId} and remote_jid = any(${jids}) and wa_message_id is not null and status <> 'failed'
+       and (created_at, id) > (select created_at, id from messages where id = ${target.id})
+     order by created_at, id limit 1)
+    union all
+    (select remote_jid, wa_message_id, direction, ${ts}, 1 from messages where id = ${target.id})
+    order by pref limit 1`;
+  if (!row) return null;
+  return { id: target.id, anchor: { chatJid: row.remote_jid, id: row.wa_message_id, fromMe: row.direction === 'out', timestampMs: Math.round(row.ts) } };
+}

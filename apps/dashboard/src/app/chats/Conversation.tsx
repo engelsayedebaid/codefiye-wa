@@ -27,7 +27,7 @@ import { cx, flip, LoadError, Modal } from '../../ui';
 import { Avatar, Bubble } from './Bubble';
 import { TypingDots } from './ChatList';
 import { Composer } from './Composer';
-import { type ChatMessage, type ChatSummary, chatTitle, isChat, livePresence, mediaUrl, type MessagesPage, type PresenceState, textOf } from './model';
+import { type ChatMessage, type ChatSummary, chatTitle, isChat, jidPhone, livePresence, mediaUrl, type MessagesPage, type Person, type PresenceState, type Sender, textOf } from './model';
 import { type Draft, discard, enqueue, type Pending, resolveRef, retry, settle, usePending } from './outbox';
 import { CHAT_WALLS, setChatWall, useChatWall, wallStyle } from './walls';
 
@@ -130,7 +130,7 @@ function Lightbox({ items, index, onIndex, onClose }: { items: ChatMessage[]; in
   );
 }
 
-type Item = { kind: 'day'; key: string; label: string } | { kind: 'unread'; key: string; n: number } | { kind: 'msg'; key: string; m: ChatMessage; first: boolean; sender: { name: string; key: string } | null };
+type Item = { kind: 'day'; key: string; label: string } | { kind: 'unread'; key: string; n: number } | { kind: 'msg'; key: string; m: ChatMessage; first: boolean; sender: Sender | null };
 
 type Props = {
   sessionId: string;
@@ -181,8 +181,9 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
   });
 
   // Oldest first, reactions folded onto the messages they react to.
-  const { list, reactions, images } = useMemo(() => {
+  const { list, reactions, images, people } = useMemo(() => {
     const all = (messages.data?.pages.flatMap((p) => p.messages) ?? []).slice().reverse();
+    const people: Record<string, Person> = Object.assign({}, ...(messages.data?.pages.map((p) => p.senders ?? {}) ?? []));
     const byTarget = new Map<string, Map<string, string>>();
     for (const m of all) {
       if (m.type !== 'reaction' || !m.content.reactTo) continue;
@@ -194,7 +195,7 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
     }
     const shown = all.filter((m) => m.type !== 'reaction');
     const reactions = new Map([...byTarget].map(([id, who]) => [id, [...who.values()]]));
-    return { list: shown, reactions, images: shown.filter((m) => m.type === 'image' && m.hasMedia && !m.content.viewOnce) };
+    return { list: shown, reactions, people, images: shown.filter((m) => m.type === 'image' && m.hasMedia && !m.content.viewOnce) };
   }, [messages.data]);
 
   // The unread divider sits where the chat's unread messages began when it was opened.
@@ -204,6 +205,27 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
     const inbound = list.filter((m) => m.direction === 'in');
     return inbound[Math.max(0, inbound.length - unreadAtOpen)]?.id ?? null;
   }, [list, unreadAtOpen, q]);
+
+  /**
+   * A group sender as shown on their bubbles: the name saved on the phone (or their WhatsApp name),
+   * with their number beside it; a member whose number WhatsApp hides (LID) and who has no name is "Member".
+   * A sender the store lacks (`?…` keys, see senderKey) is "Unknown sender" until a sync fills it in.
+   */
+  const senderOf = useCallback(
+    (key: string, known: Record<string, Person>, pushName?: string | null, fromPhone?: string | null): Sender => {
+      if (key.startsWith('?')) return { key, name: c.unknownSender, phone: null, unknown: true };
+      const person = known[key];
+      const phone = person?.phone ?? fromPhone ?? jidPhone(key);
+      const name = person?.name || pushName || phone || c.member;
+      return { key, name, phone: name === phone ? null : phone };
+    },
+    [c.member, c.unknownSender],
+  );
+  /** Who a run of bubbles belongs to; each message of an unknown group sender stands alone. */
+  const senderKey = useCallback(
+    (m: ChatMessage) => (m.direction === 'out' ? 'me' : chat.isGroup && (!m.content.from || m.content.from.endsWith('@g.us')) ? `?${m.id}` : (m.content.from ?? '')),
+    [chat.isGroup],
+  );
 
   const items = useMemo(() => {
     const out: Item[] = [];
@@ -220,15 +242,14 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
         out.push({ kind: 'unread', key: 'unread', n: unreadAtOpen });
         prev = null;
       }
-      const senderKey = m.direction === 'in' ? (m.content.from ?? '') : 'me';
-      const prevKey = prev ? (prev.direction === 'in' ? (prev.content.from ?? '') : 'me') : null;
-      const first = !prev || prevKey !== senderKey || new Date(m.createdAt).getTime() - new Date(prev.createdAt).getTime() > 5 * 60_000;
-      const sender = chat.isGroup && m.direction === 'in' ? { name: m.content.pushName || m.content.fromPhone || senderKey.split('@')[0]!, key: senderKey } : null;
+      const key = senderKey(m);
+      const first = !prev || senderKey(prev) !== key || new Date(m.createdAt).getTime() - new Date(prev.createdAt).getTime() > 5 * 60_000;
+      const sender = chat.isGroup && m.direction === 'in' ? senderOf(key, people, m.content.pushName, m.content.fromPhone) : null;
       out.push({ kind: 'msg', key: `m-${m.id}`, m, first, sender });
       prev = m;
     }
     return out;
-  }, [list, firstUnreadId, unreadAtOpen, chat.isGroup, fmt]);
+  }, [list, people, firstUnreadId, unreadAtOpen, chat.isGroup, fmt, senderOf, senderKey]);
 
   // Each day lives in its own section: the sticky pill then sticks only while its day is on screen
   // (flat list = every pill sticks at once and they pile on top of each other).
@@ -262,13 +283,14 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
     catchingUp.current = true;
     try {
       const params = new URLSearchParams({ jid: chat.jid, after: String(newestRef.current), limit: '100' });
-      const { messages: fresh } = await api<MessagesPage>(`/api/chats/${sessionId}/messages?${params}`);
+      const { messages: fresh, senders } = await api<MessagesPage>(`/api/chats/${sessionId}/messages?${params}`);
       if (fresh.length === 0) return;
       queryClient.setQueryData<Pages>(key, (data) => {
         if (!data?.pages[0]) return data;
         const known = new Set(data.pages.flatMap((p) => p.messages.map((m) => m.id)));
         const added = fresh.filter((m) => !known.has(m.id));
-        return { ...data, pages: [{ ...data.pages[0], messages: [...added, ...data.pages[0].messages] }, ...data.pages.slice(1)] };
+        const first = { ...data.pages[0], messages: [...added, ...data.pages[0].messages], senders: { ...data.pages[0].senders, ...senders } };
+        return { ...data, pages: [first, ...data.pages.slice(1)] };
       });
       if (fresh.some((m) => m.direction === 'in')) {
         if (document.visibilityState === 'visible') markRead();
@@ -290,7 +312,8 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
       // Edited or deleted for everyone by its sender: reload if it's one of ours here.
       if (isChat(chat, event.data.chatJid)) void queryClient.invalidateQueries({ queryKey: key });
     } else if (event.type === 'chats.synced') {
-      if (event.data.added > 0 && (event.data.chatJid === null || isChat(chat, event.data.chatJid))) void queryClient.invalidateQueries({ queryKey: key });
+      const changed = event.data.added > 0 || (event.data.repaired ?? 0) > 0;
+      if (changed && (event.data.chatJid === null || isChat(chat, event.data.chatJid))) void queryClient.invalidateQueries({ queryKey: key });
     } else if (event.type === 'messages.update' || event.type === 'poll.vote') {
       let found = false;
       queryClient.setQueryData<Pages>(key, (data) => {
@@ -371,15 +394,15 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
   const [lightbox, setLightbox] = useState<number | null>(null);
   // Stable callbacks keep the (memoized) bubbles from re-rendering on every change above them.
   const quotedAuthor = useCallback(
-    (fromMe: boolean, participant: string | null) => (fromMe ? c.you : chat.isGroup && participant ? `+${participant.split('@')[0]}` : title),
-    [c.you, chat.isGroup, title],
+    (fromMe: boolean, participant: string | null) => (fromMe ? c.you : chat.isGroup && participant ? senderOf(participant, people).name : title),
+    [c.you, chat.isGroup, title, people, senderOf],
   );
   const openMedia = useCallback((m: ChatMessage) => setLightbox(images.findIndex((x) => x.id === m.id)), [images]);
 
   return (
-    <div className="relative flex h-full min-h-0 flex-col">
+    <div className="chat-root relative flex h-full min-h-0 flex-col">
       {/* header */}
-      <header className="z-10 flex h-[4.25rem] shrink-0 items-center gap-1.5 border-b border-line/60 bg-card/85 px-2 backdrop-blur-md md:px-4">
+      <header className="chat-head z-10 flex h-[4.25rem] shrink-0 items-center gap-1.5 border-b border-line/60 bg-card/85 px-2 backdrop-blur-md md:px-4">
         <button type="button" onClick={onBack} className="rounded-full p-2 text-muted hover:bg-raised hover:text-ink lg:hidden" aria-label={c.back}>
           <ArrowLeft className={cx('size-5', flip)} />
         </button>
@@ -489,7 +512,7 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
       {/* thread */}
       <div className="chat-wall relative min-h-0 flex-1" style={wallStyle(wall)}>
         <div ref={scroller} onScroll={onScroll} className="code-scroll flex h-full flex-col-reverse overflow-y-auto overscroll-contain">
-          <div className="pt-2 pb-4">
+          <div className="chat-thread pt-2 pb-4">
             <div ref={topSentinel} />
             {messages.isError && !messages.data ? (
               <div className="p-4">

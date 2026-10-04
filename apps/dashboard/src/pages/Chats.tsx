@@ -77,7 +77,8 @@ function setUrl(sessionId: string | null, jid: string | null) {
 }
 
 /** The open number as a card; opens a list of all numbers with their state and unread counts. */
-function NumberSwitcher({ numbers, value, onChange }: { numbers: ChatNumber[]; value: string; onChange: (id: string) => void }) {
+/** `compact` (focus mode): a slimmer card, so the chat list starts higher. */
+function NumberSwitcher({ numbers, value, onChange, compact = false }: { numbers: ChatNumber[]; value: string; onChange: (id: string) => void; compact?: boolean }) {
   const { t, fmt } = useI18n();
   const c = t.chats;
   const [open, setOpen] = useState(false);
@@ -152,11 +153,12 @@ function NumberSwitcher({ numbers, value, onChange }: { numbers: ChatNumber[]; v
         aria-expanded={open}
         aria-label={c.switchNumber}
         className={cx(
-          'flex w-full items-center gap-3 rounded-2xl border border-line bg-card p-2.5 text-start shadow-xs transition-[border-color,box-shadow] hover:border-line-strong',
+          'flex w-full items-center gap-3 border border-line bg-card text-start shadow-xs transition-[border-color,box-shadow] hover:border-line-strong',
+          compact ? 'rounded-xl px-2 py-1.5' : 'rounded-2xl p-2.5',
           open && 'border-ring ring-[3px] ring-ring/30',
         )}
       >
-        {current && mark(current)}
+        {current && mark(current, compact ? 'size-8' : undefined)}
         {current && (
           <span className="min-w-0 flex-1 pii">
             <span className="flex items-center gap-2">
@@ -884,7 +886,8 @@ export function ChatsPage() {
         setView('chats');
         search.current?.focus();
       }
-      if (e.key === 'Escape' && !typing && document.querySelector('[role="dialog"]') === null) {
+      // An open menu (theme, number…) takes Esc for itself.
+      if (e.key === 'Escape' && !typing && document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]') === null) {
         if (infoOpen) setInfoOpen(false);
         else if (listDrawer) setListDrawer(false);
         else if (focus.mode) exitFocus();
@@ -929,7 +932,7 @@ export function ChatsPage() {
         'flex flex-col',
         privacy && 'privacy-on',
         mode
-          ? cx('fixed inset-0 z-[55] bg-bg', focus.exiting ? 'animate-focus-out' : 'animate-focus-in')
+          ? cx('focus-chat fixed inset-0 z-[55] bg-bg', focus.exiting ? 'animate-focus-out' : 'animate-focus-in')
           : 'relative -m-1 h-[calc(100svh-6.5rem)] min-h-[540px] overflow-hidden rounded-2xl border border-line bg-card shadow-sm md:m-0 md:h-[calc(100svh-8rem)]',
       )}
     >
@@ -947,9 +950,9 @@ export function ChatsPage() {
               : cx('w-full bg-surface/40 lg:flex lg:w-[23rem]', showMain ? 'hidden' : 'flex'),
         )}
       >
-        <div className="space-y-3 px-3 pt-4 pb-1">
+        <div className={cx('px-3 pb-1', mode ? 'space-y-2 pt-2' : 'space-y-3 pt-4')}>
           <div className="flex items-center justify-between gap-2 px-1">
-            <h1 className="text-2xl font-bold tracking-tight">{c.title}</h1>
+            <h1 className={cx('font-bold tracking-tight', mode ? 'text-lg' : 'text-2xl')}>{c.title}</h1>
             <div className="flex items-center gap-0.5">
               <IconAction label={connected ? c.newChat.open : c.newChat.offline} onClick={() => setNewChat(true)} disabled={!connected}>
                 <MessageSquarePlus className="size-[18px]" />
@@ -996,7 +999,7 @@ export function ChatsPage() {
               />
             </div>
           </div>
-          <NumberSwitcher numbers={list} value={current.id} onChange={switchNumber} />
+          <NumberSwitcher numbers={list} value={current.id} onChange={switchNumber} compact={Boolean(mode)} />
           <SyncCard key={current.id} sessionId={current.id} onOpen={() => setSyncOpen(true)} />
           {notifyOn && permission === 'default' && (
             <div className="animate-fade-in flex items-center gap-2.5 rounded-xl border border-brand/20 bg-brand/[0.07] py-2 ps-3 pe-2 text-xs">

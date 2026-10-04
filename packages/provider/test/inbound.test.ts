@@ -49,6 +49,11 @@ describe('toInbound', () => {
     expect(inbound).toMatchObject({ isGroup: true, from: '201012345678@s.whatsapp.net', participant: '201012345678@s.whatsapp.net' });
   });
 
+  it('finds the group sender of a history message (beside the key, not in it)', () => {
+    const inbound = toInbound(msg({ key: { remoteJid: '1203630@g.us', id: 'H', fromMe: false }, participant: '149392468262946:3@lid', message: { conversation: 'old' } }));
+    expect(inbound).toMatchObject({ isGroup: true, from: '149392468262946@lid', participant: '149392468262946:3@lid' });
+  });
+
   it('unwraps ephemeral messages', () => {
     const inbound = toInbound(msg({ message: { ephemeralMessage: { message: { extendedTextMessage: { text: 'eph' } } } } }));
     expect(inbound).toMatchObject({ type: 'text', text: 'eph' });

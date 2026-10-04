@@ -42,6 +42,7 @@ export const SYNC_LOG_CODES = [
   'chat_retry',
   'chat_failed',
   'group_named',
+  'senders_repaired',
   'paused',
   'phone_unresponsive',
   'cancelled',

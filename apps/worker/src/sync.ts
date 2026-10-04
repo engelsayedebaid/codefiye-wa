@@ -11,6 +11,7 @@ import {
   type SyncChat,
   type SyncJob,
   seedSyncChats,
+  senderlessTarget,
   setSyncStatus,
   type Sql,
   startSyncChat,
@@ -24,6 +25,10 @@ import type { Logger } from 'pino';
 export const SYNC_PAGE = 50;
 /** Requests per conversation in one job: a cap on how deep one conversation goes (~5,000 messages). */
 const MAX_PAGES = 100;
+/** Requests per group in one job to re-read senders the store lacks (~5,000 messages; the next sync goes on). */
+const MAX_REPAIR_PAGES = 100;
+/** Answers in a row that filled in no sender: the phone can't give them, stop asking. */
+const MAX_FRUITLESS_REPAIRS = 3;
 /** How long to wait for the phone to answer a request, and how often to ask before giving up. */
 const PAGE_TIMEOUT_MS = 20_000;
 const PAGE_ATTEMPTS = 2;
@@ -86,8 +91,8 @@ export type SyncHost = {
 /** Waits of a sync (shortened in tests). */
 export type SyncTiming = { pageTimeoutMs: number; requestGapMs: number };
 
-/** Messages of one on-demand answer that belong to the conversation asked about. */
-export type PageAnswer = { received: number; added: number };
+/** Messages of one on-demand answer that belong to the conversation asked about (`repaired`: stored already, sender filled in). */
+export type PageAnswer = { received: number; added: number; repaired: number };
 
 /**
  * `end`: the phone said there is nothing older (an empty or all-known page) or the per-job cap was hit;
@@ -158,12 +163,13 @@ export class SessionSync {
     const waiter = this.waiter;
     if (!waiter) return;
     let hit = chatJids.some((j) => waiter.jids.has(j));
-    const answer: PageAnswer = { received: 0, added: 0 };
+    const answer: PageAnswer = { received: 0, added: 0, repaired: 0 };
     for (const [jid, counts] of perChat) {
       if (!waiter.jids.has(jid)) continue;
       hit = true;
       answer.received += counts.received;
       answer.added += counts.added;
+      answer.repaired += counts.repaired;
     }
     if (hit) waiter.resolve(answer);
   }
@@ -268,6 +274,7 @@ export class SessionSync {
     const [row] = await sql<{ jid: string; alt_jid: string | null }[]>`
       select jid, alt_jid from chats where session_id = ${sessionId} and (jid = ${chat.jid} or alt_jid = ${chat.jid})`;
     const jids = [...new Set([chat.jid, ...(row ? [row.jid, ...(row.alt_jid ? [row.alt_jid] : [])] : [])])];
+    if (isGroupJid(chat.jid) && (await this.repairSenders(jobId, chat, jids, onAnswer)) === 'interrupted') return 'interrupted';
 
     for (let page = chat.pages; page < MAX_PAGES; ) {
       const job = await loadSyncJob(sql, jobId);
@@ -293,6 +300,38 @@ export class SessionSync {
       await sleep(this.timing.requestGapMs);
     }
     return 'end';
+  }
+
+  /**
+   * Group messages stored without their sender (history read before senders were): asks the phone again
+   * for the page holding each, newest first; storing the answer fills the senders in. Resumes by itself
+   * (a repaired message is no longer a target); one it can't repair is stepped over, not asked forever.
+   */
+  private async repairSenders(jobId: string, chat: SyncChat, jids: string[], onAnswer: () => void): Promise<'done' | 'interrupted'> {
+    const { sql, sessionId } = this.host;
+    let below: number | null = null;
+    let fruitless = 0;
+    for (let page = 0; page < MAX_REPAIR_PAGES && fruitless < MAX_FRUITLESS_REPAIRS; page++) {
+      const job = await loadSyncJob(sql, jobId);
+      if (this.stopped || job?.status !== 'running' || !this.host.connected()) return 'interrupted';
+      const target = await senderlessTarget(sql, sessionId, jids, below);
+      if (!target) break;
+      below = target.id;
+      const answer = await this.ask(target.anchor, jids);
+      if (answer === 'aborted') return 'interrupted';
+      // No answer, or nothing older on the phone: older history (below) has its own retries.
+      if (answer === null || answer.received === 0) break;
+      onAnswer();
+      fruitless = answer.repaired > 0 ? 0 : fruitless + 1;
+      if (answer.repaired > 0) await this.logLine(jobId, 'info', 'senders_repaired', { name: label(chat), added: answer.repaired });
+      // The page may reach past what's stored: those messages are new history, counted as such.
+      if (answer.added > 0) {
+        const updated = await recordSyncPage(sql, jobId, chat.jid, answer.added);
+        if (updated) await this.progress(updated);
+      }
+      await sleep(this.timing.requestGapMs);
+    }
+    return 'done';
   }
 
   /** One request to the phone; its answer, null if none came in time, or 'aborted'. */

@@ -40,6 +40,7 @@ import {
   type ContactName,
   type ContactProfile,
   type EchoMessage,
+  type GroupMember,
   type HistoryAnchor,
   type HistoryMessage,
   type InboundMessage,
@@ -279,13 +280,20 @@ const pick = (jid?: string | null, alt?: string | null) => {
   return chosen ? jidNormalizedUser(chosen) : chosen;
 };
 
+/**
+ * Who sent a group message: in its key on live messages, but beside the key (`participant`) on
+ * messages from a history sync.
+ */
+export const participantOf = (msg: Pick<WAMessage, 'key' | 'participant'>) => msg.key.participant || msg.participant || undefined;
+
 export function toInbound(msg: WAMessage): InboundMessage | null {
   const { key } = msg;
   if (key.fromMe) return null;
   const base = parse(msg);
   if (!base) return null;
-  const from = (base.isGroup ? pick(key.participant, key.participantAlt) : pick(base.chatJid, key.remoteJidAlt)) ?? base.chatJid;
-  return { ...base, from, participant: base.isGroup ? (key.participant ?? undefined) : undefined, pushName: msg.pushName ?? null };
+  const participant = base.isGroup ? participantOf(msg) : undefined;
+  const from = (base.isGroup ? pick(participant, key.participantAlt) : pick(base.chatJid, key.remoteJidAlt)) ?? base.chatJid;
+  return { ...base, from, participant, pushName: msg.pushName ?? null };
 }
 
 /** A message we sent from the phone (or another linked device). The chat is addressed by phone number when WhatsApp says which. */
@@ -338,7 +346,7 @@ export function readPollVote(msg: WAMessage, poll: proto.IMessage, mine: (string
   if (!update?.vote || !pollMsgId || !pollEncKey || !key.remoteJid) return null;
 
   const own = jids(mine);
-  const voters = key.fromMe ? own : jids(isJidGroup(key.remoteJid) ? [key.participant, key.participantAlt] : [key.remoteJid, key.remoteJidAlt]);
+  const voters = key.fromMe ? own : jids(isJidGroup(key.remoteJid) ? [participantOf(msg), key.participantAlt] : [key.remoteJid, key.remoteJidAlt]);
   let vote: proto.Message.PollVoteMessage | null = null;
   for (const pollCreatorJid of own) {
     for (const voterJid of voters) {
@@ -430,7 +438,7 @@ export function readStoredSecretEdit(editRaw: unknown, originalRaw: unknown, min
   const chat = edit.key?.remoteJid;
   if (!sem || !secret || !chat) return null;
   const { key } = edit;
-  const senders = key.fromMe ? mine : isJidGroup(chat) ? [key.participant, key.participantAlt] : [chat, key.remoteJidAlt];
+  const senders = key.fromMe ? mine : isJidGroup(chat) ? [participantOf(edit), key.participantAlt] : [chat, key.remoteJidAlt];
   const read = readSecretEdit(sem, secret, senders);
   if (!read) return null;
   const editedAt = read.timestampMs ? Math.floor(toNumber(read.timestampMs) / 1000) : toNumber(edit.messageTimestamp as number);
@@ -685,7 +693,7 @@ export class BaileysProvider implements Provider {
     if (!secret) return this.logger.warn({ id: msg.key.id, targetId }, 'encrypted edit of a message we do not hold with its secret; ignored');
     const { key } = msg;
     const { me } = this.options.auth.state.creds;
-    const senders = key.fromMe ? [me?.id, me?.lid] : isJidGroup(chat) ? [key.participant, key.participantAlt] : [chat, key.remoteJidAlt];
+    const senders = key.fromMe ? [me?.id, me?.lid] : isJidGroup(chat) ? [participantOf(msg), key.participantAlt] : [chat, key.remoteJidAlt];
     const edit = readSecretEdit(sem, secret, senders);
     if (!edit) return this.logger.warn({ id: msg.key.id, targetId }, 'could not decrypt encrypted edit; ignored');
     const editedAt = edit.timestampMs ? Math.floor(toNumber(edit.timestampMs) / 1000) : toNumber(msg.messageTimestamp as number) || Math.floor(Date.now() / 1000);
@@ -778,6 +786,21 @@ export class BaileysProvider implements Provider {
   /** A group's name. */
   async groupSubject(jid: string): Promise<string | null> {
     return (await this.requireOpen().groupMetadata(jid)).subject || null;
+  }
+
+  /** A group's members, with their phone numbers where WhatsApp shares them (LID groups may not). */
+  async groupMembers(jid: string): Promise<GroupMember[]> {
+    const { participants } = await this.requireOpen().groupMetadata(jid);
+    return participants.map((p) => {
+      const phoneJid = p.phoneNumber ?? (isLidUser(p.id) ? undefined : p.id);
+      const lid = p.lid ?? (isLidUser(p.id) ? p.id : undefined);
+      return {
+        jid: jidNormalizedUser(phoneJid ?? p.id),
+        phoneJid: phoneJid ? jidNormalizedUser(phoneJid) : null,
+        lid: lid ? jidNormalizedUser(lid) : null,
+        role: p.admin === 'superadmin' ? 'superadmin' : p.admin === 'admin' ? 'admin' : 'member',
+      };
+    });
   }
 
   /**

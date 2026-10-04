@@ -29,7 +29,7 @@ import { useI18n } from '../../i18n';
 import { cx, flip } from '../../ui';
 import { errorText, PollResults, StatusTick } from '../MessageFeed';
 import { ChatText } from './ChatText';
-import { type ChatMessage, formatBytes, formatDuration, gradientFor, initials, mediaUrl, senderColor, textOf } from './model';
+import { type ChatMessage, formatBytes, formatDuration, gradientFor, initials, mediaUrl, type Sender, senderColor, textOf } from './model';
 
 // --- avatar --------------------------------------------------------------------------------------
 
@@ -420,7 +420,7 @@ function Quote({ author, text, type, mine, onClick }: { author: string; text: st
 type BubbleProps = {
   m: ChatMessage;
   /** Group chats: the sender is named on the first bubble of a run. */
-  sender?: { name: string; key: string } | null;
+  sender?: Sender | null;
   /** First of a run of messages from the same side: draws the tail. */
   first: boolean;
   reactions?: string[];
@@ -502,7 +502,14 @@ export const Bubble = memo(function Bubble({ m, sender, first, reactions, highli
             m.status === 'failed' && 'ring-red-500/40',
           )}
         >
-          {sender && first && !out && <p className={cx('mb-0.5 px-1 text-xs font-semibold', senderColor(sender.key))}>{sender.name}</p>}
+          {sender && first && !out && (
+            <p className="pii mb-0.5 flex min-w-0 items-baseline gap-2 px-1 text-xs">
+              <span dir="auto" className={cx('truncate', sender.unknown ? 'text-ink/45 italic' : cx('font-semibold', senderColor(sender.key)))}>
+                {sender.name}
+              </span>
+              {sender.phone && <span className="ltr shrink-0 font-mono text-[11px] text-ink/45">{sender.phone}</span>}
+            </p>
+          )}
           {m.content.forwarded && (
             <p className="flex items-center gap-1 px-1 text-[11px] text-ink/55 italic">
               <Forward className={cx('size-3', flip)} /> {c.forwarded}

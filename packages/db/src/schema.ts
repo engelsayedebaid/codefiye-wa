@@ -349,6 +349,8 @@ export const messages = pgTable(
     index('messages_chat_idx').on(t.sessionId, t.remoteJid, t.id),
     /** …and by time: synced history arrives after newer messages. */
     index('messages_chat_time_idx').on(t.sessionId, t.remoteJid, t.createdAt, t.id),
+    /** A sender's latest WhatsApp name (group senders are named from their own messages). */
+    index('messages_inbound_sender_index').on(t.sessionId, sql`(${t.content}->>'from')`, t.id).where(sql`${t.direction} = 'in'`),
     uniqueIndex().on(t.sessionId, t.waMessageId),
     uniqueIndex().on(t.sessionId, t.idempotencyKey),
   ],

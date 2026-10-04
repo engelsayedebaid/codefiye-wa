@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Archive, BellOff, Download, ExternalLink, FileText, MailOpen, Pin, Play, X } from 'lucide-react';
+import { Archive, BellOff, Download, ExternalLink, FileText, MailOpen, Pin, Play, Search, Users, X } from 'lucide-react';
 import { useState } from 'react';
 import { api } from '../../api';
 import { useI18n } from '../../i18n';
@@ -7,7 +7,7 @@ import { qk } from '../../queries';
 import { CopyField, cx } from '../../ui';
 import { Avatar, TypeLabel } from './Bubble';
 import { PresenceLine } from './Conversation';
-import { type ChatInfo, type ChatSummary, chatTitle, formatBytes, mediaUrl, type MessagesPage, type PresenceState } from './model';
+import { type ChatInfo, type ChatSummary, chatTitle, formatBytes, type GroupMember, mediaUrl, type MessagesPage, type PresenceState } from './model';
 
 function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
@@ -66,6 +66,92 @@ function Gallery({ sessionId, jid, kind }: { sessionId: string; jid: string; kin
         </a>
       ))}
     </div>
+  );
+}
+
+/** How many members show before "Show all". */
+const MEMBERS_SHOWN = 12;
+
+/** A group's members, live from WhatsApp: you first, then admins, then the named, then the rest. */
+function GroupMembers({ sessionId, jid }: { sessionId: string; jid: string }) {
+  const { t } = useI18n();
+  const c = t.chats;
+  const p = c.panel;
+  const [query, setQuery] = useState('');
+  const [all, setAll] = useState(false);
+  const members = useQuery({
+    queryKey: qk.chats.members(sessionId, jid),
+    queryFn: ({ signal }) => api<{ members: GroupMember[] }>(`/api/chats/${sessionId}/group-members?${new URLSearchParams({ jid })}`, { signal, timeoutMs: 30_000 }).then((r) => r.members),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const list = members.data ?? [];
+  const term = query.trim().toLowerCase();
+  const digits = term.replace(/\D/g, '');
+  const matches = term ? list.filter((m) => m.name?.toLowerCase().includes(term) || (digits && m.phone?.includes(digits))) : list;
+  const shown = all || term ? matches : matches.slice(0, MEMBERS_SHOWN);
+
+  return (
+    <section>
+      <h4 className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted">
+        <Users className="size-3.5" /> {members.data ? p.members(list.length) : p.membersTitle}
+      </h4>
+      {members.isError ? (
+        <p className="rounded-lg bg-raised/60 px-3 py-2.5 text-xs text-muted">{p.membersError}</p>
+      ) : !members.data ? (
+        <div className="space-y-2">
+          {Array.from({ length: 4 }, (_, i) => (
+            <span key={i} className="flex items-center gap-3">
+              <span className="size-9 animate-pulse rounded-full bg-raised" />
+              <span className="h-3 w-32 animate-pulse rounded bg-raised" />
+            </span>
+          ))}
+        </div>
+      ) : (
+        <>
+          {list.length > MEMBERS_SHOWN && (
+            <label className="relative mb-2 block">
+              <Search className="pointer-events-none absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={p.membersSearch}
+                aria-label={p.membersSearch}
+                className="h-8 w-full rounded-lg border border-line bg-card ps-8 pe-2 text-xs text-ink outline-none placeholder:text-muted focus:border-ring"
+              />
+            </label>
+          )}
+          {shown.length === 0 ? (
+            <p className="py-3 text-center text-xs text-muted">{p.membersEmpty}</p>
+          ) : (
+            <ul className="-mx-1 space-y-0.5">
+              {shown.map((m) => {
+                const label = m.isMe ? c.you : m.name || m.phone || c.member;
+                return (
+                  <li key={m.jid} className="flex items-center gap-3 rounded-lg px-1 py-1.5">
+                    <Avatar name={label} id={m.jid} size="sm" />
+                    <span className="pii min-w-0 flex-1">
+                      <span dir="auto" className="block truncate text-sm">
+                        {label}
+                      </span>
+                      <span className="ltr block truncate font-mono text-[11px] text-muted">{m.phone ?? p.hiddenNumber}</span>
+                    </span>
+                    {m.role !== 'member' && (
+                      <span className="shrink-0 rounded-full bg-brand/10 px-2 py-0.5 text-[10px] font-semibold text-brand">{m.role === 'superadmin' ? p.owner : p.admin}</span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {!all && !term && matches.length > MEMBERS_SHOWN && (
+            <button type="button" onClick={() => setAll(true)} className="mt-1 w-full rounded-lg py-1.5 text-xs font-medium text-brand transition-colors hover:bg-raised">
+              {p.showAll(matches.length)}
+            </button>
+          )}
+        </>
+      )}
+    </section>
   );
 }
 
@@ -169,6 +255,8 @@ export function ContactPanel({
             )}
           </section>
         )}
+
+        {chat.isGroup && <GroupMembers sessionId={sessionId} jid={chat.jid} />}
 
         <section className="space-y-2">
           <div className="grid grid-cols-2 gap-2">

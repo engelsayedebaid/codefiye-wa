@@ -1,7 +1,7 @@
 import { Columns2, Focus, Maximize2, MessageSquareText, Minimize2, PanelLeft } from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { useI18n } from '../../i18n';
-import { cx, flip } from '../../ui';
+import { cx, flip, LangSwitch, ThemeSwitch } from '../../ui';
 
 /**
  * Focus mode of the chats page: `full` = the whole page over the dashboard chrome, `single` = the open
@@ -150,12 +150,13 @@ export function FocusMenu({ last, onPick, renderButton }: { last: FocusMode; onP
   );
 }
 
-/** The slim bar on top of focus mode: what it is, switch layout, show the list (single), and leave. */
+/** The slim bar on top of focus mode: what it is, switch layout, show the list (single), language and theme, and leave. */
 export function FocusBar({ mode, title, onMode, onExit, onShowList }: { mode: FocusMode; title: string; onMode: (mode: FocusMode) => void; onExit: () => void; onShowList?: () => void }) {
   const { t } = useI18n();
   const f = t.chats.focus;
   return (
-    <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line bg-card/95 px-2 backdrop-blur sm:px-3">
+    // z-20: the theme menu opens below the bar, over the panes (backdrop-blur makes the bar its own stacking context).
+    <header className="focus-bar relative z-20 flex h-12 shrink-0 items-center gap-2 border-b border-line bg-card/95 px-2 backdrop-blur sm:px-3">
       <span className="flex min-w-0 items-center gap-2">
         <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-brand/10 text-brand">
           <Focus className="size-4" />
@@ -197,6 +198,10 @@ export function FocusBar({ mode, title, onMode, onExit, onShowList }: { mode: Fo
             </button>
           );
         })}
+      </div>
+      <div className="flex items-center">
+        <ThemeSwitch />
+        <LangSwitch className="px-2" />
       </div>
       <button
         type="button"

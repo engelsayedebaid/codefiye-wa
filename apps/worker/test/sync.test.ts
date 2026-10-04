@@ -8,7 +8,8 @@ import { type PageAnswer, SessionSync, SyncSlots } from '../src/sync';
 const url = process.env.TEST_DATABASE_URL;
 const silent = pino({ level: 'silent' });
 
-type PhoneMessage = { id: string; ts: number; fromMe: boolean; type: string };
+/** `from`: who sent it (a group's members take turns). */
+type PhoneMessage = { id: string; ts: number; fromMe: boolean; type: string; from?: string };
 
 /**
  * A phone holding each conversation's full history (oldest first). Answers on-demand requests the
@@ -30,37 +31,49 @@ class FakePhone {
     private readonly sessionId: string,
   ) {}
 
-  /** A conversation of `total` messages, of which the newest `stored` are in the database already. */
-  async chat(jid: string, total: number, stored: number, { media = false } = {}) {
+  /**
+   * A conversation of `total` messages, of which the newest `stored` are in the database already;
+   * `senderless`: those were stored without their sender (filed as from the group, as history once was).
+   */
+  async chat(jid: string, total: number, stored: number, { media = false, senderless = false } = {}) {
+    const group = jid.endsWith('@g.us');
     const all = Array.from({ length: total }, (_, i) => ({
       id: `${jid.split('@')[0]}-${i}`,
       ts: 1_700_000_000 + i * 60,
       fromMe: i % 4 === 0,
       type: media && i % 5 === 0 ? 'image' : 'text',
+      from: group ? `2011100000${i % 3}@s.whatsapp.net` : jid,
     }));
     this.history.set(jid, all);
-    await this.store(jid, all.slice(total - stored), false);
+    await this.store(
+      jid,
+      all.slice(total - stored).map((m) => (senderless ? { ...m, from: jid } : m)),
+      false,
+    );
   }
 
+  /** Stores messages the way the runner's onHistory does: new ones added, a missing group sender filled in. */
   async store(jid: string, messages: PhoneMessage[], history = true) {
-    if (messages.length === 0) return [] as { remote_jid: string }[];
+    if (messages.length === 0) return [] as { remote_jid: string; inserted: boolean }[];
     const rows = messages.map((m) => ({
       direction: m.fromMe ? 'out' : 'in',
       wa: m.id,
       type: m.type,
       content: m.fromMe
         ? { text: m.id, timestamp: m.ts, sentFrom: 'phone', history, ...(m.type === 'image' ? { media: { mimetype: 'image/jpeg' } } : {}) }
-        : { from: jid, text: m.id, timestamp: m.ts, history, ...(m.type === 'image' ? { media: { mimetype: 'image/jpeg' } } : {}) },
+        : { from: m.from ?? jid, text: m.id, timestamp: m.ts, history, ...(m.type === 'image' ? { media: { mimetype: 'image/jpeg' } } : {}) },
       raw: m.type === 'image' ? { key: { id: m.id }, message: { imageMessage: { mediaKey: 'k' } } } : null,
       status: m.fromMe ? 'sent' : 'received',
       ts: m.ts,
     }));
-    return this.sql<{ remote_jid: string }[]>`
+    return this.sql<{ remote_jid: string; inserted: boolean }[]>`
       insert into messages (workspace_id, session_id, direction, remote_jid, wa_message_id, type, content, raw, status, created_at)
       select ${this.workspaceId}, ${this.sessionId}, x.direction, ${jid}, x.wa, x.type, x.content, x.raw, x.status, to_timestamp(x.ts)
       from jsonb_to_recordset(${this.sql.json(rows as never)}) as x(direction text, wa text, type text, content jsonb, raw jsonb, status text, ts float8)
-      on conflict (session_id, wa_message_id) do nothing
-      returning remote_jid`;
+      on conflict (session_id, wa_message_id) do update
+        set content = messages.content || jsonb_build_object('from', excluded.content->'from')
+        where messages.direction = 'in' and messages.content->>'from' like '%@g.us' and excluded.content->>'from' not like '%@g.us'
+      returning remote_jid, (xmax = 0) as inserted`;
   }
 
   requestHistory = async (anchor: HistoryAnchor, count: number) => {
@@ -71,8 +84,9 @@ class FakePhone {
     const page = all.slice(Math.max(0, at - count), at);
     const extra = this.overlap ? all.slice(at, at + this.overlap) : [];
     setTimeout(async () => {
-      const inserted = await this.store(anchor.chatJid, [...page, ...extra]);
-      const perChat = new Map<string, PageAnswer>([[anchor.chatJid, { received: page.length + extra.length, added: inserted.length }]]);
+      const stored = await this.store(anchor.chatJid, [...page, ...extra]);
+      const added = stored.filter((r) => r.inserted).length;
+      const perChat = new Map<string, PageAnswer>([[anchor.chatJid, { received: page.length + extra.length, added, repaired: stored.length - added }]]);
       this.sync.onHistory([anchor.chatJid], perChat);
     }, 5 + Math.random() * 15);
   };
@@ -173,6 +187,36 @@ describe.skipIf(!url)('conversation sync (integration)', () => {
     );
     // Every event belongs to this number's workspace (what the SSE route filters on).
     expect(num.events.every((e) => e.workspaceId === workspaceId && e.sessionId === num.sessionId)).toBe(true);
+  }, 60_000);
+
+  it('fills in the senders of group messages stored without them, then fetches older history', async () => {
+    const num = await number();
+    const group = '120363000000000077@g.us';
+    await num.phone.chat(group, 260, 180, { senderless: true }); // 180 stored without senders; 80 older only on the phone
+    const job = await start(num.sessionId);
+    num.make().request();
+    const done = await until(job.id, ['completed'], 120_000);
+    expect(done.messages_added).toBe(80);
+    expect(await num.unique()).toBe(260);
+    const [left] = await sql<{ n: number }[]>`
+      select count(*)::int as n from messages where session_id = ${num.sessionId} and direction = 'in' and content->>'from' like '%@g.us'`;
+    // Only the newest can't be asked for: an answer is what's older than its anchor.
+    expect(left!.n).toBe(1);
+    const [sample] = await sql<{ from: string }[]>`
+      select content->>'from' as from from messages where session_id = ${num.sessionId} and wa_message_id = ${`${group.split('@')[0]}-201`}`;
+    expect(sample!.from).toBe(`2011100000${201 % 3}@s.whatsapp.net`);
+    expect(logged(num.events, 'senders_repaired')).toBe(true);
+  }, 120_000);
+
+  it('steps over group messages the phone has no sender for, instead of asking forever', async () => {
+    const num = await number();
+    const group = '120363000000000078@g.us';
+    await num.phone.chat(group, 400, 400, { senderless: true });
+    for (const m of num.phone.history.get(group)!) m.from = group; // the phone can't say either
+    const job = await start(num.sessionId);
+    num.make().request();
+    await until(job.id, ['completed'], 60_000);
+    expect(num.phone.requests).toBeLessThanOrEqual(3 + 1); // three fruitless pages, then the (empty) older page
   }, 60_000);
 
   it('pages through a large history (and keeps media messages downloadable)', async () => {

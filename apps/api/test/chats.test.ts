@@ -275,4 +275,31 @@ describe.skipIf(!url)('chats api (integration)', () => {
     expect((await call('POST', `/api/chats/${sessionId}/sync`, admin.pat, {})).json()).toMatchObject({ code: 'session_not_connected' });
     expect((await call('POST', `/api/chats/${sessionId}/sync`, business.pat, {})).statusCode).toBe(404);
   });
+
+  it('names group senders: saved name, else their latest WhatsApp name; numbers behind LIDs', async () => {
+    const GROUP = '120363000000000555@g.us';
+    const SAVED = '201055500022@s.whatsapp.net';
+    const LID = '88800011122233@lid';
+    const LID_PHONE = '201055500033@s.whatsapp.net';
+    await sql`insert into contact_names (session_id, jid, saved_name) values (${sessionId}, ${SAVED}, 'Saved Sara')`;
+    await sql`insert into contact_lids (session_id, lid, pn) values (${sessionId}, ${LID}, ${LID_PHONE})`;
+    const group = (wa: string, content: object) => sql`
+      insert into messages (workspace_id, session_id, direction, remote_jid, wa_message_id, type, content, status)
+      values (${admin.id}, ${sessionId}, 'in', ${GROUP}, ${wa}, 'text', ${sql.json(content as never)}, 'received')`;
+    await group('G1', { from: SAVED, pushName: 'sara', text: 'hi' });
+    await group('G2', { from: LID, pushName: 'Omar', text: 'live, named' });
+    await group('G3', { from: LID, text: 'from history: no name of its own', history: true });
+    await group('G4', { from: GROUP, text: 'sender not stored', history: true });
+    const res = await call('GET', `/api/chats/${sessionId}/messages?jid=${GROUP}`, admin.pat);
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json().data.senders).toEqual({
+      [SAVED]: { name: 'Saved Sara', phone: '+201055500022' },
+      [LID]: { name: 'Omar', phone: '+201055500033' },
+    });
+    // Not a group: no senders to name.
+    expect((await call('GET', `/api/chats/${sessionId}/messages?jid=${PHONE}`, admin.pat)).json().data.senders).toEqual({});
+    // Members come live from WhatsApp: a number that isn't connected can't list them.
+    expect((await call('GET', `/api/chats/${sessionId}/group-members?jid=${GROUP}`, admin.pat)).json()).toMatchObject({ code: 'session_not_connected' });
+    expect((await call('GET', `/api/chats/${sessionId}/group-members?jid=${PHONE}`, admin.pat)).statusCode).toBe(422);
+  });
 });

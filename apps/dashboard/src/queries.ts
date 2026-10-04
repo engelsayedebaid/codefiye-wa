@@ -20,6 +20,7 @@ export const qk = {
     messages: (sessionId: string, jid: string, q = '') => ['chats', sessionId, 'messages', jid, q] as const,
     chat: (sessionId: string, jid: string) => ['chats', sessionId, 'chat', jid] as const,
     gallery: (sessionId: string, jid: string, kind: string) => ['chats', sessionId, 'gallery', jid, kind] as const,
+    members: (sessionId: string, jid: string) => ['chats', sessionId, 'members', jid] as const,
     profile: (sessionId: string, jid: string) => ['chats', sessionId, 'profile', jid] as const,
     /** One loaded page of the list: its chats' small pictures. */
     pictures: (sessionId: string, jids: string) => ['chats', sessionId, 'pictures', jids] as const,
