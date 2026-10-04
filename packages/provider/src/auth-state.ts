@@ -14,6 +14,27 @@ export interface AuthStore {
   /** `value: null` deletes the entry. */
   set(entries: { type: string; id: string; value: Buffer | null }[]): Promise<void>;
   clear(): Promise<void>;
+  /** Every entry of a type whose id ends with `suffix` (e.g. all reverse LID mappings). */
+  scan?(type: string, suffix: string): Promise<Map<string, Buffer>>;
+}
+
+const REVERSE = '_reverse';
+
+/** A contact's privacy id (`…@lid`) and the phone-number JID it stands for. */
+export type LidPair = { lid: string; pn: string };
+
+/**
+ * Baileys keeps LID ↔ number pairs in the key store as `lid-mapping` entries: `<pnUser>` → lidUser
+ * and `<lidUser>_reverse` → pnUser. The reverse ones, as JIDs.
+ */
+function lidPairs(entries: Iterable<[string, unknown]>): LidPair[] {
+  const pairs: LidPair[] = [];
+  for (const [id, value] of entries) {
+    if (!id.endsWith(REVERSE) || typeof value !== 'string') continue;
+    const lidUser = id.slice(0, -REVERSE.length);
+    if (/^\d+$/.test(lidUser) && /^\d+$/.test(value)) pairs.push({ lid: `${lidUser}@lid`, pn: `${value}@s.whatsapp.net` });
+  }
+  return pairs;
 }
 
 export type EncryptedAuthState = {
@@ -28,6 +49,13 @@ export type EncryptedAuthState = {
   flush: () => Promise<void>;
   /** Wipes creds and keys, e.g. after the device was logged out. */
   clear: () => Promise<void>;
+  /** Every LID ↔ number pair Baileys has stored for this session (empty if the store can't scan). */
+  lidMappings: () => Promise<LidPair[]>;
+};
+
+export type AuthStateOptions = {
+  /** Called with the pairs of each `lid-mapping` write, once it is stored. */
+  onLidMappings?: (pairs: LidPair[]) => void;
 };
 
 /**
@@ -49,6 +77,7 @@ export async function useEncryptedAuthState(
   store: AuthStore,
   sessionId: string,
   key: Buffer,
+  options: AuthStateOptions = {},
 ): Promise<EncryptedAuthState> {
   const aad = (type: string, id: string) => `${sessionId}:${type}:${id}`;
   const seal = (type: string, id: string, value: unknown) =>
@@ -116,6 +145,11 @@ export async function useEncryptedAuthState(
             }
           }
           if (entries.length > 0) await store.set(entries);
+          const mappings = data['lid-mapping'];
+          if (mappings && options.onLidMappings) {
+            const pairs = lidPairs(Object.entries(mappings));
+            if (pairs.length > 0) options.onLidMappings(pairs);
+          }
         },
       },
     },
@@ -124,6 +158,11 @@ export async function useEncryptedAuthState(
       while (pending) await pending.catch(() => {});
     },
     clear: () => store.clear(),
+    lidMappings: async () => {
+      if (!store.scan) return [];
+      const rows = await store.scan('lid-mapping', REVERSE);
+      return lidPairs([...rows].map(([id, blob]) => [id, open('lid-mapping', id, blob)]));
+    },
   };
 }
 
@@ -149,6 +188,14 @@ export function memoryAuthStore(): AuthStore & { rows: Map<string, Buffer> } {
     },
     async clear() {
       rows.clear();
+    },
+    async scan(type, suffix) {
+      const out = new Map<string, Buffer>();
+      for (const [k2, v] of rows) {
+        const [t, id] = k2.split('\u0000') as [string, string];
+        if (t === type && id.endsWith(suffix)) out.set(id, v);
+      }
+      return out;
     },
   };
 }

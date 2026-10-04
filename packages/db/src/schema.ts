@@ -7,6 +7,12 @@ import type {
   OutboundContent,
   SendingWindow,
   SessionStatus,
+  SyncChatStatus,
+  SyncLogCode,
+  SyncLogLevel,
+  SyncLogParams,
+  SyncPauseReason,
+  SyncStatus,
   TemplateCategory,
   TemplateParts,
 } from '@wa/shared';
@@ -437,8 +443,28 @@ export const chats = pgTable(
   (t) => [
     primaryKey({ columns: [t.sessionId, t.jid] }),
     index().on(t.sessionId, t.lastMessageAt),
-    index().on(t.sessionId, t.altJid).where(sql`${t.altJid} is not null`),
+    /** A LID belongs to one conversation: the chat filed under its phone number (see `contactLids`). */
+    uniqueIndex().on(t.sessionId, t.altJid).where(sql`${t.altJid} is not null`),
   ],
+);
+
+/**
+ * Which phone number a LID (WhatsApp's privacy id, `…@lid`) stands for, per session — learnt from
+ * Baileys' own mapping store and from messages that carry both. One contact = one chat: the chats
+ * trigger files LID-addressed messages under the phone number, and a newly learnt pair merges the
+ * LID's chat into the phone number's (migration 0013). Written only under the session's chat lock.
+ */
+export const contactLids = pgTable(
+  'contact_lids',
+  {
+    sessionId: uuid()
+      .notNull()
+      .references(() => sessions.id, { onDelete: 'cascade' }),
+    lid: text().notNull(),
+    pn: text().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.sessionId, t.lid] }), index().on(t.sessionId, t.pn)],
 );
 
 /**
@@ -459,6 +485,97 @@ export const mediaUploads = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index().on(t.createdAt)],
+);
+
+/**
+ * Names WhatsApp gives a session for its contacts, by address (phone-number JID or LID): the name saved
+ * in the phone's address book (synced to linked devices as a contact action, or as a conversation's
+ * display name in history) and a business's verified name. A contact's own WhatsApp name (pushName)
+ * stays on `chats.name`. Kept apart from chats so a name never creates a conversation; chats read it
+ * under both their addresses (`chat_display_name`, migration 0015). Groups don't use it.
+ */
+export const contactNames = pgTable(
+  'contact_names',
+  {
+    sessionId: uuid()
+      .notNull()
+      .references(() => sessions.id, { onDelete: 'cascade' }),
+    jid: text().notNull(),
+    savedName: text(),
+    verifiedName: text(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [primaryKey({ columns: [t.sessionId, t.jid] })],
+);
+
+/**
+ * Conversation sync jobs (dashboard `/chats`): one active job per number (`queued`, `running`,
+ * `paused`), run by the worker that owns the number. Progress lives here so a job resumes after a
+ * disconnect or a worker restart; see apps/worker/src/sync.ts.
+ */
+export const syncJobs = pgTable(
+  'sync_jobs',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    workspaceId: uuid()
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    sessionId: uuid()
+      .notNull()
+      .references(() => sessions.id, { onDelete: 'cascade' }),
+    status: text().$type<SyncStatus>().notNull().default('queued'),
+    pauseReason: text().$type<SyncPauseReason>(),
+    chatsTotal: integer().notNull().default(0),
+    chatsDone: integer().notNull().default(0),
+    chatsFailed: integer().notNull().default(0),
+    messagesAdded: integer().notNull().default(0),
+    currentJid: text(),
+    currentName: text(),
+    error: text(),
+    startedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    updatedAt: updatedAt(),
+    finishedAt: timestamp({ withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('sync_jobs_active_idx').on(t.sessionId).where(sql`${t.status} in ('queued', 'running', 'paused')`),
+    index().on(t.sessionId, t.startedAt),
+  ],
+);
+
+/** The conversations of a sync job, in the order they are synced (newest first), each with its own progress. */
+export const syncJobChats = pgTable(
+  'sync_job_chats',
+  {
+    jobId: uuid()
+      .notNull()
+      .references(() => syncJobs.id, { onDelete: 'cascade' }),
+    jid: text().notNull(),
+    name: text(),
+    position: integer().notNull(),
+    status: text().$type<SyncChatStatus>().notNull().default('pending'),
+    pages: integer().notNull().default(0),
+    added: integer().notNull().default(0),
+    attempts: integer().notNull().default(0),
+    error: text(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [primaryKey({ columns: [t.jobId, t.jid] }), index().on(t.jobId, t.status, t.position)],
+);
+
+/** A sync job's log (the live panel), trimmed to its latest lines by the worker. */
+export const syncJobLogs = pgTable(
+  'sync_job_logs',
+  {
+    id: bigint({ mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    jobId: uuid()
+      .notNull()
+      .references(() => syncJobs.id, { onDelete: 'cascade' }),
+    level: text().$type<SyncLogLevel>().notNull(),
+    code: text().$type<SyncLogCode>().notNull(),
+    params: jsonb().$type<SyncLogParams>().notNull().default({}),
+    createdAt: createdAt(),
+  },
+  (t) => [index().on(t.jobId, t.id)],
 );
 
 export type Chat = typeof chats.$inferSelect;

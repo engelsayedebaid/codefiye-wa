@@ -22,6 +22,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { Deps } from '../deps';
 import { ownedSession, requirePat } from '../lib/auth';
+import { chatSyncRoutes } from './chat-sync';
 import { ApiError, conflict, notFound, paymentRequired, unprocessable } from '../lib/errors';
 import { assertActive } from '../lib/limits';
 import { type CachedMedia, MediaCache, sendMedia } from '../lib/media-cache';
@@ -175,7 +176,8 @@ function kindOf(mimetype: string): 'image' | 'video' | 'audio' | 'document' {
   return 'document';
 }
 
-export function chatRoutes({ sql, workers }: Deps): FastifyPluginAsyncZod {
+export function chatRoutes(deps: Deps): FastifyPluginAsyncZod {
+  const { sql, workers } = deps;
   const media = new MediaCache();
   const pictures = new Map<string, { url: string | null; at: number }>();
   const profiles = new Map<string, { at: number; value: { pictureUrl: string | null; about: string | null; name: string | null } }>();
@@ -198,6 +200,9 @@ export function chatRoutes({ sql, workers }: Deps): FastifyPluginAsyncZod {
         throw paymentRequired('Chats are not included in your plan. Upgrade to Business to unlock them.', 'feature_not_in_plan');
       }
     });
+
+    // Conversation sync jobs: a child plugin, so the plan gate above applies to it too.
+    await app.register(chatSyncRoutes(deps));
 
     // Uploads are raw bytes (no multipart): the file name and type travel in headers.
     app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer', bodyLimit: UPLOAD_MAX_BYTES }, (_req, body, done) => done(null, body));
@@ -265,15 +270,15 @@ export function chatRoutes({ sql, workers }: Deps): FastifyPluginAsyncZod {
         const digits = q?.replace(/\D/g, '') ?? '';
         const search = q
           ? digits.length >= 3
-            ? sql`and (c.name ilike ${`%${q}%`} or c.jid like ${`%${digits}%`})`
-            : sql`and c.name ilike ${`%${q}%`}`
+            ? sql`and (chat_display_name(c.session_id, c.jid, c.alt_jid, c.name) ilike ${`%${q}%`} or c.jid like ${`%${digits}%`})`
+            : sql`and chat_display_name(c.session_id, c.jid, c.alt_jid, c.name) ilike ${`%${q}%`}`
           : sql``;
         const after = cursor
           ? sql`and ((c.pinned_at is not null)::int, c.last_message_at, c.jid) < (${cursor.p}, ${cursor.t}::timestamptz, ${cursor.j})`
           : sql``;
 
         const rows = await sql<(ChatRow & { pinned: number })[]>`
-          select c.jid, c.alt_jid, c.name, c.unread_count, c.pinned_at, c.archived_at, c.inbound_count, c.outbound_count,
+          select c.jid, c.alt_jid, chat_display_name(c.session_id, c.jid, c.alt_jid, c.name) as name, c.unread_count, c.pinned_at, c.archived_at, c.inbound_count, c.outbound_count,
             c.last_message_at, c.last_inbound_at, (c.pinned_at is not null)::int as pinned,
             m.id as m_id, m.direction as m_direction, m.type as m_type, m.status as m_status,
             coalesce(m.content->>'text', m.content->>'caption', m.content->>'name', m.content->'poll'->>'name') as m_text,
@@ -340,7 +345,7 @@ export function chatRoutes({ sql, workers }: Deps): FastifyPluginAsyncZod {
         const found = await findChat(session.id, req.query.jid);
         const jids = jidsOf(found, req.query.jid);
         const [row] = await sql<ChatRow[]>`
-          select c.jid, c.alt_jid, c.name, c.unread_count, c.pinned_at, c.archived_at, c.inbound_count, c.outbound_count,
+          select c.jid, c.alt_jid, chat_display_name(c.session_id, c.jid, c.alt_jid, c.name) as name, c.unread_count, c.pinned_at, c.archived_at, c.inbound_count, c.outbound_count,
             c.last_message_at, c.last_inbound_at,
             m.id as m_id, m.direction as m_direction, m.type as m_type, m.status as m_status,
             coalesce(m.content->>'text', m.content->>'caption', m.content->>'name') as m_text, null as m_sender, m.created_at as m_at
@@ -819,7 +824,7 @@ export function chatRoutes({ sql, workers }: Deps): FastifyPluginAsyncZod {
               count(*) filter (where direction = 'out' and status in ('delivered', 'read'))::int as delivered,
               count(*) filter (where direction = 'out' and status = 'read')::int as "read",
               count(*) filter (where direction = 'out' and status = 'failed')::int as failed,
-              count(distinct chat_jid_of(direction, remote_jid, content))::int as active_chats
+              count(distinct chat_jid_for(session_id, direction, remote_jid, content))::int as active_chats
             from messages where ${scope}`,
           sql<{ new_chats: number; unread: number }[]>`
             select count(*) filter (where created_at >= ${since})::int as new_chats, coalesce(sum(unread_count), 0)::int as unread
@@ -831,7 +836,7 @@ export function chatRoutes({ sql, workers }: Deps): FastifyPluginAsyncZod {
               select direction, created_at, broadcast_id,
                 lag(direction) over w as prev_dir, lag(created_at) over w as prev_at
               from messages where ${scope}
-              window w as (partition by chat_jid_of(direction, remote_jid, content) order by id)
+              window w as (partition by chat_jid_for(session_id, direction, remote_jid, content) order by id)
             ) t
             where direction = 'out' and prev_dir = 'in' and broadcast_id is null`,
           // Reply rate: conversations we wrote to in the period, and how many wrote back afterwards.
@@ -841,7 +846,7 @@ export function chatRoutes({ sql, workers }: Deps): FastifyPluginAsyncZod {
             from (
               select min(created_at) filter (where direction = 'out') as first_out, max(created_at) filter (where direction = 'in') as last_in
               from messages where ${scope} and remote_jid not like '%@g.us'
-              group by chat_jid_of(direction, remote_jid, content)
+              group by chat_jid_for(session_id, direction, remote_jid, content)
             ) t`,
           sql<{ day: string; inbound: number; outbound: number }[]>`
             select to_char(date_trunc('day', created_at at time zone ${tz}), 'YYYY-MM-DD') as day,
@@ -853,9 +858,9 @@ export function chatRoutes({ sql, workers }: Deps): FastifyPluginAsyncZod {
           sql<{ type: string; n: number }[]>`
             select type, count(*)::int as n from messages where ${scope} group by type order by n desc`,
           sql<{ jid: string; inbound: number; outbound: number; name: string | null }[]>`
-            select t.jid, t.inbound, t.outbound, c.name
+            select t.jid, t.inbound, t.outbound, chat_display_name(c.session_id, c.jid, c.alt_jid, c.name) as name
             from (
-              select chat_jid_of(direction, remote_jid, content) as jid,
+              select chat_jid_for(session_id, direction, remote_jid, content) as jid,
                 count(*) filter (where direction = 'in')::int as inbound, count(*) filter (where direction = 'out')::int as outbound
               from messages where ${scope} group by 1
               order by count(*) filter (where direction = 'in') desc, count(*) desc limit 8

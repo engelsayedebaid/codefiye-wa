@@ -1,6 +1,9 @@
 import { TRIAL_DAYS, type Plan } from '@wa/shared/plans';
+import type { SyncLogCode, SyncLogParams, SyncStatus } from '@wa/shared/sync';
 import { BRAND } from '../brand';
 
+/** Thousands separated, Latin digits (as elsewhere in the dashboard). */
+const num = (n: number) => n.toLocaleString('en-US');
 /** Arabic counted nouns: 1 → "one", 2 → dual, 3–10 → plural, 11+ → accusative singular. */
 const count = (n: number, one: string, two: string, few: string, many: string) =>
   n === 1 ? one : n === 2 ? two : n >= 3 && n <= 10 ? `${n} ${few}` : `${n} ${many}`;
@@ -1281,6 +1284,60 @@ export const ar = {
       waiting: 'أرسلنا الطلب إلى هاتفك. تصل الرسائل عندما يكون الهاتف متصلاً بالإنترنت.',
       offline: 'اربط الرقم أولاً لمزامنة محادثاته.',
       failed: 'تعذّرت المزامنة',
+    },
+    syncJob: {
+      start: 'مزامنة كل المحادثات',
+      open: 'عرض تقدّم المزامنة',
+      title: {
+        queued: 'بانتظار البدء…',
+        running: 'جارٍ مزامنة المحادثات…',
+        paused: 'المزامنة متوقفة مؤقتاً',
+        completed: 'اكتملت المزامنة',
+        cancelled: 'أُلغيت المزامنة',
+        failed: 'تعذّرت المزامنة',
+      } as Record<SyncStatus, string>,
+      phonePaused: 'الهاتف لا يرد. تأكد أنه متصل بالإنترنت ثم استأنف.',
+      chats: (done: number, total: number) => `${num(done)} / ${num(total)} محادثة`,
+      messages: (n: number) => `${num(n)} رسالة جديدة`,
+      now: (name: string) => `الآن: ${name}`,
+      synced: (n: number) => `${num(n)} تمت`,
+      failed: (n: number) => `${num(n)} فشلت`,
+      speed: (n: number) => `${num(n)} رسالة/دقيقة`,
+      eta: (d: string) => `متبقٍ نحو ${d}`,
+      duration: (s: number) => (s < 60 ? 'أقل من دقيقة' : s < 3600 ? `${Math.round(s / 60)} د` : `${Math.floor(s / 3600)} س ${Math.round((s % 3600) / 60)} د`),
+      pause: 'إيقاف مؤقت',
+      resume: 'استئناف',
+      cancel: 'إلغاء',
+      retry: (n: number) => `إعادة الفاشلة (${num(n)})`,
+      again: 'مزامنة من جديد',
+      dismiss: 'إخفاء',
+      logTitle: 'سجل المزامنة',
+      live: 'مباشر',
+      logEmpty: 'لا أحداث بعد.',
+      note: 'نطلب من هاتفك الرسائل الأقدم لكل محادثة، صفحة بعد صفحة. لا تتكرر أي رسالة، وتستمر المزامنة من حيث توقفت إن انقطع الاتصال. الصور والملفات تُحمَّل عند فتحها.',
+      failedAction: 'تعذّر تنفيذ الطلب',
+      log: {
+        started: () => 'بدأت المزامنة',
+        resumed: () => 'استُؤنفت المزامنة',
+        waiting_connection: () => 'بانتظار اتصال الرقم بواتساب',
+        waiting_slot: () => 'بانتظار الدور — مزامنات أرقام أخرى قيد التشغيل',
+        found_chats: (p) => `وُجدت ${num(p.total ?? 0)} محادثة`,
+        contacts_requested: () => 'طلبنا أسماء جهات الاتصال المحفوظة على الهاتف',
+        contacts_failed: () => 'تعذّر جلب أسماء جهات الاتصال الآن — ستظهر الأسماء المتاحة من الرسائل',
+        chat_start: (p) => `مزامنة محادثة: ${p.name}`,
+        chat_page: (p) => `${p.name}: الصفحة ${p.page} — ${num(p.added ?? 0)} رسالة`,
+        chat_done: (p) => `${p.name}: اكتملت (${num(p.added ?? 0)} رسالة جديدة)`,
+        chat_end: (p) => `${p.name}: لا رسائل أقدم — اكتملت (${num(p.added ?? 0)} رسالة جديدة)`,
+        chat_retry: (p) => `${p.name}: لا رد من الهاتف — إعادة المحاولة (${p.attempt})`,
+        chat_failed: (p) => `${p.name}: تعذّرت المزامنة — الهاتف لم يرد`,
+        group_named: (p) => `تحديث اسم المجموعة: ${p.name}`,
+        paused: () => 'أوقفتَ المزامنة مؤقتاً',
+        phone_unresponsive: () => 'الهاتف لا يرد — أُوقفت المزامنة مؤقتاً',
+        cancelled: () => 'أُلغيت المزامنة',
+        retrying_failed: () => 'إعادة المحادثات التي فشلت',
+        completed: (p) => `اكتملت المزامنة: ${num(p.total ?? 0)} محادثة، ${num(p.added ?? 0)} رسالة جديدة`,
+        failed: (p) => `تعذّرت المزامنة${p.error ? `: ${p.error}` : ''}`,
+      } as Record<SyncLogCode, (p: SyncLogParams) => string>,
     },
     backToChats: 'العودة للمحادثات',
     newChat: {

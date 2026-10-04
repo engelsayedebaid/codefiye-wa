@@ -11,7 +11,8 @@
     "./name-suggestions": "./src/name-suggestions.ts",
     "./phone": "./src/phone.ts",
     "./template-text": "./src/template-text.ts",
-    "./chats": "./src/chats.ts"
+    "./chats": "./src/chats.ts",
+    "./sync": "./src/sync.ts"
   },
   "scripts": {
     "typecheck": "tsc -p ."

@@ -33,7 +33,16 @@ export type CloseReason = 'logged_out' | 'restart_required' | 'connection_replac
 
 export type ReceiptStatus = 'sent' | 'delivered' | 'read' | 'failed';
 
+/**
+ * A contact's names as WhatsApp gives them to this linked device, by address (phone-number JID or LID):
+ * `savedName` = the name in the phone's address book (WhatsApp syncs it to linked devices; absent when
+ * WhatsApp on the phone can't read the contacts), `verifiedName` = a business's verified name.
+ */
+export type ContactName = { jid: string; savedName?: string; verifiedName?: string };
+
 export type ProviderEvents = {
+  /** Contact names learnt (address-book sync, history), plus any LID ↔ number pairs they came with. */
+  contacts: { contacts: ContactName[]; pairs: { lid: string; pn: string }[] };
   qr: { qr: string };
   open: { jid: string; phone: string | null; name: string | null };
   close: { reason: CloseReason; statusCode: number | null; message: string };
@@ -52,7 +61,11 @@ export type ProviderEvents = {
    * Past messages the phone sent us: right after linking, or on request (`fetchHistory`). `names`:
    * contact and group names it knows.
    */
-  history: { messages: HistoryMessage[]; names: { jid: string; name: string }[]; onDemand: boolean };
+  /**
+   * `chatJids`: the conversations the batch is about (as WhatsApp addresses them); an on-demand
+   * answer comes even when it holds no messages, meaning that conversation has no older history.
+   */
+  history: { messages: HistoryMessage[]; names: { jid: string; name: string }[]; onDemand: boolean; chatJids: string[] };
 };
 
 export type HistoryMessage = (InboundMessage & { fromMe: false }) | (EchoMessage & { fromMe: true });

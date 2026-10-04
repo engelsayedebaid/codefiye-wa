@@ -500,3 +500,33 @@ body {
     animation: none;
   }
 }
+
+/* Conversation sync: a light sheen sweeping the progress bar while a sync runs (logical: follows RTL). */
+.sync-sheen {
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.28), transparent);
+  animation: sync-sheen 1.6s ease-in-out infinite;
+}
+@keyframes sync-sheen {
+  from {
+    translate: -100% 0;
+  }
+  to {
+    translate: 300% 0;
+  }
+}
+[dir='rtl'] .sync-sheen {
+  animation-name: sync-sheen-rtl;
+}
+@keyframes sync-sheen-rtl {
+  from {
+    translate: 100% 0;
+  }
+  to {
+    translate: -300% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sync-sheen {
+    display: none;
+  }
+}

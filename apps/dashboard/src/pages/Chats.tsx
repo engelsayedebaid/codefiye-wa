@@ -31,6 +31,7 @@ import { Conversation } from '../app/chats/Conversation';
 import { Insights } from '../app/chats/Insights';
 import { type InboxNote, type NoteMessage, NoteStack, noteText, playPing, pushNote, unlockAudio } from '../app/chats/Notifier';
 import { type ChatInfo, type ChatNumber, type ChatPage, type ChatSummary, gradientFor, initials, isChat, type PresenceState, type Profile } from '../app/chats/model';
+import { SyncButton, SyncCard, SyncModal } from '../app/chats/SyncPanel';
 import { useBackgroundLiveEvents, useLiveEvents } from '../events';
 import { useI18n } from '../i18n';
 import { debouncedInvalidate, qk } from '../queries';
@@ -363,6 +364,7 @@ export function ChatsPage() {
 
   // --- sync from WhatsApp: the phone answers asynchronously, in batches ---
   const [sync, setSync] = useState<{ scope: string } | null>(null);
+  const [syncOpen, setSyncOpen] = useState(false);
   const [toast, setToast] = useState<{ text: string; tone: 'ok' | 'error' } | null>(null);
   const synced = useRef(0);
   const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -454,14 +456,14 @@ export function ChatsPage() {
 
   const openPhone = (phone: string) => void openJid(`${phone.replace(/\D/g, '')}@s.whatsapp.net`);
 
-  /** Asks the phone for older messages: of one chat, or of the most recent chats. */
-  const startSync = async (jid?: string) => {
+  /** Asks the phone for older messages of one chat (the whole number syncs as a job: see SyncPanel). */
+  const startSync = async (jid: string) => {
     if (!activeId || sync) return;
     if (!connected) return showToast(c.sync.offline, 'error');
     synced.current = 0;
-    setSync({ scope: jid ?? 'all' });
+    setSync({ scope: jid });
     try {
-      const { requested } = await api<{ requested: number }>(`/api/chats/${activeId}/sync`, { method: 'POST', body: jid ? { jid } : {} });
+      const { requested } = await api<{ requested: number }>(`/api/chats/${activeId}/sync`, { method: 'POST', body: { jid } });
       // Nothing to anchor on, or no answer within 25s: say so rather than spin forever.
       settleSync(requested === 0 ? 0 : 25_000);
     } catch (err) {
@@ -736,9 +738,15 @@ export function ChatsPage() {
               <IconAction label={connected ? c.newChat.open : c.newChat.offline} onClick={() => setNewChat(true)} disabled={!connected}>
                 <MessageSquarePlus className="size-[18px]" />
               </IconAction>
-              <IconAction label={connected ? c.sync.all : c.sync.offline} onClick={() => void startSync()} disabled={!connected || sync !== null}>
-                <RefreshCw className={cx('size-[18px]', sync?.scope === 'all' && 'animate-spin')} />
-              </IconAction>
+              <SyncButton
+                sessionId={current.id}
+                onOpen={() => setSyncOpen(true)}
+                render={({ onClick, running }) => (
+                  <IconAction label={running ? c.syncJob.open : c.syncJob.start} onClick={onClick} active={running}>
+                    <RefreshCw className={cx('size-[18px]', running && 'animate-spin [animation-duration:2s]')} />
+                  </IconAction>
+                )}
+              />
               <IconAction label={c.tabs.insights} active={view === 'insights'} onClick={() => setView((v) => (v === 'insights' ? 'chats' : 'insights'))}>
                 <BarChart3 className="size-[18px]" />
               </IconAction>
@@ -760,6 +768,7 @@ export function ChatsPage() {
             </div>
           </div>
           <NumberSwitcher numbers={list} value={current.id} onChange={switchNumber} />
+          <SyncCard key={current.id} sessionId={current.id} onOpen={() => setSyncOpen(true)} />
           {notifyOn && permission === 'default' && (
             <div className="animate-fade-in flex items-center gap-2.5 rounded-xl border border-brand/20 bg-brand/[0.07] py-2 ps-3 pe-2 text-xs">
               <Bell className="size-4 shrink-0 text-brand" />
@@ -933,6 +942,8 @@ export function ChatsPage() {
           }}
         />
       )}
+
+      {syncOpen && <SyncModal sessionId={current.id} connected={connected} onClose={() => setSyncOpen(false)} />}
 
       <NoteStack notes={notes} onOpen={openNote} onDismiss={dismissNote} />
 

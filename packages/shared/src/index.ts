@@ -9,3 +9,4 @@ export * from './name-suggestions';
 export * from './phone';
 export * from './plans';
 export * from './templates';
+export * from './sync';

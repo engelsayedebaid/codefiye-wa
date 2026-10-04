@@ -6,6 +6,7 @@ import { loadConfig } from './config';
 import { fetchMedia, fetchUpload } from './media';
 import { buildRpcServer } from './rpc';
 import { Supervisor } from './supervisor';
+import { SyncSlots } from './sync';
 
 const config = loadConfig();
 const logger = pino({
@@ -16,7 +17,7 @@ const logger = pino({
 
 const urls = databaseUrls();
 await runMigrations(urls.direct);
-const { sql } = createDb(urls.pooled);
+const { sql } = createDb(urls.pooled, { max: config.DB_POOL_MAX });
 const listener = createListener(urls.direct);
 
 const supervisor = new Supervisor({
@@ -28,6 +29,7 @@ const supervisor = new Supervisor({
   encryptionKey: parseKey(config.AUTH_ENCRYPTION_KEY),
   logger,
   baileysLogger: logger.child({ module: 'baileys' }, { level: config.BAILEYS_LOG_LEVEL }),
+  syncSlots: new SyncSlots(config.SYNC_CONCURRENCY),
   sendDelay: { min: config.SEND_DELAY_MIN_MS, max: Math.max(config.SEND_DELAY_MIN_MS, config.SEND_DELAY_MAX_MS) },
   // Files attached on the chats page come from the database, not a URL.
   fetchMedia: (url, kind) => (url.startsWith(UPLOAD_SCHEME) ? fetchUpload(sql, url.slice(UPLOAD_SCHEME.length)) : fetchMedia(url, { maxBytes: config.MEDIA_MAX_BYTES, kind })),

@@ -1,5 +1,6 @@
 import type { Presence } from './chats';
 import type { MessageDirection, MessageStatus, MessageType, SessionStatus } from './constants';
+import type { SyncLogEntry, SyncProgress } from './sync';
 
 type Base<T extends string, D> = { type: T; workspaceId: string; sessionId: string; data: D };
 
@@ -20,11 +21,17 @@ export type WaEvent =
   /** A chat was read: on the phone, or from another dashboard tab. */
   | Base<'chat.read', { chatJid: string }>
   /** Past messages arrived from the phone (sync): `added` new ones, for one chat or (null) several. */
-  | Base<'chats.synced', { chatJid: string | null; added: number }>;
+  | Base<'chats.synced', { chatJid: string | null; added: number }>
+  /** A conversation sync job moved (status, counters, the conversation in progress). */
+  | Base<'sync.progress', SyncProgress>
+  /** One line of a sync job's log. */
+  | Base<'sync.log', SyncLogEntry & { jobId: string }>;
 
 export type WaEventType = WaEvent['type'];
 
 /** Messages sent by the API on `wa_control`. */
 export type ControlMessage =
   | { type: 'session.changed'; sessionId: string }
-  | { type: 'message.queued'; sessionId: string };
+  | { type: 'message.queued'; sessionId: string }
+  /** A sync job was started, paused, resumed, cancelled or retried. */
+  | { type: 'sync.changed'; sessionId: string };

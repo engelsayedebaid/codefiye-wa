@@ -2,12 +2,13 @@ import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import type { Boom } from '@hapi/boom';
 import type { ChatMedia, MessageExtras, MessageType, OutboundContent, Presence } from '@wa/shared';
-import { jidToPhone, PRESENCES } from '@wa/shared';
+import { jidToPhone, PRESENCES, usableContactName } from '@wa/shared';
 import makeWASocket, {
   type AnyMessageContent,
   Browsers,
   BufferJSON,
   type CacheStore,
+  type Contact,
   decryptPollVote,
   DisconnectReason,
   downloadMediaMessage,
@@ -33,6 +34,7 @@ import pino, { type Logger } from 'pino';
 import type { EncryptedAuthState } from './auth-state';
 import {
   type CloseReason,
+  type ContactName,
   type ContactProfile,
   type EchoMessage,
   type HistoryAnchor,
@@ -58,9 +60,14 @@ export type BaileysProviderOptions = {
   loadMessage?: (waMessageId: string) => Promise<unknown>;
 };
 
-/** Small TTL cache satisfying Baileys' CacheStore (used for message retry counters). */
+/**
+ * Small TTL cache satisfying Baileys' CacheStore (message retry counters, signal keys). No timers:
+ * expired entries are swept as new ones come in, and the cache is collected with its provider.
+ * (Baileys' default signal-key cache runs a setInterval that keeps every replaced socket's cache alive.)
+ */
 class TtlCache implements CacheStore {
   private readonly map = new Map<string, { value: unknown; expires: number }>();
+  private sets = 0;
   constructor(private readonly ttlMs: number) {}
   get<T>(key: string): T | undefined {
     const hit = this.map.get(key);
@@ -73,6 +80,11 @@ class TtlCache implements CacheStore {
   }
   set<T>(key: string, value: T) {
     this.map.set(key, { value, expires: Date.now() + this.ttlMs });
+    if (++this.sets % 500 === 0) this.sweep();
+  }
+  private sweep() {
+    const now = Date.now();
+    for (const [key, hit] of this.map) if (hit.expires < now) this.map.delete(key);
   }
   del(key: string) {
     this.map.delete(key);
@@ -236,7 +248,8 @@ export function extrasOf(content: proto.IMessage, kind: keyof proto.IMessage, wr
 /** What inbound and phone-sent messages have in common; null for anything that isn't a chat message. */
 function parse(msg: WAMessage) {
   const { key } = msg;
-  const chatJid = key.remoteJid;
+  // One address per contact: never a device JID (`2010…:7@s.whatsapp.net`), which would open a second chat.
+  const chatJid = key.remoteJid && !isJidGroup(key.remoteJid) ? jidNormalizedUser(key.remoteJid) : key.remoteJid;
   if (!chatJid || !key.id) return null;
   if (isJidStatusBroadcast(chatJid) || isJidNewsletter(chatJid) || isJidBroadcast(chatJid)) return null;
   const content = normalizeMessageContent(msg.message);
@@ -255,7 +268,10 @@ function parse(msg: WAMessage) {
 }
 
 /** The phone-number JID when WhatsApp gives one alongside a LID. */
-const pick = (jid?: string | null, alt?: string | null) => (jid && isLidUser(jid) && alt ? alt : jid);
+const pick = (jid?: string | null, alt?: string | null) => {
+  const chosen = jid && isLidUser(jid) && alt ? alt : jid;
+  return chosen ? jidNormalizedUser(chosen) : chosen;
+};
 
 export function toInbound(msg: WAMessage): InboundMessage | null {
   const { key } = msg;
@@ -338,6 +354,29 @@ export function readPollVote(msg: WAMessage, poll: proto.IMessage, mine: (string
   return { waMessageId: pollMsgId, chatJid: key.remoteJid, voter, voterPhone: isLidUser(voter) ? null : jidToPhone(voter), selected };
 }
 
+/**
+ * Contact names and LID ↔ number pairs from Baileys contacts: `name` is the name saved in the phone's
+ * address book (synced by WhatsApp; Baileys documents it as such), `verifiedName` a business's. A
+ * contact's own WhatsApp name (`notify`) is not taken here: messages carry it (pushName). Groups keep
+ * their subject, handled elsewhere.
+ */
+export function readContacts(list: Partial<Contact>[]): ProviderEvents['contacts'] {
+  const contacts: ContactName[] = [];
+  const pairs: { lid: string; pn: string }[] = [];
+  for (const c of list) {
+    if (!c.id || isJidGroup(c.id) || isJidBroadcast(c.id) || isJidNewsletter(c.id) || isJidStatusBroadcast(c.id)) continue;
+    const jid = jidNormalizedUser(c.id);
+    if (!jid) continue;
+    const savedName = usableContactName(c.name) ? c.name.trim() : undefined;
+    const verifiedName = usableContactName(c.verifiedName) ? c.verifiedName.trim() : undefined;
+    if (savedName || verifiedName) contacts.push({ jid, ...(savedName ? { savedName } : {}), ...(verifiedName ? { verifiedName } : {}) });
+    const lid = c.lid ?? (isLidUser(jid) ? jid : undefined);
+    const pn = c.phoneNumber ?? (jid.endsWith('@s.whatsapp.net') ? jid : undefined);
+    if (lid && pn && isLidUser(lid) && pn.endsWith('@s.whatsapp.net')) pairs.push({ lid: jidNormalizedUser(lid), pn: jidNormalizedUser(pn) });
+  }
+  return { contacts, pairs };
+}
+
 function closeReason(statusCode: number | null, message: string, linked: boolean): CloseReason {
   if (statusCode === DisconnectReason.loggedOut) return 'logged_out';
   if (statusCode === DisconnectReason.restartRequired) return 'restart_required';
@@ -363,6 +402,10 @@ export class BaileysProvider implements Provider {
   private readonly emitter = new EventEmitter();
   private readonly recent = new RecentMessages(1_000);
   private readonly retryCounter = new TtlCache(10 * 60_000);
+  /** Signal keys read or written lately (Baileys' default TTL); spares the database most key reads. */
+  private readonly keyCache = new TtlCache(5 * 60_000);
+  /** Bumped by every connect and close: a connect that a close overtook must not open a socket. */
+  private generation = 0;
   private readonly logger: Logger;
 
   constructor(private readonly options: BaileysProviderOptions) {
@@ -389,12 +432,16 @@ export class BaileysProvider implements Provider {
 
   async connect(): Promise<void> {
     if (this.sock) await this.close();
+    const generation = ++this.generation;
     const { state, saveCreds } = this.options.auth;
     const version = await resolveVersion(this.logger);
+    // Closed (the session stopped) while we waited: a socket opened now would be a live, unowned
+    // connection on this number, fighting the next owner's.
+    if (generation !== this.generation) return;
 
     const sock = makeWASocket({
       ...(version ? { version } : {}),
-      auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, this.logger) },
+      auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, this.logger, this.keyCache) },
       logger: this.logger,
       browser: Browsers.macOS('Chrome'),
       markOnlineOnConnect: false,
@@ -462,11 +509,24 @@ export class BaileysProvider implements Provider {
         const echo = toEcho(m);
         return echo ? [{ ...echo, fromMe: true }] : [];
       });
+      // Saved names and LID pairs go out as contacts; `names` only fills chats that have none (a group's
+      // subject, a contact's own WhatsApp name) and never takes a masked number.
+      this.emitContacts(contacts);
       const names = [
         ...contacts.map((c) => ({ jid: c.id, name: c.name ?? c.notify ?? c.verifiedName ?? '' })),
         ...chats.map((c) => ({ jid: c.id, name: c.name ?? '' })),
-      ].filter((n): n is { jid: string; name: string } => Boolean(n.jid && n.name));
-      if (items.length || names.length) this.emit('history', { messages: items, names, onDemand: syncType === proto.HistorySync.HistorySyncType.ON_DEMAND });
+      ].filter((n): n is { jid: string; name: string } => Boolean(n.jid && n.name) && (isJidGroup(n.jid ?? undefined) || usableContactName(n.name)));
+      const onDemand = syncType === proto.HistorySync.HistorySyncType.ON_DEMAND;
+      const chatJids = [...new Set([...chats.map((c) => c.id), ...items.map((m) => m.chatJid)].filter((j): j is string => Boolean(j)).map((j) => (isJidGroup(j) ? j : jidNormalizedUser(j))))];
+      if (items.length || names.length || onDemand) this.emit('history', { messages: items, names, onDemand, chatJids });
+    });
+
+    // The phone's address book, synced to linked devices (app state), and later edits of it.
+    sock.ev.on('contacts.upsert', (list) => {
+      if (current()) this.emitContacts(list);
+    });
+    sock.ev.on('contacts.update', (list) => {
+      if (current()) this.emitContacts(list);
     });
 
     sock.ev.on('presence.update', ({ id, presences }) => {
@@ -505,6 +565,11 @@ export class BaileysProvider implements Provider {
         this.emit('receipt', { waMessageId: key.id, chatJid: key.remoteJid, status, ...(error ? { error } : {}) });
       }
     });
+  }
+
+  private emitContacts(list: Partial<Contact>[]) {
+    const found = readContacts(list);
+    if (found.contacts.length || found.pairs.length) this.emit('contacts', found);
   }
 
   /** A recently sent message from memory, else from storage (e.g. a poll sent before a restart). */
@@ -588,6 +653,19 @@ export class BaileysProvider implements Provider {
     return (await this.requireOpen().profilePictureUrl(jid, type, 8_000).catch(() => undefined)) ?? null;
   }
 
+  /**
+   * Asks WhatsApp again for the whole address-book collection (`critical_unblock_low`: the names saved
+   * on the phone, as synced to linked devices). Baileys keeps only the collection's version, not its
+   * contents, so a number linked before we listened never gets those names otherwise. Forgetting the
+   * version makes Baileys fetch the full snapshot, as on a fresh link; the names arrive as `contacts`.
+   */
+  async resyncContacts(): Promise<void> {
+    const sock = this.requireOpen();
+    // Through the socket's own key store, so its cache forgets the version too.
+    await sock.authState.keys.set({ 'app-state-sync-version': { critical_unblock_low: null } });
+    await sock.resyncAppState(['critical_unblock_low'], true);
+  }
+
   /** A group's name. */
   async groupSubject(jid: string): Promise<string | null> {
     return (await this.requireOpen().groupMetadata(jid)).subject || null;
@@ -604,6 +682,7 @@ export class BaileysProvider implements Provider {
   }
 
   async close(): Promise<void> {
+    this.generation += 1;
     const sock = this.sock;
     this.sock = null;
     this.open = false;
@@ -611,6 +690,7 @@ export class BaileysProvider implements Provider {
   }
 
   async logout(): Promise<void> {
+    this.generation += 1;
     const sock = this.sock;
     this.sock = null;
     this.open = false;

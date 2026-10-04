@@ -2,6 +2,7 @@ import { TRIAL_DAYS } from '@wa/shared/plans';
 import { BRAND } from '../brand';
 import type { Dict } from './ar';
 
+const num = (n: number) => n.toLocaleString('en-US');
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 const days = (n: number) => plural(n, 'day', 'days');
 
@@ -1269,6 +1270,60 @@ export const en: Dict = {
       waiting: 'Request sent to your phone. Messages arrive while the phone is online.',
       offline: 'Connect the number to sync its chats.',
       failed: 'Sync failed',
+    },
+    syncJob: {
+      start: 'Sync all chats',
+      open: 'Show sync progress',
+      title: {
+        queued: 'Waiting to start…',
+        running: 'Synchronizing conversations…',
+        paused: 'Sync paused',
+        completed: 'Sync complete',
+        cancelled: 'Sync cancelled',
+        failed: 'Sync failed',
+      },
+      phonePaused: 'The phone isn’t answering. Make sure it’s online, then resume.',
+      chats: (done, total) => `${num(done)} / ${num(total)} conversations`,
+      messages: (n) => `${num(n)} new ${n === 1 ? 'message' : 'messages'}`,
+      now: (name) => `Syncing: ${name}`,
+      synced: (n) => `${num(n)} synced`,
+      failed: (n) => `${num(n)} failed`,
+      speed: (n) => `${num(n)} msg/min`,
+      eta: (d) => `~${d} left`,
+      duration: (s) => (s < 60 ? 'under a minute' : s < 3600 ? `${Math.round(s / 60)} min` : `${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min`),
+      pause: 'Pause',
+      resume: 'Resume',
+      cancel: 'Cancel',
+      retry: (n) => `Retry failed (${num(n)})`,
+      again: 'Sync again',
+      dismiss: 'Dismiss',
+      logTitle: 'Sync log',
+      live: 'Live',
+      logEmpty: 'No events yet.',
+      note: 'We ask your phone for each conversation’s older messages, page by page. No message is stored twice, and an interrupted sync carries on where it stopped. Photos and files download when opened.',
+      failedAction: 'Couldn’t do that',
+      log: {
+        started: () => 'Sync started',
+        resumed: () => 'Sync resumed',
+        waiting_connection: () => 'Waiting for the number to connect to WhatsApp',
+        waiting_slot: () => 'Waiting for a turn — other numbers are syncing',
+        found_chats: (p) => `Found ${num(p.total ?? 0)} conversations`,
+        contacts_requested: () => 'Asked for the contact names saved on the phone',
+        contacts_failed: () => 'Couldn’t fetch contact names now — names from messages are shown',
+        chat_start: (p) => `Syncing conversation: ${p.name}`,
+        chat_page: (p) => `${p.name}: page ${p.page} — ${num(p.added ?? 0)} messages`,
+        chat_done: (p) => `${p.name}: done (${num(p.added ?? 0)} new messages)`,
+        chat_end: (p) => `${p.name}: no older messages — done (${num(p.added ?? 0)} new)`,
+        chat_retry: (p) => `${p.name}: no answer from the phone — retrying (${p.attempt})`,
+        chat_failed: (p) => `${p.name}: couldn’t sync — the phone didn’t answer`,
+        group_named: (p) => `Group name updated: ${p.name}`,
+        paused: () => 'You paused the sync',
+        phone_unresponsive: () => 'The phone isn’t answering — sync paused',
+        cancelled: () => 'Sync cancelled',
+        retrying_failed: () => 'Retrying the failed conversations',
+        completed: (p) => `Sync complete: ${num(p.total ?? 0)} conversations, ${num(p.added ?? 0)} new messages`,
+        failed: (p) => `Sync failed${p.error ? `: ${p.error}` : ''}`,
+      },
     },
     backToChats: 'Back to chats',
     newChat: {

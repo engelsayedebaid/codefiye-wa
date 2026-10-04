@@ -30,6 +30,13 @@ export function pgAuthStore(sql: Sql, sessionId: string, { workerId }: { workerI
       return new Map(rows.map((r) => [r.key_id, r.value]));
     },
 
+    async scan(type: string, suffix: string): Promise<Map<string, Buffer>> {
+      const rows = await sql<{ key_id: string; value: Buffer }[]>`
+        select key_id, value from session_auth
+        where session_id = ${sessionId} and type = ${type} and right(key_id, ${suffix.length}) = ${suffix}`;
+      return new Map(rows.map((r) => [r.key_id, r.value]));
+    },
+
     /** All-or-nothing: the upserts and deletes of one call commit together or not at all. */
     async set(entries: { type: string; id: string; value: Buffer | null }[]): Promise<void> {
       const upserts = entries

@@ -476,6 +476,8 @@ export function SuccessNote({ children }: { children: ReactNode }) {
 // --- overlays ------------------------------------------------------------------------------------
 
 const MODAL_SIZES = {
+  /** Compact: tighter padding and title, for small status panels. */
+  sm: 'max-w-[26rem] gap-3 p-4',
   md: 'max-w-lg',
   lg: 'max-w-xl',
   // Tall editors: the body scrolls under a fixed header and has no bottom padding, so the content can
@@ -516,17 +518,17 @@ export function Modal({
         role="dialog"
         aria-modal
         aria-label={title}
-        className={cx('animate-scale-in relative flex w-full flex-col gap-4 rounded-lg border border-line bg-bg p-6 shadow-lg', MODAL_SIZES[size])}
+        className={cx('animate-scale-in relative flex w-full flex-col rounded-lg border border-line bg-bg shadow-lg', size !== 'sm' && 'gap-4 p-6', MODAL_SIZES[size])}
         onClick={(e) => e.stopPropagation()}
       >
         <header className="space-y-2 pe-6 text-start">
-          <h2 className="text-lg leading-none font-semibold">{title}</h2>
+          <h2 className={cx('leading-none font-semibold', size === 'sm' ? 'text-base' : 'text-lg')}>{title}</h2>
           {description && <p className="text-sm text-muted">{description}</p>}
         </header>
         <button onClick={onClose} className="absolute top-4 end-4 rounded-xs opacity-70 transition-opacity hover:opacity-100" aria-label={t.common.close}>
           <X className="size-4" />
         </button>
-        <div ref={bodyRef} className={cx('space-y-4', size === 'xl' && '-mx-6 min-h-0 flex-1 overflow-y-auto px-6 pt-1')}>
+        <div ref={bodyRef} className={cx(size === 'sm' ? 'space-y-3' : 'space-y-4', size === 'xl' && '-mx-6 min-h-0 flex-1 overflow-y-auto px-6 pt-1')}>
           {children}
         </div>
       </div>

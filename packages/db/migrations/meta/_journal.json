@@ -92,6 +92,27 @@
       "when": 1791081122200,
       "tag": "0012_chat_trigger_repair",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791114140519,
+      "tag": "0013_lid_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791115328426,
+      "tag": "0014_sync_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1791117353938,
+      "tag": "0015_contact_names",
+      "breakpoints": true
     }
   ]
 }

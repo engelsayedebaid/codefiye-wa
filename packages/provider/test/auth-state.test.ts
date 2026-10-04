@@ -78,3 +78,17 @@ describe('useEncryptedAuthState', () => {
     expect(store.rows.size).toBe(0);
   });
 });
+
+describe('LID mappings', () => {
+  it('reports the pairs Baileys stores, live and from storage', async () => {
+    const store = memoryAuthStore();
+    const seen: { lid: string; pn: string }[] = [];
+    const auth = await useEncryptedAuthState(store, 's1', key, { onLidMappings: (pairs) => seen.push(...pairs) });
+    // Baileys' layout: `<pnUser>` → lidUser and `<lidUser>_reverse` → pnUser.
+    await auth.state.keys.set({ 'lid-mapping': { '201012345678': '99887766', '99887766_reverse': '201012345678' } });
+    expect(seen).toEqual([{ lid: '99887766@lid', pn: '201012345678@s.whatsapp.net' }]);
+
+    const later = await useEncryptedAuthState(store, 's1', key);
+    expect(await later.lidMappings()).toEqual([{ lid: '99887766@lid', pn: '201012345678@s.whatsapp.net' }]);
+  });
+});

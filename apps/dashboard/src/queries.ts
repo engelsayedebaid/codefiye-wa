@@ -24,6 +24,8 @@ export const qk = {
     /** One loaded page of the list: its chats' small pictures. */
     pictures: (sessionId: string, jids: string) => ['chats', sessionId, 'pictures', jids] as const,
     insights: (sessionId: string, days: number) => ['chats', sessionId, 'insights', days] as const,
+    /** The number's latest sync job and its log (kept live by events). */
+    syncJob: (sessionId: string) => ['chats', sessionId, 'sync-job'] as const,
   },
   admin: {
     all: ['admin'] as const,

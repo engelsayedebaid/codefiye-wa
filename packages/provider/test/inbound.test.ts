@@ -33,6 +33,15 @@ describe('toInbound', () => {
     expect(inbound?.chatJid).toBe('99999@lid');
   });
 
+  it('never files a contact under a device JID (one chat per contact)', () => {
+    const inbound = toInbound(msg({ key: { remoteJid: '201012345678:12@s.whatsapp.net', id: 'D' }, message: { conversation: 'x' } }));
+    expect(inbound).toMatchObject({ chatJid: '201012345678@s.whatsapp.net', from: '201012345678@s.whatsapp.net' });
+    const echo = toEcho(msg({ key: { remoteJid: '99999:3@lid', remoteJidAlt: '201012345678:3@s.whatsapp.net', id: 'E', fromMe: true }, message: { conversation: 'y' } }));
+    expect(echo?.chatJid).toBe('201012345678@s.whatsapp.net');
+    const lidOnly = toEcho(msg({ key: { remoteJid: '99999:3@lid', id: 'F', fromMe: true }, message: { conversation: 'z' } }));
+    expect(lidOnly?.chatJid).toBe('99999@lid');
+  });
+
   it('reports the group participant as sender', () => {
     const inbound = toInbound(
       msg({ key: { remoteJid: '1203630@g.us', participant: '201012345678@s.whatsapp.net', id: 'G' }, message: { conversation: 'hey' } }),
@@ -98,5 +107,26 @@ describe('toEcho', () => {
 
   it('ignores messages from others', () => {
     expect(toEcho(msg({ message: { conversation: 'x' } }))).toBeNull();
+  });
+});
+
+describe('readContacts', () => {
+  it('takes the address-book name and a business name, and the LID pairs, never a masked number or a group', async () => {
+    const { readContacts } = await import('../src');
+    const found = readContacts([
+      { id: '201012345678@s.whatsapp.net', name: 'Ahmed', lid: '99887766@lid' },
+      { id: '99887755@lid', name: '+20∙∙∙∙∙∙∙∙16', phoneNumber: '201000000016@s.whatsapp.net' },
+      { id: '201055500000:4@s.whatsapp.net', verifiedName: 'Shop LLC', notify: 'shop' },
+      { id: '120363000000000077@g.us', name: 'Family' },
+      { id: '201000000099@s.whatsapp.net', notify: 'only their own name' },
+    ]);
+    expect(found.contacts).toEqual([
+      { jid: '201012345678@s.whatsapp.net', savedName: 'Ahmed' },
+      { jid: '201055500000@s.whatsapp.net', verifiedName: 'Shop LLC' },
+    ]);
+    expect(found.pairs).toEqual([
+      { lid: '99887766@lid', pn: '201012345678@s.whatsapp.net' },
+      { lid: '99887755@lid', pn: '201000000016@s.whatsapp.net' },
+    ]);
   });
 });

@@ -14,6 +14,8 @@ import {
   pgAuthStore,
   type QueuedMessage,
   recordOptOut,
+  recordContactNames,
+  recordLidMappings,
   recordPollVote,
   replanCampaigns,
   requeue,
@@ -28,6 +30,7 @@ import {
   type EncryptedAuthState,
   type HistoryAnchor,
   type InboundMessage,
+  type LidPair,
   type MediaFetcher,
   ProviderError,
   type ProviderEvents,
@@ -48,6 +51,7 @@ import {
 } from '@wa/shared';
 import type { Logger } from 'pino';
 import { MediaError } from './media';
+import { type PageAnswer, SessionSync, SyncSlots } from './sync';
 import { TimeoutError, withTimeout } from './timeout';
 
 export type RunnerContext = {
@@ -58,6 +62,8 @@ export type RunnerContext = {
   baileysLogger: Logger;
   sendDelay: { min: number; max: number };
   fetchMedia: MediaFetcher;
+  /** Sync jobs running at once on this worker (shared by its runners); a runner of its own gets one slot. */
+  syncSlots?: SyncSlots;
   /** Called once the runner has stopped and released (or lost) the session. */
   onStopped: (sessionId: string) => void;
 };
@@ -126,6 +132,10 @@ const rejection = (code?: string) => (code ? (REJECTIONS[code] ?? `Rejected by W
 /** How far a receipt goes; a rejection outranks everything. */
 const RECEIPT_RANK: Record<ProviderEvents['receipt']['status'], number> = { sent: 1, delivered: 2, read: 3, failed: 4 };
 const EARLY_RECEIPT_TTL_MS = 60_000;
+/** Text carried by a `messages.received` event (a preview; the stored message keeps all of it). UTF-8 Arabic is 2 bytes a char. */
+const EVENT_TEXT_MAX = 1_000;
+/** Closing a socket is normally instant; a stop never waits on a stuck one longer than this. */
+const CLOSE_TIMEOUT_MS = 5_000;
 
 /**
  * Owns one WhatsApp session inside a worker: socket lifecycle and reconnects (README §4.2–4.3),
@@ -167,6 +177,9 @@ export class SessionRunner {
   private connecting = false;
   /** Started from `logged_out`: one more 401 confirms the logout (see onLoggedOut). */
   private confirmingLogout = false;
+  private lidsBackfilled = false;
+  /** The number's conversation sync job (see sync.ts). */
+  readonly sync: SessionSync;
 
   constructor(
     readonly sessionId: string,
@@ -175,6 +188,18 @@ export class SessionRunner {
     private readonly ctx: RunnerContext,
   ) {
     this.log = ctx.logger.child({ sessionId });
+    this.sync = new SessionSync({
+      sql: ctx.sql,
+      sessionId,
+      workspaceId,
+      log: this.log.child({ component: 'sync' }),
+      slots: ctx.syncSlots ?? new SyncSlots(1),
+      connected: () => this.connected,
+      requestHistory: (anchor, count) => this.live().fetchHistory(anchor, count),
+      nameGroup: (jid) => this.nameGroup(jid, true),
+      refreshContacts: () => this.live().resyncContacts(),
+      publish: (event) => this.publish(event),
+    });
   }
 
   get connected() {
@@ -212,9 +237,16 @@ export class SessionRunner {
     try {
       if (!(await this.write({ status: 'connecting' }))) return this.halt();
       // A failed load (database, key, corrupt row) throws and lands in the retry below: never a wipe.
-      const auth = await useEncryptedAuthState(this.authStore(), this.sessionId, this.ctx.encryptionKey);
+      const auth = await useEncryptedAuthState(this.authStore(), this.sessionId, this.ctx.encryptionKey, {
+        onLidMappings: (pairs) => this.track(this.learnLids(pairs)),
+      });
       if (this.stopped) return;
       this.auth = auth;
+      if (!this.lidsBackfilled) {
+        // Pairs Baileys learnt before (or while we weren't recording them): once per start.
+        this.lidsBackfilled = true;
+        this.track(auth.lidMappings().then((pairs) => this.learnLids(pairs)));
+      }
       const provider = new BaileysProvider({
         sessionId: this.sessionId,
         auth,
@@ -233,6 +265,7 @@ export class SessionRunner {
       provider.on('presence', (p) => this.track(this.publish({ type: 'presence.update', data: p })));
       provider.on('chatRead', ({ chatJid }) => this.track(this.onChatRead(chatJid)));
       provider.on('history', (h) => this.track(this.onHistory(h)));
+      provider.on('contacts', (c) => this.track(this.onContacts(c)));
       await provider.connect();
     } catch (err) {
       this.log.error({ err }, 'connect failed');
@@ -275,6 +308,8 @@ export class SessionRunner {
     this.log.info('connected');
     await this.write({ status: 'connected', phone, qr: null, pairing_code: null, last_error: null, connected_at: new Date() });
     this.requestDrain();
+    // A sync job waiting for the number (or interrupted by a disconnect) carries on.
+    this.sync.request();
   }
 
   private async onClose({ reason, statusCode, message }: ProviderEvents['close']) {
@@ -388,10 +423,13 @@ export class SessionRunner {
    * Past messages from the phone (a sync), stored with their real time and marked `history`: they never
    * count as unread, trigger replies or opt-outs. Only media keeps the raw WAMessage (to download it).
    */
-  private async onHistory({ messages, names }: ProviderEvents['history']) {
+  private async onHistory({ messages, names, onDemand, chatJids: asked }: ProviderEvents['history']) {
     const { sql } = this.ctx;
     let added = 0;
     const chatJids = new Set<string>();
+    /** Per conversation: messages in the batch, and how many were new (for the sync job waiting on them). */
+    const perChat = new Map<string, PageAnswer>();
+    for (const m of messages) perChat.set(m.chatJid, { received: (perChat.get(m.chatJid)?.received ?? 0) + 1, added: 0 });
     for (let i = 0; i < messages.length; i += HISTORY_CHUNK) {
       const rows = messages.slice(i, i + HISTORY_CHUNK).map((m) => ({
         direction: m.fromMe ? 'out' : 'in',
@@ -416,7 +454,11 @@ export class SessionRunner {
           returning remote_jid`,
       );
       added += inserted.length;
-      for (const r of inserted) chatJids.add(r.remote_jid);
+      for (const r of inserted) {
+        chatJids.add(r.remote_jid);
+        const counts = perChat.get(r.remote_jid);
+        if (counts) counts.added += 1;
+      }
     }
     if (names.length) {
       // Contact names only fill gaps (a WhatsApp name from their own messages wins); groups take their subject.
@@ -429,6 +471,7 @@ export class SessionRunner {
     this.log.info({ messages: messages.length, added, names: names.length }, 'history sync');
     const [only] = chatJids;
     await this.publish({ type: 'chats.synced', data: { chatJid: chatJids.size === 1 ? only! : null, added } });
+    if (onDemand) this.sync.onHistory(asked, perChat);
   }
 
   /** Asks the phone for older messages of each chat, a little apart. Results arrive as history events. */
@@ -445,17 +488,45 @@ export class SessionRunner {
     );
   }
 
+  /**
+   * Which number a LID stands for: recorded so the contact keeps one chat (a LID chat is merged into
+   * the number's). Lists are reloaded when anything was new.
+   */
+  private async learnLids(pairs: LidPair[]) {
+    if (pairs.length === 0) return;
+    const added = await this.persist('record contact ids', () => recordLidMappings(this.ctx.sql, this.sessionId, pairs));
+    if (added > 0) {
+      this.log.info({ added }, 'learnt contact phone numbers');
+      await this.publish({ type: 'chats.synced', data: { chatJid: null, added: 0 } });
+    }
+  }
+
+  /**
+   * Names from the phone's address book (and business names), with the LID pairs they came with. The
+   * pairs first, so a contact known by its LID lands on its one chat; then the names. Lists reload.
+   */
+  private async onContacts({ contacts, pairs }: ProviderEvents['contacts']) {
+    await this.learnLids(pairs);
+    if (contacts.length === 0) return;
+    const changed = await this.persist('record contact names', () => recordContactNames(this.ctx.sql, this.sessionId, contacts));
+    if (changed > 0) {
+      this.log.info({ changed }, 'contact names updated');
+      await this.publish({ type: 'chats.synced', data: { chatJid: null, added: 0 } });
+    }
+  }
+
   private async onChatRead(chatJid: string) {
     const jid = await markChatRead(this.ctx.sql, this.sessionId, chatJid);
     if (jid) await this.publish({ type: 'chat.read', data: { chatJid: jid } });
   }
 
-  /** Groups are listed by their subject, asked of WhatsApp once per group while this runner lives. */
-  private async nameGroup(jid: string) {
-    if (!isGroupJid(jid) || this.groupNames.has(jid) || !this.provider) return;
+  /** Groups are listed by their subject, asked of WhatsApp once per group while this runner lives (`refresh`: again, for a sync). */
+  private async nameGroup(jid: string, refresh = false): Promise<string | null> {
+    if (!isGroupJid(jid) || (this.groupNames.has(jid) && !refresh) || !this.provider) return null;
     this.groupNames.add(jid);
     const subject = await withTimeout(this.provider.groupSubject(jid), LOOKUP_TIMEOUT_MS, 'group lookup timed out').catch(() => null);
     if (subject) await setChatName(this.ctx.sql, this.sessionId, jid, subject);
+    return subject;
   }
 
   /** "Stop" drops the sender from this workspace's campaigns (queued ones included), "start" brings them back. */
@@ -846,6 +917,7 @@ export class SessionRunner {
    */
   private async terminate(patch: SessionPatch | null) {
     this.stopped = true;
+    this.sync.stop();
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
     if (this.onlineTimer) clearTimeout(this.onlineTimer);
@@ -854,7 +926,7 @@ export class SessionRunner {
     await withTimeout(this.auth?.flush() ?? Promise.resolve(), FLUSH_TIMEOUT_MS, 'creds flush timed out').catch((err) => this.log.error({ err }, 'pending credentials were not saved'));
     const provider = this.provider;
     this.provider = null;
-    await provider?.close();
+    await withTimeout(provider?.close() ?? Promise.resolve(), CLOSE_TIMEOUT_MS, 'socket close timed out').catch((err) => this.log.warn({ err }, 'socket did not close cleanly'));
     if (patch) await this.write(patch).catch((err) => this.log.error({ err }, 'failed to write final session state'));
     this.ctx.onStopped(this.sessionId);
   }
@@ -883,7 +955,15 @@ export class SessionRunner {
     return true;
   }
 
+  /**
+   * Best effort: the data is already stored, and a client that missed an event reloads on `resync`.
+   * A failed NOTIFY must not abort what follows it (auto-read, opt-outs, group names).
+   */
   private async publish(event: EventInput) {
-    await notify(this.ctx.sql, CHANNELS.events, { ...event, workspaceId: this.workspaceId, sessionId: this.sessionId });
+    // NOTIFY payloads are capped at 8000 bytes; a long text (65k chars allowed) is cut for the preview.
+    const capped = event.type === 'messages.received' && event.data.text && event.data.text.length > EVENT_TEXT_MAX ? { ...event, data: { ...event.data, text: `${event.data.text.slice(0, EVENT_TEXT_MAX)}…` } } : event;
+    await notify(this.ctx.sql, CHANNELS.events, { ...capped, workspaceId: this.workspaceId, sessionId: this.sessionId }).catch((err) =>
+      this.log.warn({ err, event: event.type }, 'could not publish event'),
+    );
   }
 }

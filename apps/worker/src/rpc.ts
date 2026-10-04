@@ -25,14 +25,14 @@ export function buildRpcServer(supervisor: Supervisor, secret: string, logger: L
     }
   });
 
-  app.setErrorHandler((err, _req, reply) => {
+  app.setErrorHandler((err, req, reply) => {
     if (err instanceof ProviderError) {
       const status = err.code === 'invalid_input' ? 422 : 409;
       return reply.code(status).send({ code: err.code, message: err.message });
     }
     if (err instanceof z.ZodError) return reply.code(422).send({ code: 'invalid_input', message: err.message });
     if (err instanceof TimeoutError) return reply.code(504).send({ code: 'timeout', message: err.message });
-    logger.error({ err }, 'rpc error');
+    logger.error({ err, url: req.url }, 'rpc error');
     return reply.code(500).send({ code: 'internal', message: 'Worker error' });
   });
 

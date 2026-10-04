@@ -58,3 +58,13 @@ export type ChatFilter = (typeof CHAT_FILTERS)[number];
 /** Attachments sent from the chat page are uploaded first; outbound content then points at them with this scheme. */
 export const UPLOAD_SCHEME = 'upload:';
 export const UPLOAD_MAX_BYTES = 16 * 1024 * 1024;
+
+/**
+ * A contact name worth keeping: not blank, not a masked number (`+20∙∙∙∙16`, which some history syncs
+ * give for LID chats), not just a phone number. Mirrors `usable_contact_name` (migration 0015).
+ */
+export function usableContactName(name: string | null | undefined): name is string {
+  if (!name) return false;
+  const trimmed = name.trim();
+  return trimmed !== '' && !/[∙•]/.test(trimmed) && !/^[+0-9 ().-]+$/.test(trimmed);
+}

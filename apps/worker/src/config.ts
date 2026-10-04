@@ -13,6 +13,10 @@ const schema = z.object({
   /** URL the API uses to reach this worker; defaults to http://127.0.0.1:WORKER_PORT. */
   WORKER_URL: z.string().optional(),
   WORKER_CAPACITY: z.coerce.number().int().positive().default(100),
+  /** Postgres connections shared by every session of this worker (signal keys, messages, receipts). */
+  /** Conversation sync jobs running at once on this worker; the others wait (queued). */
+  SYNC_CONCURRENCY: z.coerce.number().int().positive().default(3),
+  DB_POOL_MAX: z.coerce.number().int().positive().default(20),
   SEND_DELAY_MIN_MS: z.coerce.number().int().nonnegative().default(1_000),
   SEND_DELAY_MAX_MS: z.coerce.number().int().nonnegative().default(3_000),
   MEDIA_MAX_BYTES: z.coerce.number().int().positive().default(64 * 1024 * 1024),

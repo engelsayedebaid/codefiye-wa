@@ -65,6 +65,10 @@ export class Supervisor {
       this.runners.get(message.sessionId)?.requestDrain();
       return;
     }
+    if (message.type === 'sync.changed') {
+      this.runners.get(message.sessionId)?.sync.interrupt();
+      return;
+    }
     void this.tick();
   }
 
@@ -105,20 +109,23 @@ export class Supervisor {
       const rows = await sql<{ id: string; desired_state: string; worker_id: string | null; settings: SessionSettings }[]>`
         select id, desired_state, worker_id, settings from sessions where id = any(${local}::uuid[])`;
       const byId = new Map(rows.map((r) => [r.id, r]));
+      const stopping: SessionRunner[] = [];
       for (const [id, runner] of this.runners) {
         const row = byId.get(id);
         if (!row || row.desired_state !== 'running' || row.worker_id !== workerId) {
           logger.info({ sessionId: id }, 'stopping session');
-          await runner.stop();
+          stopping.push(runner);
         } else if (this.stalledFor(runner) > STALL_RESTART_MS) {
           // Safety net: a runner that ended up neither connected nor retrying is restarted (released
           // here, claimed again below or on the next tick) instead of leaving the session dead.
           logger.warn({ sessionId: id }, 'session runner stalled; restarting it');
-          await runner.stop();
+          stopping.push(runner);
         } else {
           runner.settings = row.settings;
         }
       }
+      // Side by side: a stop can wait seconds on a credentials flush, and the heartbeat waits for this pass.
+      await Promise.allSettled(stopping.map((r) => r.stop()));
       await sql`
         update sessions set last_seen_at = now()
         where id = any(${[...this.runners.values()].filter((r) => r.connected).map((r) => r.sessionId)}::uuid[])
@@ -152,6 +159,14 @@ export class Supervisor {
         select distinct session_id from messages
         where status = 'queued' and session_id = any(${connected}::uuid[]) and (not_before is null or not_before <= now())`;
       for (const { session_id } of pending) this.runners.get(session_id)?.requestDrain();
+
+      // Sync jobs waiting for a slot, or left running by a missed NOTIFY or a previous worker.
+      const syncing = await sql<{ session_id: string }[]>`
+        select session_id from sync_jobs where status in ('queued', 'running') and session_id = any(${connected}::uuid[])`;
+      for (const { session_id } of syncing) {
+        const runner = this.runners.get(session_id);
+        if (runner && !runner.sync.busy) runner.sync.request();
+      }
     }
   }
 

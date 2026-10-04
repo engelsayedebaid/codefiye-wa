@@ -1,7 +1,7 @@
 import { useEffect, useEffectEvent } from 'react';
 import type { LiveEvent } from './types';
 
-const EVENT_TYPES = ['session.status', 'qrcode.updated', 'pairing.updated', 'messages.received', 'messages.update', 'messages.created', 'poll.vote', 'presence.update', 'chat.read', 'chats.synced'] as const;
+const EVENT_TYPES = ['session.status', 'qrcode.updated', 'pairing.updated', 'messages.received', 'messages.update', 'messages.created', 'poll.vote', 'presence.update', 'chat.read', 'chats.synced', 'sync.progress', 'sync.log'] as const;
 
 type Handler = { current: (event: LiveEvent) => void };
 
