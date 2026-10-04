@@ -24,6 +24,7 @@ import {
 import {
   BaileysProvider,
   type EchoMessage,
+  type EncryptedAuthState,
   type HistoryAnchor,
   type InboundMessage,
   type MediaFetcher,
@@ -74,7 +75,13 @@ type SessionPatch = Partial<{
 
 type EventInput = WaEvent extends infer E ? (E extends WaEvent ? Omit<E, 'workspaceId' | 'sessionId'> : never) : never;
 
+/** Quick reconnect attempts before the session shows `needs_attention` (it keeps retrying, slower). */
 const MAX_RECONNECTS = 20;
+const SLOW_RECONNECT_MS = 5 * 60_000;
+/** WhatsApp's close code for an account it refuses (banned): retrying can't help. */
+const FORBIDDEN = 403;
+/** How long stopping waits for pending credential writes. */
+const FLUSH_TIMEOUT_MS = 10_000;
 const ON_WHATSAPP_TTL_MS = 24 * 60 * 60_000;
 /** History sync: rows per insert, messages asked per chat, and the gap between per-chat requests. */
 const HISTORY_CHUNK = 200;
@@ -145,6 +152,10 @@ export class SessionRunner {
   /** The account shows as online until then: someone is watching a chat on the chats page (see `watchChat`). */
   private onlineUntil = 0;
   private onlineTimer: NodeJS.Timeout | null = null;
+  private auth: EncryptedAuthState | null = null;
+  private connecting = false;
+  /** Started from `logged_out`: one more 401 confirms the logout (see onLoggedOut). */
+  private confirmingLogout = false;
 
   constructor(
     readonly sessionId: string,
@@ -159,7 +170,10 @@ export class SessionRunner {
     return this.provider?.connected ?? false;
   }
 
-  async start() {
+  /** `previous`: the session's status when claimed — `logged_out` means this start must confirm a logout. */
+  async start(previous?: SessionStatus) {
+    this.confirmingLogout = previous === 'logged_out';
+    this.connecting = true; // starting counts as connecting (see `stalled`)
     const interrupted = await failInterrupted(this.ctx.sql, this.sessionId);
     for (const id of interrupted) {
       await this.publish({ type: 'messages.update', data: { id, status: 'failed', error: 'Interrupted while sending' } });
@@ -167,12 +181,29 @@ export class SessionRunner {
     await this.connect();
   }
 
+  /** Auth state store: every write fenced on this worker still owning the session. */
+  private authStore() {
+    return pgAuthStore(this.ctx.sql, this.sessionId, { workerId: this.ctx.workerId });
+  }
+
+  /**
+   * Neither connected, connecting nor waiting to reconnect, though not stopped: something threw where
+   * it shouldn't have. The supervisor restarts such a runner rather than leave the session dead.
+   */
+  get stalled() {
+    return !this.stopped && !this.provider && !this.reconnectTimer && !this.connecting;
+  }
+
   private async connect() {
     if (this.stopped) return;
+    this.reconnectTimer = null;
+    this.connecting = true;
     try {
       if (!(await this.write({ status: 'connecting' }))) return this.halt();
-      const auth = await useEncryptedAuthState(pgAuthStore(this.ctx.sql, this.sessionId), this.sessionId, this.ctx.encryptionKey);
+      // A failed load (database, key, corrupt row) throws and lands in the retry below: never a wipe.
+      const auth = await useEncryptedAuthState(this.authStore(), this.sessionId, this.ctx.encryptionKey);
       if (this.stopped) return;
+      this.auth = auth;
       const provider = new BaileysProvider({
         sessionId: this.sessionId,
         auth,
@@ -194,7 +225,10 @@ export class SessionRunner {
       await provider.connect();
     } catch (err) {
       this.log.error({ err }, 'connect failed');
+      this.provider = null;
       await this.onClose({ reason: 'error', statusCode: null, message: (err as Error).message });
+    } finally {
+      this.connecting = false;
     }
   }
 
@@ -223,20 +257,50 @@ export class SessionRunner {
       case 'restart_required': // expected right after a QR scan / pairing
         return this.connect();
       case 'logged_out':
-        // Unlinked from the phone, or banned: either way its campaigns must not resume on a relink.
-        await this.shieldStop('loggedOut');
-        await pgAuthStore(this.ctx.sql, this.sessionId).clear();
-        return this.finish('logged_out', 'The device was logged out from the phone');
+        return this.onLoggedOut(message);
       case 'qr_timeout':
         return this.finish('disconnected', 'QR code expired before it was scanned');
     }
-    this.reconnects += 1;
-    if (this.reconnects > MAX_RECONNECTS) {
-      return this.finish('needs_attention', `Gave up after ${MAX_RECONNECTS} reconnect attempts: ${message}`);
+    if (statusCode === FORBIDDEN) {
+      // WhatsApp refuses this account (usually a ban): retrying can't help. Credentials stay.
+      return this.finish('needs_attention', `WhatsApp refused the connection (${FORBIDDEN}): the number may be banned. ${message}`);
     }
-    const delay = Math.min(60_000, 1_000 * 2 ** (this.reconnects - 1));
-    if (!(await this.write({ status: 'connecting', last_error: message }))) return this.halt();
+    // Transient (network, WhatsApp, our database): keep trying, never stop by ourselves. After
+    // MAX_RECONNECTS quick attempts the session shows `needs_attention` but retries every few minutes.
+    this.reconnects += 1;
+    const struggling = this.reconnects > MAX_RECONNECTS;
+    const delay = struggling ? SLOW_RECONNECT_MS : Math.min(60_000, 1_000 * 2 ** (this.reconnects - 1));
+    try {
+      if (!(await this.write({ status: struggling ? 'needs_attention' : 'connecting', last_error: message }))) return this.halt();
+    } catch (err) {
+      // The database is unreachable, so ownership can't be checked; giving up here would strand the
+      // session until a restart. Retry: the fenced writes stop this runner if another worker took over.
+      this.log.warn({ err }, 'could not record the disconnect; retrying anyway');
+    }
+    if (this.stopped) return;
     this.reconnectTimer = setTimeout(() => this.track(this.connect()), delay);
+  }
+
+  /**
+   * WhatsApp reported the device logged out (401). Wiping credentials can't be undone, so it takes a
+   * confirmation: the first 401 keeps them and stops the session; when someone reconnects it, the
+   * stored credentials are tried once more and only a second 401 wipes them (then a QR is shown).
+   */
+  private async onLoggedOut(message: string) {
+    // Unlinked from the phone, or banned: either way its campaigns must not resume on a relink.
+    await this.shieldStop('loggedOut').catch((err) => this.log.warn({ err }, 'could not stop campaigns after logout'));
+    if (!this.confirmingLogout) return this.finish('logged_out', `The device was logged out from the phone: ${message}`);
+    this.confirmingLogout = false;
+    try {
+      await this.auth?.flush();
+      await this.authStore().clear();
+    } catch (err) {
+      this.log.error({ err }, 'could not wipe credentials after a confirmed logout');
+      return this.finish('logged_out', 'The device was logged out from the phone');
+    }
+    this.auth = null;
+    this.log.warn('logout confirmed by WhatsApp twice; credentials wiped, a new QR scan is needed');
+    return this.connect();
   }
 
   private async onMessage(m: InboundMessage) {
@@ -680,7 +744,8 @@ export class SessionRunner {
     this.stopped = true;
     // The unlink request is best effort; the local credentials are wiped regardless.
     await withTimeout(provider?.logout() ?? Promise.resolve(), 10_000, 'logout timed out').catch((err) => this.log.warn({ err }, 'logout request failed'));
-    await pgAuthStore(this.ctx.sql, this.sessionId).clear();
+    await this.auth?.flush();
+    await this.authStore().clear();
     await this.terminate({ status: 'logged_out', desired_state: 'stopped', worker_id: null, qr: null, pairing_code: null, last_error: null });
   }
 
@@ -721,6 +786,8 @@ export class SessionRunner {
     this.reconnectTimer = null;
     if (this.onlineTimer) clearTimeout(this.onlineTimer);
     this.onlineTimer = null;
+    // Credentials asked to be saved must reach the database before the socket (and maybe the process) goes.
+    await withTimeout(this.auth?.flush() ?? Promise.resolve(), FLUSH_TIMEOUT_MS, 'creds flush timed out').catch((err) => this.log.error({ err }, 'pending credentials were not saved'));
     const provider = this.provider;
     this.provider = null;
     await provider?.close();
