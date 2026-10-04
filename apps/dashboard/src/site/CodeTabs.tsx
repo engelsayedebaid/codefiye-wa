@@ -118,7 +118,7 @@ export function CodeTabs({ className }: { className?: string }) {
         className,
       )}
     >
-      <div role="tablist" className="grid grid-cols-4 gap-1 rounded-lg bg-white/[0.04] p-1">
+      <div role="tablist" className="grid grid-cols-4 gap-1 rounded-lg bg-ink/[0.04] p-1">
         {SNIPPETS.map((s) => (
           <button
             key={s.id}
@@ -127,17 +127,17 @@ export function CodeTabs({ className }: { className?: string }) {
             onClick={() => setActive(s.id)}
             className={cx(
               'rounded-md py-2 text-sm font-semibold transition-all duration-300',
-              s.id === active ? 'bg-brand text-black shadow-lg shadow-brand/20' : 'text-ink-2 hover:bg-white/[0.06]',
+              s.id === active ? 'bg-brand text-on-brand shadow-lg shadow-brand/20' : 'text-ink-2 hover:bg-ink/[0.06]',
             )}
           >
             {s.label}
           </button>
         ))}
       </div>
-      <div className="relative mt-5 rounded-xl border border-line bg-[#141414]">
+      <div className="relative mt-5 rounded-xl border border-line bg-[#141414] light:border-transparent">
         <button
           onClick={copy}
-          className="absolute top-3 right-3 rounded-md border border-line bg-white/[0.04] p-1.5 text-muted transition hover:text-ink"
+          className="absolute top-3 right-3 rounded-md border border-white/10 bg-white/[0.04] p-1.5 text-white/60 transition hover:text-white"
           aria-label={t.landing.integration.copy}
         >
           {copied ? <Check className="animate-scale-in size-4 text-brand" /> : <Copy className="size-4" />}

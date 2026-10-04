@@ -6,6 +6,7 @@ import { App } from './App';
 import { configureLiveEvents } from './events';
 import { I18nProvider } from './i18n';
 import { createQueryClient, qk } from './queries';
+import { ThemeProvider } from './theme';
 import './index.css';
 
 const queryClient = createQueryClient();
@@ -23,9 +24,11 @@ await adoptLegacyToken();
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <I18nProvider>
-        <App />
-      </I18nProvider>
+      <ThemeProvider>
+        <I18nProvider>
+          <App />
+        </I18nProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   </StrictMode>,
 );

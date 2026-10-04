@@ -67,6 +67,66 @@ export async function loadOutboundRaw(sql: Sql, sessionId: string, waMessageId: 
   return row?.raw ?? undefined;
 }
 
+/** Any stored message's raw WAMessage (sent or received), e.g. the one an encrypted edit changes. */
+export async function loadMessageRaw(sql: Sql, sessionId: string, waMessageId: string): Promise<unknown> {
+  const [row] = await sql<{ raw: unknown }[]>`
+    select raw from messages where session_id = ${sessionId} and wa_message_id = ${waMessageId}`;
+  return row?.raw ?? undefined;
+}
+
+/**
+ * The sender edited a message: the stored one (same row, same WhatsApp id) takes the new text and is
+ * marked `edited`. An older edit never overwrites a newer one, and a deleted message stays deleted.
+ * Returns the row changed, or null (not stored here, deleted, or already newer).
+ */
+export async function applyMessageEdit(sql: Sql, sessionId: string, waMessageId: string, text: string | null, editedAt: number) {
+  const [row] = await sql<{ id: number; remote_jid: string }[]>`
+    update messages set
+      content = content || jsonb_build_object('text', ${text}::text, 'edited', true, 'editedAt', ${editedAt}::float8),
+      updated_at = now()
+    where session_id = ${sessionId} and wa_message_id = ${waMessageId}
+      and not coalesce((content->>'revoked')::boolean, false)
+      and coalesce((content->>'editedAt')::float8, 0) <= ${editedAt}
+    returning id, remote_jid`;
+  return row ?? null;
+}
+
+/**
+ * The sender deleted a message for everyone: the stored row stays (same id, kept for the record) and
+ * is marked `revoked`; the chats page shows it as deleted. Returns the row, or null (not stored, or
+ * already marked).
+ */
+export async function applyMessageRevoke(sql: Sql, sessionId: string, waMessageId: string) {
+  const [row] = await sql<{ id: number; remote_jid: string }[]>`
+    update messages set
+      content = content || jsonb_build_object('revoked', true, 'revokedAt', extract(epoch from now())),
+      updated_at = now()
+    where session_id = ${sessionId} and wa_message_id = ${waMessageId}
+      and not coalesce((content->>'revoked')::boolean, false)
+    returning id, remote_jid`;
+  return row ?? null;
+}
+
+/**
+ * Removes a row that was never a real message (an encrypted-edit envelope stored before edits were
+ * understood), keeping its chat's counters and last message right.
+ */
+export async function dropStoredEnvelope(sql: Sql, id: number) {
+  await sql`
+    with gone as (delete from messages where id = ${id} returning session_id, remote_jid, direction, content)
+    update chats c set
+      inbound_count = greatest(0, c.inbound_count - (g.direction = 'in')::int),
+      outbound_count = greatest(0, c.outbound_count - (g.direction = 'out')::int),
+      unread_count = greatest(0, c.unread_count - (g.direction = 'in' and not coalesce((g.content->>'history')::boolean, false))::int),
+      last_message_id = case when c.last_message_id = ${id} then (
+        select m.id from messages m
+        where m.session_id = c.session_id and m.remote_jid in (c.jid, coalesce(c.alt_jid, c.jid)) and m.type <> 'reaction' and m.id <> ${id}
+        order by m.created_at desc, m.id desc limit 1
+      ) else c.last_message_id end
+    from gone g
+    where c.session_id = g.session_id and (c.jid = g.remote_jid or c.alt_jid = g.remote_jid)`;
+}
+
 /** Records a voter's current choice on one of our polls (`content.votes[voter]`); returns the message id. */
 export async function recordPollVote(sql: Sql, sessionId: string, waMessageId: string, voter: string, selected: string[]) {
   const [row] = await sql<{ id: number }[]>`

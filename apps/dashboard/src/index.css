@@ -1,7 +1,12 @@
 @import 'tailwindcss';
 
+/* For the few spots a token can't cover. The theme lives in <html data-theme> (src/theme.tsx). */
+@custom-variant light (&:where([data-theme='light'], [data-theme='light'] *));
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
 /*
- * shadcn "neutral" dark palette (same values as the reference theme) with one green accent.
+ * shadcn "neutral" dark palette (same values as the reference theme) with one green accent. These are
+ * the dark values; `:root[data-theme='light']` below overrides the same variables.
  * Latin glyphs render in Instrument Sans, Arabic falls through to IBM Plex Sans Arabic.
  */
 @theme {
@@ -12,15 +17,15 @@
   --radius-lg: 0.625rem;
   --radius-xl: 0.875rem;
 
-  --color-bg: oklch(0.145 0 0);
+  --color-bg: oklch(0.19 0.005 165);
   /* Sidebar and the frame around the inset content panel. */
-  --color-surface: oklch(0.205 0 0);
-  --color-card: oklch(0.145 0 0);
+  --color-surface: oklch(0.235 0.006 165);
+  --color-card: oklch(0.19 0.005 165);
   /* secondary / accent / muted surfaces */
-  --color-raised: oklch(0.269 0 0);
-  --color-line: oklch(0.269 0 0);
-  --color-line-strong: oklch(0.371 0 0);
-  --color-ring: oklch(0.439 0 0);
+  --color-raised: oklch(0.285 0.007 165);
+  --color-line: oklch(0.285 0.007 165);
+  --color-line-strong: oklch(0.385 0.008 165);
+  --color-ring: oklch(0.46 0.008 165);
   --color-ink: oklch(0.985 0 0);
   --color-ink-2: oklch(0.87 0 0);
   --color-muted: oklch(0.708 0 0);
@@ -33,6 +38,11 @@
   --color-brand-strong: oklch(0.7 0.19 149.74);
   --color-brand-deep: #0eaf51;
   --color-teal: #0f9b8e;
+  /* Text and icons drawn on a bg-brand fill. */
+  --color-on-brand: #000;
+  /* Accent gradient (progress, launch, hero icons). */
+  --color-grad-from: #3be37f;
+  --color-grad-to: #0e9488;
 
   /* Chart series (validated on the card surface, see apps/dashboard/src/app/MessagesChart.tsx). */
   --color-series-sent: #0eaf51;
@@ -45,9 +55,86 @@
   --color-critical: #d03b3b;
 }
 
+/*
+ * Light theme: off-white page, white cards and fields, hairline grey borders, deep green-teal accent.
+ * Unlayered, so it wins over Tailwind's theme layer.
+ */
+:root[data-theme='light'] {
+  --color-bg: #f8faf9;
+  --color-surface: #eef3f1;
+  --color-card: #ffffff;
+  --color-raised: #edf1ef;
+  --color-line: #e1e6e3;
+  --color-line-strong: #cdd5d1;
+  --color-ring: #94aea5;
+  --color-ink: #111714;
+  --color-ink-2: #2e3934;
+  --color-muted: #646e69;
+  --color-faint: #89928d;
+  --color-navy: #e3f1ec;
+  --color-destructive: #dc2626;
+  --color-destructive-ink: #b91c1c;
+
+  --color-brand: #367a6b;
+  --color-brand-strong: #2b6558;
+  --color-brand-deep: #2b6558;
+  --color-teal: #0f766e;
+  --color-on-brand: #fff;
+  --color-grad-from: #45917f;
+  --color-grad-to: #22594d;
+
+  --color-series-sent: #1f8f57;
+  --color-series-received: #2f74c9;
+  --color-good: #15803d;
+  --color-warning: #b45309;
+
+  /*
+   * The pale palette shades the dark UI uses for text (red-400 on a red-500/10 chip, amber-300 notes…)
+   * wash out on white: point them at the deep shades instead.
+   */
+  --color-red-200: #b91c1c;
+  --color-red-300: #b91c1c;
+  --color-red-400: #dc2626;
+  --color-rose-300: #be123c;
+  --color-rose-400: #e11d48;
+  --color-pink-400: #db2777;
+  --color-orange-300: #c2410c;
+  --color-orange-400: #c2410c;
+  --color-amber-200: #92400e;
+  --color-amber-300: #b45309;
+  --color-amber-400: #b45309;
+  --color-amber-500: #d97706;
+  --color-yellow-300: #a16207;
+  --color-yellow-400: #a16207;
+  --color-yellow-500: #ca8a04;
+  --color-lime-400: #4d7c0f;
+  --color-lime-500: #65a30d;
+  --color-green-200: #15803d;
+  --color-green-300: #15803d;
+  --color-green-400: #16a34a;
+  --color-green-500: #16a34a;
+  --color-emerald-300: #047857;
+  --color-emerald-400: #059669;
+  --color-teal-300: #0f766e;
+  --color-teal-400: #0d9488;
+  --color-sky-200: #0369a1;
+  --color-sky-300: #0369a1;
+  --color-sky-400: #0284c7;
+  --color-blue-300: #1d4ed8;
+  --color-blue-400: #2563eb;
+  --color-violet-300: #6d28d9;
+  --color-violet-400: #7c3aed;
+  --color-purple-300: #7e22ce;
+  --color-purple-400: #9333ea;
+  --color-fuchsia-400: #c026d3;
+}
+
 html {
   color-scheme: dark;
   scroll-behavior: smooth;
+}
+html[data-theme='light'] {
+  color-scheme: light;
 }
 
 body {
@@ -76,9 +163,28 @@ body {
   background: linear-gradient(180deg, var(--color-bg) 0%, var(--color-bg) 50%, var(--color-navy) 100%);
 }
 
+/* Auth and marketing backdrop in the light theme: a faint dot grid under a soft mint glow from the start corner. */
+[data-theme='light'] .page-wash {
+  background-color: var(--color-bg);
+  background-image:
+    radial-gradient(ellipse 60% 55% at 0% 0%, rgb(54 122 107 / 0.14), transparent 70%),
+    radial-gradient(rgb(17 23 20 / 0.08) 1px, transparent 1.3px);
+  background-size:
+    100% 100%,
+    24px 24px;
+}
+[data-theme='light'][dir='rtl'] .page-wash {
+  background-image:
+    radial-gradient(ellipse 60% 55% at 100% 0%, rgb(54 122 107 / 0.14), transparent 70%),
+    radial-gradient(rgb(17 23 20 / 0.08) 1px, transparent 1.3px);
+}
+
 .code-scroll {
   scrollbar-width: thin;
   scrollbar-color: rgb(255 255 255 / 0.15) transparent;
+}
+[data-theme='light'] .code-scroll:not(pre) {
+  scrollbar-color: rgb(0 0 0 / 0.18) transparent;
 }
 
 @keyframes scroll-dot {
@@ -215,6 +321,9 @@ body {
   color: transparent;
   animation: shimmer 6s linear infinite;
 }
+[data-theme='light'] .text-shimmer {
+  background-image: linear-gradient(90deg, var(--color-brand) 0%, var(--color-brand) 40%, #7cc9b0 50%, var(--color-brand) 60%, var(--color-brand) 100%);
+}
 
 /* Scroll reveal: <Reveal> sets data-shown once the element enters the viewport. */
 .reveal {
@@ -265,6 +374,10 @@ body {
   transform: translateY(-4px);
   border-color: rgb(255 255 255 / 0.18);
   box-shadow: 0 18px 40px -24px rgb(0 0 0 / 0.9);
+}
+[data-theme='light'] .lift:hover {
+  border-color: var(--color-line-strong);
+  box-shadow: 0 18px 40px -22px rgb(17 23 20 / 0.22);
 }
 
 /* Hero light beam: slides in from the top corner. Mirrored in RTL so it falls from the start side. */
@@ -447,14 +560,60 @@ body {
 :root {
   --chat-wall: #0c0d0e;
   --chat-dots: rgb(255 255 255 / 0.035);
+  /* Ink for the doodle overlay (mask-image, like WhatsApp's own wallpaper). */
+  --chat-doodle-ink: rgb(255 255 255 / 0.055);
   --chat-in: #1e2023;
   --chat-out: #10402d;
   --chat-out-ring: rgb(52 211 153 / 0.12);
 }
-.chat-wall {
+:root[data-theme='light'] {
+  --chat-wall: #efeae2;
+  --chat-dots: rgb(0 0 0 / 0.045);
+  --chat-doodle-ink: rgb(0 0 0 / 0.06);
+  --chat-in: #ffffff;
+  --chat-out: #d9fdd3;
+  --chat-out-ring: rgb(17 23 20 / 0.06);
+}
+/* Template previews: a WhatsApp conversation in the current theme. */
+.wa-wall {
+  background-color: #0b141a;
+}
+[data-theme='light'] .wa-wall {
   background-color: var(--chat-wall);
-  background-image: radial-gradient(var(--chat-dots) 1px, transparent 1.2px);
-  background-size: 16px 16px;
+}
+.wa-dots {
+  background-image: radial-gradient(var(--chat-dots) 1px, transparent 1px);
+  background-size: 14px 14px;
+}
+.chat-wall {
+  position: relative;
+  background-color: var(--chat-wall);
+}
+/*
+ * The WhatsApp doodle, done the way WhatsApp itself does it: the SVG tile is an
+ * alpha mask over a solid ink layer, so one asset takes the theme's tint on any wall color.
+ */
+.chat-wall::before,
+.wall-swatch::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--chat-doodle-ink);
+  -webkit-mask-image: url('/chat-doodle.svg');
+  mask-image: url('/chat-doodle.svg');
+  -webkit-mask-repeat: repeat;
+  mask-repeat: repeat;
+  -webkit-mask-size: 580px auto;
+  mask-size: 580px auto;
+  pointer-events: none;
+}
+/* Wallpaper-picker swatches show the same doodle, tiled smaller. */
+.wall-swatch {
+  position: relative;
+}
+.wall-swatch::before {
+  -webkit-mask-size: 180px auto;
+  mask-size: 180px auto;
 }
 
 /* "typing…" dots. */
@@ -528,5 +687,48 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .sync-sheen {
     display: none;
+  }
+}
+
+/* Chats focus mode: the page lifts over the dashboard, settles back on exit; the list drawer slides in. */
+.animate-focus-in {
+  animation: focus-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.animate-focus-out {
+  animation: focus-out 0.16s ease-in both;
+}
+.animate-drawer-in {
+  animation: drawer-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes focus-in {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+}
+@keyframes focus-out {
+  to {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+}
+@keyframes drawer-in {
+  from {
+    translate: -100% 0;
+  }
+}
+[dir='rtl'] .animate-drawer-in {
+  animation-name: drawer-in-rtl;
+}
+@keyframes drawer-in-rtl {
+  from {
+    translate: 100% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-focus-in,
+  .animate-focus-out,
+  .animate-drawer-in {
+    animation: none;
   }
 }

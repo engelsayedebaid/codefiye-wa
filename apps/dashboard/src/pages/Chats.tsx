@@ -9,12 +9,15 @@ import {
   BellOff,
   Check,
   CheckCheck,
+  Columns2,
   ChevronsUpDown,
   CircleCheck,
   CircleX,
+  Focus as FocusIcon,
   Lock,
   MessageSquarePlus,
   MessagesSquare,
+  Minimize2,
   Phone,
   PhoneCall,
   Plus,
@@ -32,6 +35,7 @@ import { Insights } from '../app/chats/Insights';
 import { type InboxNote, type NoteMessage, NoteStack, noteText, playPing, pushNote, unlockAudio } from '../app/chats/Notifier';
 import { type ChatInfo, type ChatNumber, type ChatPage, type ChatSummary, gradientFor, initials, isChat, type PresenceState, type Profile } from '../app/chats/model';
 import { SyncButton, SyncCard, SyncModal } from '../app/chats/SyncPanel';
+import { FocusBar, FocusMenu, useFocusMode } from '../app/chats/Focus';
 import { useBackgroundLiveEvents, useLiveEvents } from '../events';
 import { useI18n } from '../i18n';
 import { debouncedInvalidate, qk } from '../queries';
@@ -180,7 +184,7 @@ function NumberSwitcher({ numbers, value, onChange }: { numbers: ChatNumber[]; v
                   <span className="ltr block truncate font-mono text-[11px] text-muted">{n.phone ?? '—'}</span>
                 </span>
                 {n.unread > 0 ? (
-                  <span className="rounded-full bg-brand px-1.5 py-0.5 text-[10px] font-bold text-black tabular-nums">{fmt.number.format(n.unread)}</span>
+                  <span className="rounded-full bg-brand px-1.5 py-0.5 text-[10px] font-bold text-on-brand tabular-nums">{fmt.number.format(n.unread)}</span>
                 ) : (
                   n.id === value && <Check className="size-4 shrink-0 text-brand" />
                 )}
@@ -333,6 +337,48 @@ function ChatsGate() {
   );
 }
 
+/** Split view's other half before a second conversation is chosen: the chats list, on its own search and filter. */
+function ChatPicker({ sessionId, presence, onPick }: { sessionId: string; presence: Map<string, PresenceState>; onPick: (chat: ChatSummary) => void }) {
+  const { t } = useI18n();
+  const f = t.chats.focus;
+  const [filter, setFilter] = useState<ChatFilter>('all');
+  const [query, setQuery] = useState('');
+  const [term, setTerm] = useState('');
+  const search = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const timer = setTimeout(() => setTerm(query), 250);
+    return () => clearTimeout(timer);
+  }, [query]);
+  return (
+    <div className="flex min-w-0 flex-1 flex-col bg-surface/40">
+      <div className="flex items-center gap-3 border-b border-line px-4 py-3">
+        <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-brand/10 text-brand">
+          <Columns2 className="size-[18px]" />
+        </span>
+        <span className="min-w-0">
+          <span className="block text-sm font-semibold">{f.pickSecond}</span>
+          <span className="block text-xs text-muted">{f.pickSecondText}</span>
+        </span>
+      </div>
+      <div className="min-h-0 flex-1">
+        <ChatList
+          ref={search}
+          sessionId={sessionId}
+          selected={null}
+          filter={filter}
+          query={query}
+          term={term}
+          presence={presence}
+          onFilter={setFilter}
+          onQuery={setQuery}
+          onTopChats={() => {}}
+          onSelect={onPick}
+        />
+      </div>
+    </div>
+  );
+}
+
 export function ChatsPage() {
   const { t } = useI18n();
   const c = t.chats;
@@ -365,6 +411,20 @@ export function ChatsPage() {
   // --- sync from WhatsApp: the phone answers asynchronously, in batches ---
   const [sync, setSync] = useState<{ scope: string } | null>(null);
   const [syncOpen, setSyncOpen] = useState(false);
+
+  // --- focus mode: the same page, laid out over the dashboard chrome (see Focus.tsx) ---
+  const focus = useFocusMode();
+  const leaveFocus = focus.exit;
+  const [listDrawer, setListDrawer] = useState(false);
+  // Split view: a second conversation beside the open one, picked from a list in the other half.
+  const [second, setSecond] = useState<ChatSummary | null>(null);
+  const [secondInfo, setSecondInfo] = useState(false);
+  const exitFocus = useCallback(() => {
+    setListDrawer(false);
+    setSecond(null);
+    setSecondInfo(false);
+    leaveFocus();
+  }, [leaveFocus]);
   const [toast, setToast] = useState<{ text: string; tone: 'ok' | 'error' } | null>(null);
   const synced = useRef(0);
   const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -414,6 +474,8 @@ export function ChatsPage() {
     setPendingJid(null);
     setInfoOpen(false);
     setPresence(new Map());
+    setSecond(null);
+    setSecondInfo(false);
   };
 
   // Opening a chat by JID (deep link, insights, contact card): load its row.
@@ -601,10 +663,15 @@ export function ChatsPage() {
           settleSync(3_000);
         }
         break;
+      case 'message.changed':
+        // Edited or deleted for everyone: the list's last message may show it.
+        invalidate(qk.chats.lists(event.sessionId));
+        break;
       case 'chat.read':
         invalidate(qk.chats.lists(event.sessionId));
         invalidate(qk.chats.numbers);
         if (isChat(selected, event.data.chatJid)) setSelected((s) => s && { ...s, unread: 0 });
+        if (isChat(second, event.data.chatJid)) setSecond((s) => s && { ...s, unread: 0 });
         break;
       case 'presence.update': {
         const { chatJid, jid, presence: state, lastSeen } = event.data;
@@ -631,7 +698,8 @@ export function ChatsPage() {
   // Presence (online, typing…) of the open chat and the top of the list, renewed every minute while the page shows.
   const [topJids, setTopJids] = useState<string[]>([]);
   const watched = useRef<string[]>([]);
-  watched.current = [...new Set([...(watchJid ? [watchJid] : []), ...topJids])].slice(0, 40);
+  const secondJid = focus.mode === 'split' ? (second?.jid ?? null) : null;
+  watched.current = [...new Set([...(watchJid ? [watchJid] : []), ...(secondJid ? [secondJid] : []), ...topJids])].slice(0, 40);
   const hasWatched = watched.current.length > 0;
   useEffect(() => {
     if (!activeId || !hasWatched || !connected) return;
@@ -644,7 +712,7 @@ export function ChatsPage() {
       clearInterval(timer);
       document.removeEventListener('visibilitychange', watch);
     };
-  }, [activeId, watchJid, hasWatched, connected]);
+  }, [activeId, watchJid, secondJid, hasWatched, connected]);
 
   const profile = useQuery({
     queryKey: qk.chats.profile(activeId ?? '', watchJid ?? ''),
@@ -653,6 +721,31 @@ export function ChatsPage() {
     staleTime: 30 * 60_000,
     retry: false,
   });
+
+  const secondProfile = useQuery({
+    queryKey: qk.chats.profile(activeId ?? '', secondJid ?? ''),
+    queryFn: ({ signal }) => api<Profile>(`/api/chats/${activeId}/profile?${new URLSearchParams({ jid: secondJid! })}`, { signal, timeoutMs: 25_000 }),
+    enabled: Boolean(activeId && secondJid),
+    staleTime: 30 * 60_000,
+    retry: false,
+  });
+  /** Pin / archive / unread on the second conversation (archiving or marking unread closes it, as in the first). */
+  const setSecondFlags = async (body: FlagsBody) => {
+    const chat = second;
+    if (!activeId || !chat) return;
+    setSecond((s) => s && { ...s, ...(body.pinned !== undefined ? { pinned: body.pinned } : {}), ...(body.archived !== undefined ? { archived: body.archived } : {}) });
+    if (body.unread || body.archived) setSecond(null);
+    try {
+      await api(`/api/chats/${activeId}/flags`, { method: 'POST', body: { jid: chat.jid, ...body } });
+      if (body.archived !== undefined) showToast(body.archived ? c.actions.archived : c.actions.unarchived);
+    } catch (err) {
+      setSecond((s) => s ?? chat);
+      showToast(`${c.actions.flagsFailed}: ${errorMessage(err)}`, 'error');
+    } finally {
+      void queryClient.invalidateQueries({ queryKey: qk.chats.lists(activeId) });
+      void queryClient.invalidateQueries({ queryKey: qk.chats.numbers });
+    }
+  };
 
   // The chat and number travel with the call: onMutate may close the chat before the request goes out.
   type FlagsBody = { pinned?: boolean; archived?: boolean; unread?: boolean };
@@ -687,7 +780,7 @@ export function ChatsPage() {
     };
   }, [unreadTotal]);
 
-  // "/" searches, Esc closes the open chat.
+  // "/" searches; Esc closes, in order: the contact panel, the list drawer, focus mode, the open chat.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const typing = e.target instanceof HTMLElement && (e.target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName));
@@ -698,12 +791,14 @@ export function ChatsPage() {
       }
       if (e.key === 'Escape' && !typing && document.querySelector('[role="dialog"]') === null) {
         if (infoOpen) setInfoOpen(false);
+        else if (listDrawer) setListDrawer(false);
+        else if (focus.mode) exitFocus();
         else setSelected(null);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [infoOpen]);
+  }, [infoOpen, listDrawer, focus.mode, exitFocus]);
 
   if (!account) return <Loading className="py-24" />;
   if (!allowed) return <ChatsGate />;
@@ -726,11 +821,36 @@ export function ChatsPage() {
 
   const selectedPresence = selected ? (presence.get(selected.jid) ?? (selected.altJid ? presence.get(selected.altJid) : undefined)) : undefined;
   const showMain = Boolean(selected) || view === 'insights';
+  const mode = focus.mode;
+  // Single chat and split view: the list steps aside once a conversation is open (single brings it back
+  // as a drawer; split shows its own list in the other half, to pick a second conversation).
+  const listAside = (mode === 'single' || mode === 'split') && selected !== null && view === 'chats';
+  const drawer = mode === 'single' && listAside && listDrawer;
+  const splitPane = mode === 'split' && listAside;
 
   return (
-    <div className="relative -m-1 flex h-[calc(100svh-6.5rem)] min-h-[540px] overflow-hidden rounded-2xl border border-line bg-card shadow-sm md:m-0 md:h-[calc(100svh-8rem)]">
+    <div
+      className={cx(
+        'flex flex-col',
+        mode
+          ? cx('fixed inset-0 z-[55] bg-bg', focus.exiting ? 'animate-focus-out' : 'animate-focus-in')
+          : 'relative -m-1 h-[calc(100svh-6.5rem)] min-h-[540px] overflow-hidden rounded-2xl border border-line bg-card shadow-sm md:m-0 md:h-[calc(100svh-8rem)]',
+      )}
+    >
+      {mode && <FocusBar mode={mode} title={current.name} onMode={focus.enter} onExit={exitFocus} onShowList={mode === 'single' && listAside ? () => setListDrawer(true) : undefined} />}
+      <div className={cx('relative flex min-h-0 flex-1 overflow-hidden', mode && 'bg-card')}>
+      {drawer && <div className="animate-fade-in absolute inset-0 z-20 bg-black/45" onClick={() => setListDrawer(false)} />}
       {/* chats column */}
-      <aside className={cx('w-full shrink-0 flex-col border-e border-line bg-surface/40 lg:flex lg:w-[23rem]', showMain ? 'hidden' : 'flex')}>
+      <aside
+        className={cx(
+          'shrink-0 flex-col border-e border-line',
+          drawer
+            ? 'animate-drawer-in absolute inset-y-0 start-0 z-30 flex w-[23rem] max-w-[90vw] bg-card shadow-2xl'
+            : listAside
+              ? 'hidden'
+              : cx('w-full bg-surface/40 lg:flex lg:w-[23rem]', showMain ? 'hidden' : 'flex'),
+        )}
+      >
         <div className="space-y-3 px-3 pt-4 pb-1">
           <div className="flex items-center justify-between gap-2 px-1">
             <h1 className="text-2xl font-bold tracking-tight">{c.title}</h1>
@@ -747,6 +867,21 @@ export function ChatsPage() {
                   </IconAction>
                 )}
               />
+              {mode ? (
+                <IconAction label={c.focus.exitHint} active onClick={exitFocus}>
+                  <Minimize2 className="size-[18px]" />
+                </IconAction>
+              ) : (
+                <FocusMenu
+                  last={focus.last}
+                  onPick={focus.enter}
+                  renderButton={({ onClick, open, label }) => (
+                    <IconAction label={label} active={open} onClick={onClick}>
+                      <FocusIcon className="size-[18px]" />
+                    </IconAction>
+                  )}
+                />
+              )}
               <IconAction label={c.tabs.insights} active={view === 'insights'} onClick={() => setView((v) => (v === 'insights' ? 'chats' : 'insights'))}>
                 <BarChart3 className="size-[18px]" />
               </IconAction>
@@ -776,7 +911,7 @@ export function ChatsPage() {
               <button
                 type="button"
                 onClick={() => void askPermission().then((r) => r === 'denied' && showToast(c.notify.blocked, 'error'))}
-                className="shrink-0 rounded-lg bg-brand px-2.5 py-1 font-semibold text-black transition-opacity hover:opacity-90"
+                className="shrink-0 rounded-lg bg-brand px-2.5 py-1 font-semibold text-on-brand transition-opacity hover:opacity-90"
               >
                 {c.notify.browserAllow}
               </button>
@@ -809,6 +944,8 @@ export function ChatsPage() {
               setSelected(chat);
               setPendingJid(null);
               setView('chats');
+              setListDrawer(false);
+              if (isChat(second, chat.jid)) setSecond(null);
             }}
           />
         </div>
@@ -835,7 +972,7 @@ export function ChatsPage() {
             </div>
           </div>
         ) : selected ? (
-          <div className="min-w-0 flex-1">
+          <div className={cx('min-w-0 flex-1', mode === 'single' && listAside && 'mx-auto max-w-4xl lg:border-x lg:border-line/70')}>
             <Conversation
               key={`${current.id}:${selected.jid}`}
               sessionId={current.id}
@@ -858,7 +995,7 @@ export function ChatsPage() {
             <div className="pointer-events-none absolute top-1/2 left-1/2 size-[28rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand/10 blur-3xl" />
             <div className="relative flex max-w-md flex-col items-center">
               {/* A tiny live conversation: incoming, outgoing (read), and someone typing. */}
-              <div aria-hidden className="animate-float w-72 rounded-3xl border border-line bg-card/80 p-4 shadow-[0_30px_80px_-30px] shadow-black/80 backdrop-blur">
+              <div aria-hidden className="animate-float w-72 rounded-3xl border border-line bg-card/80 p-4 shadow-[0_30px_80px_-30px] shadow-black/80 light:shadow-black/15 backdrop-blur">
                 <div className="flex items-center gap-2.5 border-b border-line/70 pb-3">
                   <span className="relative size-8 rounded-full bg-gradient-to-br from-sky-500 to-indigo-600">
                     <span className="absolute -end-0.5 -bottom-0.5 size-2.5 rounded-full bg-green-500 ring-2 ring-card" />
@@ -930,6 +1067,59 @@ export function ChatsPage() {
           </>
         )}
       </section>
+
+      {/* split view: the second conversation (from tablet width up) */}
+      {splitPane && selected && (
+        <section className="animate-fade-in relative hidden min-w-0 flex-1 border-s border-line md:flex">
+          {second ? (
+            <div className="min-w-0 flex-1">
+              <Conversation
+                key={`${current.id}:${second.jid}`}
+                sessionId={current.id}
+                connected={connected}
+                chat={second}
+                presence={presence.get(second.jid) ?? (second.altJid ? presence.get(second.altJid) : undefined)}
+                picture={secondProfile.data?.pictureUrl ?? null}
+                receipts={receipts}
+                infoOpen={secondInfo}
+                onBack={() => {
+                  setSecond(null);
+                  setSecondInfo(false);
+                }}
+                onToggleInfo={() => setSecondInfo((o) => !o)}
+                onFlags={(body) => void setSecondFlags(body)}
+                onOpenPhone={openPhone}
+                onSync={() => void startSync(second.jid)}
+                syncing={sync?.scope === second.jid}
+              />
+            </div>
+          ) : (
+            <ChatPicker
+              sessionId={current.id}
+              presence={presence}
+              onPick={(chat) => (isChat(selected, chat.jid) ? undefined : setSecond(chat))}
+            />
+          )}
+          {second && secondInfo && (
+            <>
+              <div className="animate-fade-in absolute inset-0 z-20 bg-black/40" onClick={() => setSecondInfo(false)} />
+              <aside className="animate-drawer-in absolute inset-y-0 end-0 z-30 w-80 max-w-[90%] border-s border-line bg-card shadow-2xl">
+                <ContactPanel
+                  key={second.jid}
+                  sessionId={current.id}
+                  chat={second}
+                  presence={presence.get(second.jid)}
+                  picture={secondProfile.data?.pictureUrl ?? null}
+                  about={secondProfile.data?.about ?? null}
+                  onClose={() => setSecondInfo(false)}
+                  onFlags={(body) => void setSecondFlags(body)}
+                />
+              </aside>
+            </>
+          )}
+        </section>
+      )}
+      </div>
 
       {newChat && (
         <NewChatDialog

@@ -89,7 +89,7 @@ function Row({ chat, active, presence, picture, onSelect }: { chat: ChatSummary;
                 {last.direction === 'out' && <StatusTick status={last.status} />}
                 {last.sender && <span className="shrink-0 text-ink-2">{last.sender}:</span>}
                 <span dir="auto" className="truncate">
-                  {last.text || <TypeLabel type={last.type} />}
+                  {last.revoked ? <span className="italic">{c.revoked}</span> : last.text || <TypeLabel type={last.type} />}
                 </span>
               </>
             ) : null}
@@ -97,7 +97,7 @@ function Row({ chat, active, presence, picture, onSelect }: { chat: ChatSummary;
           {chat.archived && <Archive className="size-3.5 shrink-0 text-faint" />}
           {chat.pinned && <Pin className="size-3.5 shrink-0 rotate-45 text-faint" />}
           {chat.unread > 0 && (
-            <span className="animate-scale-in flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-brand px-1.5 text-[11px] font-bold text-black tabular-nums">
+            <span className="animate-scale-in flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-brand px-1.5 text-[11px] font-bold text-on-brand tabular-nums">
               {chat.unread > 99 ? '99+' : chat.unread}
             </span>
           )}
@@ -152,7 +152,7 @@ function FilterBar({ filter, counts, onFilter }: { filter: ChatFilter; counts: P
   };
 
   return (
-    <div className="relative rounded-xl border border-line bg-card p-1 shadow-xs">
+    <div className="relative rounded-full border border-line bg-card p-1 shadow-xs">
       <div ref={strip} role="group" aria-label={c.title} className="flex gap-1 overflow-x-auto scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {CHAT_FILTERS.map((f) => {
           const active = filter === f;
@@ -166,14 +166,14 @@ function FilterBar({ filter, counts, onFilter }: { filter: ChatFilter; counts: P
               title={c.filterHints[f]}
               onClick={() => onFilter(f)}
               className={cx(
-                'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
-                active ? 'bg-brand text-black shadow-sm' : 'text-muted hover:bg-raised hover:text-ink',
+                'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+                active ? 'bg-brand text-on-brand shadow-sm' : 'text-muted hover:bg-raised hover:text-ink',
               )}
             >
               <Icon className="size-3.5" />
               {c.filters[f]}
               {n !== undefined && n > 0 && (
-                <span className={cx('min-w-4 rounded-full px-1 text-center text-[10px] font-semibold tabular-nums', active ? 'bg-black/15 text-black/70' : 'bg-raised text-faint')}>{fmt.number.format(n)}</span>
+                <span className={cx('min-w-4 rounded-full px-1 text-center text-[10px] font-semibold tabular-nums', active ? 'bg-on-brand/15 text-on-brand/70' : 'bg-raised text-faint')}>{fmt.number.format(n)}</span>
               )}
             </button>
           );
@@ -184,7 +184,7 @@ function FilterBar({ filter, counts, onFilter }: { filter: ChatFilter; counts: P
           type="button"
           onClick={() => nudge(false)}
           aria-label={c.prevFilters}
-          className="animate-scale-in absolute inset-y-1 start-1 flex w-9 items-center justify-start rounded-s-lg bg-gradient-to-r from-card via-card/90 to-transparent ps-1 text-muted hover:text-ink rtl:bg-gradient-to-l"
+          className="animate-scale-in absolute inset-y-1 start-1 flex w-9 items-center justify-start rounded-s-full bg-gradient-to-r from-card via-card/90 to-transparent ps-1 text-muted hover:text-ink rtl:bg-gradient-to-l"
         >
           <ChevronLeft className={cx('size-4', flip)} />
         </button>
@@ -194,7 +194,7 @@ function FilterBar({ filter, counts, onFilter }: { filter: ChatFilter; counts: P
           type="button"
           onClick={() => nudge(true)}
           aria-label={c.moreFilters}
-          className="animate-scale-in absolute inset-y-1 end-1 flex w-9 items-center justify-end rounded-e-lg bg-gradient-to-l from-card via-card/90 to-transparent pe-1 text-muted hover:text-ink rtl:bg-gradient-to-r"
+          className="animate-scale-in absolute inset-y-1 end-1 flex w-9 items-center justify-end rounded-e-full bg-gradient-to-l from-card via-card/90 to-transparent pe-1 text-muted hover:text-ink rtl:bg-gradient-to-r"
         >
           <ChevronRight className={cx('size-4', flip)} />
         </button>
@@ -220,7 +220,7 @@ function TypingFloat({ chats, side, pictures, onPick }: { chats: { chat: ChatSum
             key={chat.jid}
             type="button"
             onClick={() => onPick(chat)}
-            className="animate-fade-up pointer-events-auto flex max-w-full items-center gap-2 rounded-full border border-brand/30 bg-card/95 py-1 ps-1 pe-3 shadow-lg shadow-black/40 backdrop-blur transition-colors hover:border-brand/60 hover:bg-raised"
+            className="animate-fade-up pointer-events-auto flex max-w-full items-center gap-2 rounded-full border border-brand/30 bg-card/95 py-1 ps-1 pe-3 shadow-lg shadow-black/40 light:shadow-black/15 backdrop-blur transition-colors hover:border-brand/60 hover:bg-raised"
           >
             <Avatar name={title} id={chat.jid} picture={pictures.get(chat.jid)} group={chat.isGroup} size="sm" online />
             <span dir="auto" className="min-w-0 truncate text-[13px] font-semibold text-ink">

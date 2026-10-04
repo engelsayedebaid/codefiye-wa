@@ -11,8 +11,11 @@ import {
   Inbox,
   Loader2,
   LogOut,
+  Monitor,
+  Moon,
   QrCode,
   RotateCw,
+  Sun,
   Unplug,
   Wifi,
   X,
@@ -33,6 +36,7 @@ import {
 import { errorMessage } from './api';
 import { BRAND } from './brand';
 import { useI18n } from './i18n';
+import { type ThemePref, useTheme } from './theme';
 
 export const cx = (...classes: (string | false | null | undefined)[]) => classes.filter(Boolean).join(' ');
 
@@ -45,8 +49,9 @@ type Variant = 'white' | 'brand' | 'outline' | 'secondary' | 'ghost' | 'danger';
 type Size = 'sm' | 'md' | 'lg';
 
 const VARIANTS: Record<Variant, string> = {
-  white: 'bg-ink text-bg shadow-xs hover:bg-ink/90',
-  brand: 'bg-brand text-black shadow-xs hover:bg-brand-strong hover:shadow-[0_8px_30px_-8px] hover:shadow-brand/60',
+  // The light theme's primary is the brand teal (reference design), not near-black.
+  white: 'bg-ink text-bg shadow-xs hover:bg-ink/90 light:bg-brand light:text-on-brand light:hover:bg-brand-strong',
+  brand: 'bg-brand text-on-brand shadow-xs hover:bg-brand-strong hover:shadow-[0_8px_30px_-8px] hover:shadow-brand/60',
   outline: 'border border-line bg-bg text-ink shadow-xs hover:bg-raised',
   secondary: 'bg-raised text-ink shadow-xs hover:bg-raised/80',
   ghost: 'text-ink-2 hover:bg-raised hover:text-ink',
@@ -126,6 +131,70 @@ export function LangSwitch({ className }: { className?: string }) {
       <Globe className="size-4" />
       {t.lang.other}
     </button>
+  );
+}
+
+const THEME_ICONS: Record<ThemePref, typeof Sun> = { light: Sun, dark: Moon, system: Monitor };
+
+/** Light / dark / system picker; the choice is remembered per browser (src/theme.tsx). */
+export function ThemeSwitch({ className }: { className?: string }) {
+  const { t } = useI18n();
+  const { pref, theme, setPref } = useTheme();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+  const Current = theme === 'dark' ? Moon : Sun;
+  return (
+    <div ref={ref} className={cx('relative', className)}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-label={t.theme.aria}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="inline-flex size-9 items-center justify-center rounded-md text-ink-2 transition-colors hover:bg-raised hover:text-ink"
+      >
+        <Current className="size-4" />
+      </button>
+      {open && (
+        <div role="menu" aria-label={t.theme.aria} className="animate-scale-in absolute end-0 top-full z-50 mt-1.5 w-max min-w-40 origin-top rounded-md border border-line bg-card p-1 shadow-xl shadow-black/50 light:shadow-black/15">
+          {(['light', 'dark', 'system'] as const).map((option) => {
+            const Icon = THEME_ICONS[option];
+            const selected = option === pref;
+            return (
+              <button
+                key={option}
+                type="button"
+                role="menuitemradio"
+                aria-checked={selected}
+                onClick={() => {
+                  setPref(option);
+                  setOpen(false);
+                }}
+                className={cx(
+                  'flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm transition-colors hover:bg-raised hover:text-ink',
+                  selected ? 'font-medium text-ink' : 'text-ink-2',
+                )}
+              >
+                <Icon className="size-4 text-muted" />
+                <span className="flex-1 text-start">{t.theme[option]}</span>
+                {selected && <Check className="size-4 text-brand" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -244,7 +313,7 @@ export function EmptyState({ icon: Icon, title, text, action }: { icon: typeof W
 // --- form controls -------------------------------------------------------------------------------
 
 export const inputClass =
-  'h-9 w-full min-w-0 rounded-md border border-line bg-transparent px-3 py-1 text-base text-ink shadow-xs outline-none transition-[color,box-shadow,border-color] placeholder:text-muted md:text-sm focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50';
+  'h-9 w-full min-w-0 rounded-md border border-line bg-card px-3 py-1 text-base text-ink shadow-xs outline-none transition-[color,box-shadow,border-color] placeholder:text-muted md:text-sm focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50';
 
 export function Field({
   label,
@@ -373,7 +442,7 @@ export function Select<T extends string>({
           aria-label={ariaLabel}
           aria-labelledby={label ? `${id}-label` : undefined}
           aria-activedescendant={open ? `${id}-opt-${active}` : undefined}
-          className={cx(inputClass, 'flex cursor-pointer items-center justify-between gap-2 bg-bg text-start', open && 'border-ring ring-[3px] ring-ring/50')}
+          className={cx(inputClass, 'flex cursor-pointer items-center justify-between gap-2 bg-card text-start', open && 'border-ring ring-[3px] ring-ring/50')}
         >
           <span className="min-w-0 flex-1 truncate">{options[selectedIndex]?.label}</span>
           <ChevronDown className={cx('size-4 shrink-0 text-muted transition-transform duration-200', open && 'rotate-180')} />
@@ -385,7 +454,7 @@ export function Select<T extends string>({
             role="listbox"
             aria-labelledby={label ? `${id}-label` : undefined}
             aria-label={label ? undefined : ariaLabel}
-            className="animate-scale-in absolute inset-x-0 top-full z-50 mt-1.5 max-h-72 min-w-max origin-top overflow-auto rounded-md border border-line bg-bg p-1 shadow-xl shadow-black/50"
+            className="animate-scale-in absolute inset-x-0 top-full z-50 mt-1.5 max-h-72 min-w-max origin-top overflow-auto rounded-md border border-line bg-card p-1 shadow-xl shadow-black/50 light:shadow-black/15"
           >
             {options.map((option, i) => {
               const selected = option.value === value;
@@ -518,7 +587,7 @@ export function Modal({
         role="dialog"
         aria-modal
         aria-label={title}
-        className={cx('animate-scale-in relative flex w-full flex-col rounded-lg border border-line bg-bg shadow-lg', size !== 'sm' && 'gap-4 p-6', MODAL_SIZES[size])}
+        className={cx('animate-scale-in relative flex w-full flex-col rounded-lg border border-line bg-card shadow-lg', size !== 'sm' && 'gap-4 p-6', MODAL_SIZES[size])}
         onClick={(e) => e.stopPropagation()}
       >
         <header className="space-y-2 pe-6 text-start">

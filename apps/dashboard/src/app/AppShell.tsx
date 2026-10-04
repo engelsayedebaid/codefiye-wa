@@ -23,7 +23,7 @@ import {
   X,
 } from 'lucide-react';
 import { getPlan, planHasFeature } from '@wa/shared/plans';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiRequestError, errorMessage } from '../api';
 import { PhoneVerifyModal } from '../auth/Otp';
@@ -34,8 +34,8 @@ import type { Session } from '../types';
 import { BRAND } from '../brand';
 import { useI18n } from '../i18n';
 import { Link, usePath } from '../router';
-import { Badge, Button, buttonClass, cx, ErrorNote, Field, flip, LangSwitch, Logo, LogoMark, Modal, SuccessNote, usePlanName } from '../ui';
-import { type Account, AccountContext, planState, useAccount } from './account';
+import { Badge, Button, buttonClass, cx, ErrorNote, Field, flip, LangSwitch, Logo, LogoMark, Modal, SuccessNote, ThemeSwitch, usePlanName } from '../ui';
+import { type Account, AccountContext, isUnlimitedPlan, planState, useAccount } from './account';
 
 const COLLAPSE_KEY = 'wa.sidebar.collapsed';
 const readCollapsed = () => {
@@ -113,9 +113,9 @@ function Breadcrumbs({ path }: { path: string }) {
 
 const itemClass = (active: boolean, collapsed: boolean) =>
   cx(
-    'relative flex h-8 w-full items-center gap-2 overflow-hidden rounded-md p-2 text-sm transition-all duration-200 outline-none focus-visible:ring-2 focus-visible:ring-ring [&>svg]:size-4 [&>svg]:shrink-0',
-    active ? 'bg-raised font-medium text-ink' : 'text-ink hover:bg-raised hover:ps-3',
-    collapsed && 'justify-center hover:ps-2',
+    'relative flex h-8 w-full items-center gap-2 overflow-hidden rounded-full px-3 text-sm transition-all duration-200 outline-none focus-visible:ring-2 focus-visible:ring-ring [&>svg]:size-4 [&>svg]:shrink-0',
+    active ? 'bg-brand font-medium text-on-brand shadow-sm' : 'text-ink hover:bg-raised',
+    collapsed && 'justify-center px-0',
   );
 
 function initials(name: string) {
@@ -248,7 +248,10 @@ function UserMenu({ account, collapsed, onLogout }: { account: Account | null; c
         {avatar}
         {!collapsed && (
           <>
-            <span className="min-w-0 flex-1 truncate text-sm font-medium">{name}</span>
+            <span className="min-w-0 flex-1 leading-tight">
+              <span className="block truncate text-sm font-medium">{name}</span>
+              {email && <span className="ltr block truncate text-[11px] text-muted">{email}</span>}
+            </span>
             <ChevronsUpDown className="size-4 shrink-0 text-muted" />
           </>
         )}
@@ -287,12 +290,11 @@ function NavGroup({
                 title={collapsed ? item.label : undefined}
                 className={itemClass(active, collapsed)}
               >
-                {active && <span className="absolute inset-y-1.5 start-0 w-0.5 rounded-full bg-brand" />}
                 <item.icon />
                 {!collapsed && <span className="truncate">{item.label}</span>}
-                {!collapsed && item.badge === 'lock' && <LockKeyhole className="ms-auto size-3.5 shrink-0 text-muted" />}
+                {!collapsed && item.badge === 'lock' && <LockKeyhole className={cx('ms-auto size-3.5 shrink-0', active ? 'text-on-brand/70' : 'text-muted')} />}
                 {!collapsed && item.badge === 'soon' && (
-                  <span className="ms-auto shrink-0 rounded-full bg-brand/15 px-1.5 py-0.5 text-[10px] leading-none font-medium text-brand">{t.ads.gate.soon}</span>
+                  <span className={cx('ms-auto shrink-0 rounded-full px-1.5 py-0.5 text-[10px] leading-none font-medium', active ? 'bg-on-brand/15 text-on-brand' : 'bg-brand/15 text-brand')}>{t.ads.gate.soon}</span>
                 )}
               </Link>
             </li>
@@ -300,6 +302,31 @@ function NavGroup({
         })}
       </ul>
     </div>
+  );
+}
+
+/** Floating plan card above the user menu: sessions used vs the plan's limit (like a storage meter). */
+function PlanMeter({ account }: { account: Account }) {
+  const { t } = useI18n();
+  const planName = usePlanName();
+  const sessions = useQuery({ queryKey: qk.sessions, queryFn: ({ signal }) => api<Session[]>('/api/whatsapp-sessions', { signal }) });
+  const used = sessions.data?.length;
+  const limit = isUnlimitedPlan(account.plan) ? null : account.plan.sessions;
+  return (
+    <Link href="/subscription" className="block rounded-xl border border-line bg-surface p-3 transition-colors hover:border-line-strong">
+      <p className="flex items-center text-sm font-medium">
+        {planName(account.plan)}
+        <span className="ms-auto flex size-3 items-center justify-center rounded-full bg-brand/15">
+          <span className="size-1.5 rounded-full bg-brand" />
+        </span>
+      </p>
+      <p className="mt-0.5 text-xs text-muted">{used === undefined ? '…' : limit === null ? t.sessions.usageUnlimited(used) : t.sessions.usageText(used, limit)}</p>
+      {limit !== null && used !== undefined && (
+        <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-raised">
+          <div className="h-full rounded-full bg-brand transition-[width] duration-1000 ease-out" style={{ width: `${Math.min(100, limit > 0 ? (used / limit) * 100 : 0)}%` }} />
+        </div>
+      )}
+    </Link>
   );
 }
 
@@ -326,7 +353,7 @@ function Sidebar({
         </Link>
       </div>
 
-      <nav className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <nav className="code-scroll flex min-h-0 flex-1 flex-col overflow-y-auto">
         <NavGroup label={t.app.groupPlatform} items={nav.main} path={path} collapsed={collapsed} onNavigate={onNavigate} />
         {account?.user?.isAdmin && <NavGroup label={t.app.groupAdmin} items={nav.admin} path={path} collapsed={collapsed} onNavigate={onNavigate} />}
 
@@ -348,7 +375,8 @@ function Sidebar({
         </ul>
       </nav>
 
-      <div className="p-2">
+      <div className="space-y-2 p-2">
+        {account && !collapsed && <PlanMeter account={account} />}
         <UserMenu account={account} collapsed={collapsed} onLogout={onLogout} />
       </div>
     </div>
@@ -497,14 +525,16 @@ export function AppShell({ children, account }: { children: ReactNode; account: 
   return (
     <AccountContext.Provider value={context}>
       <div className="flex min-h-svh bg-surface">
-        <aside className={cx('sticky top-0 hidden h-svh shrink-0 transition-[width] duration-300 ease-out md:block', collapsed ? 'w-14' : 'w-64')}>
-          <Sidebar path={path} account={account} collapsed={collapsed} onLogout={logout} />
+        <aside className={cx('sticky top-0 hidden h-svh shrink-0 px-2 py-2 transition-[width] duration-300 ease-out md:block', collapsed ? 'w-[72px]' : 'w-[272px]')}>
+          <div className="h-full overflow-hidden rounded-2xl border border-line bg-card shadow-lg">
+            <Sidebar path={path} account={account} collapsed={collapsed} onLogout={logout} />
+          </div>
         </aside>
 
         {drawer && (
           <div className="fixed inset-0 z-50 md:hidden">
             <div className="animate-fade-in absolute inset-0 bg-black/60" onClick={() => setDrawer(false)} />
-            <aside className="animate-fade-in absolute inset-y-0 start-0 w-72 bg-surface">
+            <aside className="animate-fade-in absolute inset-y-0 start-0 w-72 border-e border-line bg-card">
               <button onClick={() => setDrawer(false)} className="absolute top-4 end-3 rounded-xs p-1 opacity-70 hover:opacity-100" aria-label={t.app.closeMenu}>
                 <X className="size-4" />
               </button>
@@ -513,14 +543,15 @@ export function AppShell({ children, account }: { children: ReactNode; account: 
           </div>
         )}
 
-        <div className="relative flex min-w-0 flex-1 flex-col bg-bg md:m-2 md:ms-0 md:min-h-[calc(100svh-1rem)] md:rounded-xl md:shadow-sm">
+        <div className="relative flex min-w-0 flex-1 flex-col bg-bg md:m-2 md:ms-0 md:min-h-[calc(100svh-1rem)] md:rounded-2xl md:border md:border-line md:shadow-sm">
           <header className="flex h-16 shrink-0 items-center gap-2 border-b border-line/50 px-6 md:px-4">
             <button onClick={toggle} className="-ms-1 flex size-7 items-center justify-center rounded-md transition-colors hover:bg-raised" aria-label={t.app.toggleSidebar}>
               <PanelLeft className={cx('size-4', flip)} />
             </button>
             <span className="me-2 h-4 w-px bg-line" />
             <Breadcrumbs path={path} />
-            <LangSwitch className="ms-auto" />
+            <ThemeSwitch className="ms-auto" />
+            <LangSwitch />
           </header>
           <div className="flex flex-1 flex-col gap-4 p-4 md:p-6">
             {path !== '/subscription' && <PlanAlert account={account} />}

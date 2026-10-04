@@ -94,12 +94,12 @@ function NoteCard({ note, peek, onOpen, onDismiss }: { note: InboxNote; peek: bo
   const c = t.chats.notify;
   const last = note.messages.length - 1;
   return (
-    <div className="group/note relative h-full overflow-hidden rounded-[1.25rem] border border-white/[0.07] bg-gradient-to-b from-raised/95 to-card/95 shadow-[0_24px_60px_-20px] shadow-black/90 backdrop-blur-xl">
+    <div className="group/note relative h-full overflow-hidden rounded-[1.25rem] border border-white/[0.07] light:border-line bg-gradient-to-b from-raised/95 to-card/95 shadow-[0_24px_60px_-20px] shadow-black/90 light:shadow-black/15 backdrop-blur-xl">
       {/* soft brand glow behind the avatar */}
       <span aria-hidden className="pointer-events-none absolute -top-10 -start-10 size-32 rounded-full bg-brand/15 blur-2xl" />
       <div className={cx('relative transition-opacity duration-200', peek && 'opacity-0')}>
         <div className="flex items-center gap-1.5 px-3.5 pt-3 text-[11px] text-faint">
-          <span className="flex size-4 items-center justify-center rounded-[5px] bg-brand text-black">
+          <span className="flex size-4 items-center justify-center rounded-[5px] bg-brand text-on-brand">
             <ChatGlyph className="size-2.5" />
           </span>
           <span className="truncate font-medium text-muted">{note.number ?? c.newMessage}</span>
@@ -111,7 +111,7 @@ function NoteCard({ note, peek, onOpen, onDismiss }: { note: InboxNote; peek: bo
             </span>
           )}
         </div>
-        <button type="button" onClick={onOpen} tabIndex={peek ? -1 : 0} className="flex w-full items-start gap-3 px-3.5 pt-2 pb-3.5 text-start outline-none focus-visible:bg-white/[0.03]">
+        <button type="button" onClick={onOpen} tabIndex={peek ? -1 : 0} className="flex w-full items-start gap-3 px-3.5 pt-2 pb-3.5 text-start outline-none focus-visible:bg-ink/[0.03]">
           <Avatar name={note.title} id={note.jid} picture={note.picture} group={note.isGroup} size="lg" />
           <span className="min-w-0 flex-1">
             <span dir="auto" className="block truncate text-[15px] font-semibold text-ink">
@@ -142,7 +142,7 @@ function NoteCard({ note, peek, onOpen, onDismiss }: { note: InboxNote; peek: bo
           <X className="size-3.5" />
         </button>
       )}
-      <span aria-hidden className="absolute inset-x-0 bottom-0 h-[3px] bg-white/[0.04]">
+      <span aria-hidden className="absolute inset-x-0 bottom-0 h-[3px] bg-ink/[0.06]">
         <span
           key={note.rev}
           onAnimationEnd={onDismiss}

@@ -51,7 +51,7 @@ function highlightValues(text: string, keyPrefix: string): ReactNode[] {
   for (const m of text.matchAll(FILLED)) {
     if (m.index! > last) out.push(text.slice(last, m.index));
     out.push(
-      <span key={`${keyPrefix}-${m.index}`} className="rounded bg-white/15 px-0.5">
+      <span key={`${keyPrefix}-${m.index}`} className="rounded bg-white/15 px-0.5 light:bg-black/10">
         {m[1]}
       </span>,
     );
@@ -98,7 +98,7 @@ const plain = (text: string) => text.replace(FILLED, '$1');
 
 function Timestamp() {
   return (
-    <span className="mt-1 flex items-center justify-end gap-1 text-[11px] text-white/60">
+    <span className="mt-1 flex items-center justify-end gap-1 text-[11px] text-white/60 light:text-black/45">
       <span className="ltr">10:24</span>
       <CheckCheck className="size-3.5 text-[#53bdeb]" />
     </span>
@@ -139,7 +139,7 @@ function CardImage({ url, onStatus }: { url: string; onStatus?: (url: string, ok
 function PollBubble({ title, options }: { title: string; options: string[] }) {
   const { t } = useI18n();
   return (
-    <div className="animate-scale-in w-[min(18rem,90%)] rounded-lg rounded-se-sm bg-[#005c4b] px-3 pt-2.5 pb-1.5 text-[#e9edef] shadow" style={delay(120)}>
+    <div className="animate-scale-in w-[min(18rem,90%)] rounded-lg rounded-se-sm bg-[#005c4b] px-3 pt-2.5 pb-1.5 text-[#e9edef] light:bg-[#d9fdd3] light:text-[#111b21] shadow" style={delay(120)}>
       <p dir="auto" className="font-semibold break-words">
         {title ? <WhatsAppText text={title} /> : '…'}
       </p>
@@ -150,17 +150,17 @@ function PollBubble({ title, options }: { title: string; options: string[] }) {
         {options.map((option, i) => (
           <li key={i} className="space-y-1">
             <span className="flex items-center gap-2 text-[14px]">
-              <span className="size-4 shrink-0 rounded-full border-2 border-white/50" />
+              <span className="size-4 shrink-0 rounded-full border-2 border-white/50 light:border-black/30" />
               <span dir="auto" className="min-w-0 flex-1 truncate">
                 {option ? <WhatsAppText text={option} /> : '…'}
               </span>
             </span>
-            <span className="ms-6 block h-1 rounded-full bg-white/15" />
+            <span className="ms-6 block h-1 rounded-full bg-white/15 light:bg-black/10" />
           </li>
         ))}
       </ul>
       <Timestamp />
-      <p className="-mx-3 mt-1 border-t border-white/10 pt-1.5 text-center text-[13px] text-[#53bdeb]">{t.templates.viewVotes}</p>
+      <p className="-mx-3 mt-1 border-t border-white/10 pt-1.5 text-center text-[13px] text-[#53bdeb] light:border-black/10 light:text-[#027eb5]">{t.templates.viewVotes}</p>
     </div>
   );
 }
@@ -187,12 +187,10 @@ export function TemplatePreview({
   const buttons = template.buttons?.filter((b) => b.trim()) ?? [];
   return (
     <div
-      className={cx('flex flex-col items-end gap-1.5 bg-[#0b141a]', className ?? 'rounded-lg p-4')}
-      style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.035) 1px, transparent 1px)', backgroundSize: '14px 14px' }}
-    >
+      className={cx('wa-wall wa-dots flex flex-col items-end gap-1.5', className ?? 'rounded-lg p-4')}>
       <div
         className={cx(
-          'animate-scale-in max-w-[90%] rounded-lg rounded-se-sm bg-[#005c4b] text-[14px] leading-relaxed text-[#e9edef] shadow',
+          'animate-scale-in max-w-[90%] rounded-lg rounded-se-sm bg-[#005c4b] text-[14px] leading-relaxed text-[#e9edef] shadow light:bg-[#d9fdd3] light:text-[#111b21]',
           template.imageUrl ? 'w-[min(18rem,90%)] p-1' : 'px-3 py-2',
         )}
       >
@@ -346,9 +344,9 @@ function GalleryCard({
       className="lift group animate-fade-up relative flex flex-col overflow-hidden rounded-xl border border-line bg-card shadow-sm has-[:focus-visible]:border-ring has-[:focus-visible]:ring-[3px] has-[:focus-visible]:ring-ring/50"
       style={delay(index * 50)}
     >
-      <div aria-hidden className="relative h-40 overflow-hidden bg-[#0b141a]">
+      <div aria-hidden className="wa-wall relative h-40 overflow-hidden">
         {preview}
-        <span className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-[#0b141a] to-transparent" />
+        <span className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-[#0b141a] to-transparent light:from-[#efeae2]" />
       </div>
       <div className="flex flex-1 items-start gap-3 border-t border-line p-4">
         <span className={cx('flex size-8 shrink-0 items-center justify-center rounded-md', TONES[tone].chip)}>
@@ -582,7 +580,7 @@ function TemplateEditor({
                       active ? 'border-brand/60 bg-brand/10 shadow-[0_0_24px_-12px] shadow-brand' : 'border-line text-ink-2 hover:border-line-strong hover:bg-raised/40',
                     )}
                   >
-                    <span className={cx('flex size-6 shrink-0 items-center justify-center rounded-md', active ? 'bg-brand text-black' : 'bg-raised text-muted')}>
+                    <span className={cx('flex size-6 shrink-0 items-center justify-center rounded-md', active ? 'bg-brand text-on-brand' : 'bg-raised text-muted')}>
                       <Icon className="size-3.5" />
                     </span>
                     {tt.categories[id]}

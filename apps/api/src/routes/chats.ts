@@ -50,6 +50,8 @@ const lastDto = z.object({
   text: z.string().nullable(),
   sender: z.string().nullable(),
   createdAt: z.string(),
+  /** Deleted for everyone by its sender (`text` is then null). */
+  revoked: z.boolean(),
 });
 
 const chatDto = z.object({
@@ -103,6 +105,7 @@ type ChatRow = {
   m_status: MessageStatus | null;
   m_text: string | null;
   m_sender: string | null;
+  m_revoked: boolean | null;
   m_at: Date | null;
 };
 
@@ -121,7 +124,7 @@ const toChatDto = (r: ChatRow): z.infer<typeof chatDto> => ({
   lastInboundAt: r.last_inbound_at?.toISOString() ?? null,
   last:
     r.m_id !== null
-      ? { id: r.m_id, direction: r.m_direction!, type: r.m_type!, status: r.m_status!, text: r.m_text, sender: r.m_sender, createdAt: r.m_at!.toISOString() }
+      ? { id: r.m_id, direction: r.m_direction!, type: r.m_type!, status: r.m_status!, text: r.m_revoked ? null : r.m_text, sender: r.m_sender, createdAt: r.m_at!.toISOString(), revoked: r.m_revoked === true }
       : null,
 });
 
@@ -282,6 +285,7 @@ export function chatRoutes(deps: Deps): FastifyPluginAsyncZod {
             c.last_message_at, c.last_inbound_at, (c.pinned_at is not null)::int as pinned,
             m.id as m_id, m.direction as m_direction, m.type as m_type, m.status as m_status,
             coalesce(m.content->>'text', m.content->>'caption', m.content->>'name', m.content->'poll'->>'name') as m_text,
+            coalesce((m.content->>'revoked')::boolean, false) as m_revoked,
             case when m.direction = 'in' and c.jid like '%@g.us' then coalesce(m.content->>'pushName', m.content->>'fromPhone') end as m_sender,
             m.created_at as m_at
           from chats c left join messages m on m.id = c.last_message_id
@@ -348,7 +352,8 @@ export function chatRoutes(deps: Deps): FastifyPluginAsyncZod {
           select c.jid, c.alt_jid, chat_display_name(c.session_id, c.jid, c.alt_jid, c.name) as name, c.unread_count, c.pinned_at, c.archived_at, c.inbound_count, c.outbound_count,
             c.last_message_at, c.last_inbound_at,
             m.id as m_id, m.direction as m_direction, m.type as m_type, m.status as m_status,
-            coalesce(m.content->>'text', m.content->>'caption', m.content->>'name') as m_text, null as m_sender, m.created_at as m_at
+            coalesce(m.content->>'text', m.content->>'caption', m.content->>'name') as m_text, null as m_sender, m.created_at as m_at,
+            coalesce((m.content->>'revoked')::boolean, false) as m_revoked
           from chats c left join messages m on m.id = c.last_message_id
           where c.session_id = ${session.id} and c.jid = ${found?.jid ?? req.query.jid}`;
         const [stats] = await sql<{ first_at: Date | null; total: number; campaign: number; media: number; delivered: number; read: number; failed: number; outbound: number; by_type: Record<string, number> | null }[]>`

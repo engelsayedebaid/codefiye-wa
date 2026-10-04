@@ -205,7 +205,10 @@ export class SessionSync {
   /** Conversation after conversation until the job ends, pauses, or the number goes away. */
   private async work(jobId: string) {
     const { sql } = this.host;
-    let answered = false;
+    // The phone has answered this job before (an earlier run, before a restart): a silent conversation
+    // then means "nothing older", not a phone that's offline.
+    const start = await loadSyncJob(sql, jobId);
+    let answered = (start?.messages_added ?? 0) > 0 || (start?.chats_done ?? 0) > 0;
     let silent = 0;
     for (;;) {
       if (this.stopped) return;

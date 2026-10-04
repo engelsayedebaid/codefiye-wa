@@ -15,7 +15,9 @@ export const en: Dict = {
     about: 'The WhatsApp API platform for businesses of every size. Send unlimited messages with no per-message fees.',
     disclaimer: 'An independent service, not affiliated with Meta or WhatsApp. You are responsible for following WhatsApp’s terms and anti-spam laws.',
   },
-  lang: { other: 'العربية', aria: 'التبديل إلى العربية' },  common: {
+  lang: { other: 'العربية', aria: 'التبديل إلى العربية' },
+  theme: { aria: 'Appearance', light: 'Light', dark: 'Dark', system: 'System' },
+  common: {
     loading: 'Loading…',
     cancel: 'Cancel',
     close: 'Close',
@@ -1368,6 +1370,20 @@ export const en: Dict = {
     pickTitle: 'Pick a chat',
     pickText: 'Every incoming and outgoing message shows up here instantly, with read receipts, typing and online status.',
     pickHint: 'Tip: press / to search and Esc to close a chat.',
+    focus: {
+      open: 'Focus mode',
+      title: 'Focus mode',
+      exit: 'Exit',
+      exitHint: 'Leave focus mode',
+      modes: {
+        full: { label: 'Full screen', text: 'Chats with all their tools, filling the window — no dashboard menus.' },
+        single: { label: 'Single chat', text: 'Just the open conversation, centered; the list when you need it.' },
+        split: { label: 'Split view', text: 'Two conversations side by side, full screen: the current one and another you pick.' },
+      },
+      showList: 'Chats list',
+      pickSecond: 'Pick a second chat',
+      pickSecondText: 'It opens beside the current one, so you can answer both at once.',
+    },
     shortcuts: { search: 'Search', close: 'Close chat' },
     notify: {
       now: 'now',
@@ -1435,6 +1451,9 @@ export const en: Dict = {
     copy: 'Copy',
     copied: 'Copied',
     unsupported: 'Unsupported message — view it on the phone',
+    edited: 'Edited',
+    revoked: 'This message was deleted',
+    revokedByYou: 'You deleted this message',
     composer: {
       placeholder: 'Type a message',
       send: 'Send',
@@ -1460,6 +1479,12 @@ export const en: Dict = {
       openWhatsApp: 'Open in WhatsApp',
       info: 'Contact info',
       more: 'More',
+      wallpaper: 'Chat wallpaper',
+    },
+    wall: {
+      title: 'Chat wallpaper',
+      text: 'Pick a background for your conversations.',
+      default: 'Default (theme)',
     },
     receipts: 'Send read receipts (blue ticks)',
     panel: {

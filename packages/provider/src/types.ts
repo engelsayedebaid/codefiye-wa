@@ -43,6 +43,13 @@ export type ContactName = { jid: string; savedName?: string; verifiedName?: stri
 export type ProviderEvents = {
   /** Contact names learnt (address-book sync, history), plus any LID ↔ number pairs they came with. */
   contacts: { contacts: ContactName[]; pairs: { lid: string; pn: string }[] };
+  /**
+   * The sender edited a message (plain, or decrypted from an encrypted edit): the stored message
+   * with this WhatsApp id takes the new text. `editedAt` in epoch seconds.
+   */
+  edit: { waMessageId: string; chatJid: string; text: string | null; editedAt: number };
+  /** The sender deleted a message for everyone: the stored message is marked deleted. */
+  revoke: { waMessageId: string; chatJid: string };
   qr: { qr: string };
   open: { jid: string; phone: string | null; name: string | null };
   close: { reason: CloseReason; statusCode: number | null; message: string };

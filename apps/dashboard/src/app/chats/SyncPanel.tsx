@@ -63,15 +63,29 @@ function useNow(ms: number, enabled: boolean) {
   return now;
 }
 
+/**
+ * Where each running job stood when this tab first saw it run (reset when it stops running): speed and
+ * time left come from what happened since, so time spent queued, paused or offline doesn't skew them.
+ */
+const baselines = new Map<string, { at: number; processed: number; messages: number }>();
+/** Measure this long, and this many conversations, before showing speed / time left. */
+const MEASURE_MS = 20_000;
+const MEASURE_CHATS = 2;
+
 /** Percentage, speed (messages a minute) and time left — the last two only once there is enough to go on. */
 function useStats(job: SyncProgress) {
   const running = job.status === 'running';
   const now = useNow(5_000, running);
   const processed = job.chatsDone + job.chatsFailed;
   const percent = job.status === 'completed' ? 100 : job.chatsTotal > 0 ? Math.min(99, Math.floor((processed / job.chatsTotal) * 100)) : 0;
-  const elapsed = Math.max(1, (now - Date.parse(job.startedAt)) / 1000);
-  const speed = running && elapsed > 30 ? Math.round((job.messagesAdded / elapsed) * 60) : null;
-  const eta = running && processed >= 3 && job.chatsTotal > processed ? Math.round((elapsed / processed) * (job.chatsTotal - processed)) : null;
+  if (!running) baselines.delete(job.jobId);
+  else if (!baselines.has(job.jobId)) baselines.set(job.jobId, { at: now, processed, messages: job.messagesAdded });
+  const base = baselines.get(job.jobId);
+  const elapsed = base ? (now - base.at) / 1000 : 0;
+  const measured = base !== undefined && elapsed * 1000 >= MEASURE_MS;
+  const speed = measured ? Math.round(((job.messagesAdded - base.messages) / elapsed) * 60) : null;
+  const doneHere = base ? processed - base.processed : 0;
+  const eta = measured && doneHere >= MEASURE_CHATS && job.chatsTotal > processed ? Math.round((elapsed / doneHere) * (job.chatsTotal - processed)) : null;
   return { percent, speed, eta };
 }
 

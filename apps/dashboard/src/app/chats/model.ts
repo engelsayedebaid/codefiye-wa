@@ -17,7 +17,7 @@ export type ChatSummary = {
   outbound: number;
   lastMessageAt: string;
   lastInboundAt: string | null;
-  last: { id: number; direction: 'in' | 'out'; type: MessageType; status: MessageStatus; text: string | null; sender: string | null; createdAt: string } | null;
+  last: { id: number; direction: 'in' | 'out'; type: MessageType; status: MessageStatus; text: string | null; sender: string | null; createdAt: string; revoked?: boolean } | null;
 };
 
 export type ChatPage = { chats: ChatSummary[]; next: string | null; counts: Record<ChatFilter, number> | null };
@@ -39,6 +39,11 @@ export type ChatMessage = {
 /** Inbound content (worker) and outbound content (API) share one bag of optional fields. */
 export type MessageContent = {
   text?: string | null;
+  /** The sender edited it (`text` is the edited text; `editedAt` epoch seconds). */
+  edited?: boolean;
+  editedAt?: number;
+  /** The sender deleted it for everyone. */
+  revoked?: boolean;
   caption?: string;
   /** Polls we sent. */
   name?: string;

@@ -362,13 +362,13 @@ function Step({ n, title, text, done, current, children, index }: { n: number; t
     <section id={`ads-step-${n}`} className="animate-fade-up relative scroll-mt-6 overflow-hidden rounded-xl border border-line bg-card shadow-sm" style={delay(index * 80)}>
       <span
         aria-hidden
-        className={cx('absolute inset-y-0 start-0 w-1 transition-colors duration-500', done ? 'bg-gradient-to-b from-[#3BE37F] to-[#0E9488]' : 'bg-transparent')}
+        className={cx('absolute inset-y-0 start-0 w-1 transition-colors duration-500', done ? 'bg-gradient-to-b from-grad-from to-grad-to' : 'bg-transparent')}
       />
       <header className="flex items-start gap-3 px-5 pt-5">
         <span
           className={cx(
             'flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold transition-all duration-300',
-            done ? 'bg-brand text-black shadow-[0_0_20px_-6px] shadow-brand' : current ? 'bg-raised text-ink ring-2 ring-brand/50' : 'bg-raised text-ink',
+            done ? 'bg-brand text-on-brand shadow-[0_0_20px_-6px] shadow-brand' : current ? 'bg-raised text-ink ring-2 ring-brand/50' : 'bg-raised text-ink',
           )}
         >
           {done ? <Check className="animate-scale-in size-4" /> : n}
@@ -486,7 +486,7 @@ function ShieldBanner() {
     <section className="animate-fade-up relative overflow-hidden rounded-xl border border-brand/25 bg-card shadow-sm">
       <span aria-hidden className="pointer-events-none absolute -top-24 -start-16 size-64 rounded-full bg-brand/10 blur-3xl" />
       <div className="relative flex flex-wrap items-start gap-4 p-5">
-        <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#3BE37F] to-[#0E9488] text-black shadow-[0_0_30px_-8px] shadow-brand">
+        <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-grad-from to-grad-to text-on-brand shadow-[0_0_30px_-8px] shadow-brand">
           <ShieldCheck className="size-6" />
         </span>
         <div className="min-w-0 flex-1 basis-64 space-y-1">
@@ -567,7 +567,7 @@ const SAFETY_TONES: Record<SafetyTone, { icon: LucideIcon; ink: string }> = {
   good: { icon: CircleCheck, ink: 'text-green-500' },
 };
 const SAFETY_LEVELS = {
-  high: { ink: 'text-green-500', bar: 'bg-gradient-to-r from-[#3BE37F] to-[#0E9488] rtl:bg-gradient-to-l' },
+  high: { ink: 'text-green-500', bar: 'bg-gradient-to-r from-grad-from to-grad-to rtl:bg-gradient-to-l' },
   medium: { ink: 'text-amber-400', bar: 'bg-amber-400' },
   low: { ink: 'text-red-400', bar: 'bg-red-500' },
 } as const;
@@ -870,7 +870,7 @@ function MessageStep({
                   active ? 'border-brand/60 bg-brand/10 text-ink' : 'border-line text-ink-2 hover:border-line-strong hover:bg-raised/40',
                 )}
               >
-                <span className={cx('flex size-7 items-center justify-center rounded-full', active ? 'bg-brand text-black' : 'bg-raised text-ink-2')}>
+                <span className={cx('flex size-7 items-center justify-center rounded-full', active ? 'bg-brand text-on-brand' : 'bg-raised text-ink-2')}>
                   <Icon className="size-3.5" />
                 </span>
                 {g.categories[id]}
@@ -1116,23 +1116,22 @@ function MessagePreview({
   return (
     <div className="overflow-hidden rounded-xl border border-line bg-card shadow-sm">
       <p className="border-b border-line px-4 py-2.5 text-sm font-medium">{s.preview}</p>
-      <div className="flex items-center gap-3 bg-[#202c33] px-3 py-2">
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#6a7175] text-[#d1d7db]">
+      <div className="flex items-center gap-3 bg-[#202c33] px-3 py-2 light:bg-[#f0f2f5]">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#6a7175] text-[#d1d7db] light:bg-[#dfe5e7] light:text-[#54656f]">
           <UserRound className="size-5" />
         </span>
         <span className="min-w-0">
-          <span className="block truncate text-sm font-medium text-[#e9edef]">
+          <span className="block truncate text-sm font-medium text-[#e9edef] light:text-[#111b21]">
             <bdi>{name || phone || s.previewContact}</bdi>
           </span>
-          {name && phone && <span className="ltr block truncate text-xs text-[#8696a0]">{phone}</span>}
+          {name && phone && <span className="ltr block truncate text-xs text-[#8696a0] light:text-[#667781]">{phone}</span>}
         </span>
       </div>
       {parts.body.trim() || parts.imageUrl ? (
         <TemplatePreview template={parts} values={values} onImageStatus={onImageStatus} className="max-h-[28rem] overflow-y-auto p-4" />
       ) : (
         <div
-          className="flex h-40 flex-col items-center justify-center gap-2 bg-[#0b141a] text-sm text-white/40"
-          style={{ backgroundImage: 'radial-gradient(rgb(255 255 255 / 0.07) 1px, transparent 1px)', backgroundSize: '16px 16px' }}
+          className="flex h-40 flex-col items-center wa-wall wa-dots justify-center gap-2 text-sm text-white/40 light:text-black/40"
         >
           <Megaphone className="animate-float size-7" />
           {s.needs.body}
@@ -1260,7 +1259,7 @@ function AudienceStep({
               dragging ? 'scale-[1.01] border-brand bg-brand/10' : 'border-line-strong bg-raised/20',
             )}
           >
-            <span className={cx('flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-[#3BE37F] to-[#0E9488] text-black shadow-lg', dragging ? 'animate-bounce' : 'animate-float')}>
+            <span className={cx('flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-grad-from to-grad-to text-on-brand shadow-lg', dragging ? 'animate-bounce' : 'animate-float')}>
               <Upload className="size-6" />
             </span>
             <div className="space-y-1">
@@ -1487,7 +1486,7 @@ function NumbersStep({
               <span
                 className={cx(
                   'mt-2.5 flex size-5 shrink-0 items-center justify-center rounded-md border transition-colors duration-200',
-                  on ? 'border-brand bg-brand text-black' : 'border-line-strong',
+                  on ? 'border-brand bg-brand text-on-brand' : 'border-line-strong',
                 )}
               >
                 {on && <Check className="animate-scale-in size-3.5" />}
@@ -1568,7 +1567,7 @@ function NumbersStep({
               <div key={session.id} className="flex items-center gap-3 text-xs">
                 <span className="w-28 shrink-0 truncate">{session.name}</span>
                 <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-raised">
-                  <span className="block h-full rounded-full bg-gradient-to-r from-[#3BE37F] to-[#0E9488] transition-[width] duration-500 rtl:bg-gradient-to-l" style={{ width: `${(count / max) * 100}%` }} />
+                  <span className="block h-full rounded-full bg-gradient-to-r from-grad-from to-grad-to transition-[width] duration-500 rtl:bg-gradient-to-l" style={{ width: `${(count / max) * 100}%` }} />
                 </span>
                 <span className="w-12 shrink-0 text-end tabular-nums">{fmt.number.format(count)}</span>
               </div>
@@ -1633,7 +1632,7 @@ function ProtectionStep({
               >
                 <span className="flex items-center justify-between gap-2">
                   <span className="flex items-center gap-2.5">
-                    <span className={cx('flex size-8 shrink-0 items-center justify-center rounded-lg', active ? 'bg-brand text-black' : 'bg-raised text-muted')}>
+                    <span className={cx('flex size-8 shrink-0 items-center justify-center rounded-lg', active ? 'bg-brand text-on-brand' : 'bg-raised text-muted')}>
                       <Icon className="size-4" />
                     </span>
                     <span className="text-sm font-semibold">{t.ads.paces[id]!.label}</span>
@@ -1703,7 +1702,7 @@ function ProtectionStep({
             <Switch checked={optOut} onChange={setOptOut} label={p.optOut} />
           </div>
           {optOut && (
-            <p dir="auto" className="animate-fade-in inline-block rounded-lg rounded-se-sm bg-[#005c4b] px-3 py-1.5 text-sm text-[#e9edef]">
+            <p dir="auto" className="animate-fade-in inline-block rounded-lg rounded-se-sm bg-[#005c4b] px-3 py-1.5 text-sm text-[#e9edef] light:bg-[#d9fdd3] light:text-[#111b21]">
               {p.optOutLine}
             </p>
           )}
@@ -2007,7 +2006,7 @@ function Composer({ onLaunched }: { onLaunched: (created: Created) => void }) {
             className={cx(
               'group relative flex h-12 w-full items-center justify-center gap-2 overflow-hidden rounded-lg text-base font-semibold transition-all duration-300 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
               ready
-                ? 'shine shine-auto cursor-pointer bg-gradient-to-r from-[#3BE37F] to-[#0E9488] text-black shadow-[0_10px_40px_-12px] shadow-brand hover:shadow-[0_14px_50px_-10px] active:scale-[0.98]'
+                ? 'shine shine-auto cursor-pointer bg-gradient-to-r from-grad-from to-grad-to text-on-brand shadow-[0_10px_40px_-12px] shadow-brand hover:shadow-[0_14px_50px_-10px] active:scale-[0.98]'
                 : 'cursor-not-allowed bg-raised text-muted',
             )}
           >
@@ -2020,7 +2019,7 @@ function Composer({ onLaunched }: { onLaunched: (created: Created) => void }) {
       {confirming && (
         <Modal title={t.ads.confirm.title} onClose={() => !launch.isPending && setConfirming(false)}>
           <div className="flex items-center gap-4 rounded-lg border border-line bg-raised/30 p-4">
-            <span className="flex size-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#3BE37F] to-[#0E9488] text-black">
+            <span className="flex size-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-grad-from to-grad-to text-on-brand">
               <Rocket className="size-6" />
             </span>
             <p className="text-sm text-ink-2">{t.ads.confirm.text(recipients.length, chosen.length)}</p>
@@ -2112,8 +2111,8 @@ function ProgressRing({ value, total, running }: { value: number; total: number;
       <svg viewBox="0 0 160 160" className="relative size-full -rotate-90" aria-hidden>
         <defs>
           <linearGradient id="ads-ring" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#3BE37F" />
-            <stop offset="1" stopColor="#0E9488" />
+            <stop offset="0" style={{ stopColor: 'var(--color-grad-from)' }} />
+            <stop offset="1" style={{ stopColor: 'var(--color-grad-to)' }} />
           </linearGradient>
         </defs>
         <circle cx="80" cy="80" r={radius} fill="none" strokeWidth="11" className="stroke-raised" />
@@ -2335,7 +2334,7 @@ function LiveCampaign({ id }: { id: string }) {
               </Button>
             )}
             {!running && (
-              <Link href="/ads" className="inline-flex h-9 items-center gap-2 rounded-md bg-brand px-4 text-sm font-medium text-black shadow-xs transition-colors hover:bg-brand-strong">
+              <Link href="/ads" className="inline-flex h-9 items-center gap-2 rounded-md bg-brand px-4 text-sm font-medium text-on-brand shadow-xs transition-colors hover:bg-brand-strong">
                 <Sparkles className="size-4" /> {l.newCampaign}
               </Link>
             )}
@@ -2488,7 +2487,7 @@ function History() {
           title={h.empty}
           text={h.emptyText}
           action={
-            <Link href="/ads" className="inline-flex h-9 items-center gap-2 rounded-md bg-brand px-4 text-sm font-medium text-black hover:bg-brand-strong">
+            <Link href="/ads" className="inline-flex h-9 items-center gap-2 rounded-md bg-brand px-4 text-sm font-medium text-on-brand hover:bg-brand-strong">
               <Plus className="size-4" /> {h.create}
             </Link>
           }
@@ -2508,7 +2507,7 @@ function History() {
               className="lift group flex flex-col gap-3 rounded-xl border border-line bg-card p-4 shadow-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
             >
               <div className="flex flex-wrap items-center gap-3">
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#3BE37F] to-[#0E9488] text-black">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-grad-from to-grad-to text-on-brand">
                   <Megaphone className="size-5" />
                 </span>
                 <div className="min-w-0 flex-1">
@@ -2564,7 +2563,7 @@ function AdsGate({ kind }: { kind: 'soon' | 'upgrade' }) {
       <section className="animate-fade-up overflow-hidden rounded-xl border border-line bg-card shadow-sm">
         <div className="relative flex flex-col items-center gap-3 px-6 py-10 text-center">
           <span aria-hidden className="absolute -top-16 size-48 rounded-full bg-brand/15 blur-3xl" />
-          <span className={cx('relative flex size-14 items-center justify-center rounded-2xl shadow-lg', soon ? 'bg-gradient-to-br from-brand to-[#0E9488] text-black' : 'bg-raised text-muted')}>
+          <span className={cx('relative flex size-14 items-center justify-center rounded-2xl shadow-lg', soon ? 'bg-gradient-to-br from-grad-from to-grad-to text-on-brand' : 'bg-raised text-muted')}>
             {soon ? <Megaphone className="size-7" /> : <Lock className="size-7" />}
             <span className="absolute -bottom-1 -end-1 flex size-6 items-center justify-center rounded-full bg-card ring-1 ring-line">
               {soon ? <Clock className="size-3.5 text-brand" /> : <Lock className="size-3.5 text-muted" />}

@@ -15,11 +15,13 @@ import {
   Loader2,
   MailOpen,
   MoreVertical,
+  Palette,
   Paperclip,
   Pin,
   Reply,
   Search,
   SendHorizontal,
+  Undo2,
   WifiOff,
   X,
 } from 'lucide-react';
@@ -28,10 +30,11 @@ import { api, ApiRequestError, errorMessage } from '../../api';
 import { useLiveEvents } from '../../events';
 import { useI18n } from '../../i18n';
 import { qk } from '../../queries';
-import { cx, flip, LoadError } from '../../ui';
+import { cx, flip, LoadError, Modal } from '../../ui';
 import { Avatar, Bubble, TypeLabel } from './Bubble';
 import { TypingDots } from './ChatList';
 import { type ChatMessage, type ChatSummary, chatTitle, formatBytes, isChat, livePresence, mediaUrl, type MessagesPage, type PresenceState, textOf } from './model';
+import { CHAT_WALLS, setChatWall, useChatWall, wallStyle } from './walls';
 
 type Pages = InfiniteData<MessagesPage, number | undefined>;
 
@@ -132,6 +135,8 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
   const c = t.chats;
   const queryClient = useQueryClient();
   const title = chatTitle(chat);
+  const wall = useChatWall();
+  const [wallOpen, setWallOpen] = useState(false);
 
   // --- search within the chat ---
   const [searching, setSearching] = useState(false);
@@ -247,6 +252,9 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
     if (event.sessionId !== sessionId) return;
     if ((event.type === 'messages.received' && isChat(chat, event.data.chatJid ?? '')) || (event.type === 'messages.created' && isChat(chat, event.data.chatJid))) {
       void catchUp();
+    } else if (event.type === 'message.changed') {
+      // Edited or deleted for everyone by its sender: reload if it's one of ours here.
+      if (isChat(chat, event.data.chatJid)) void queryClient.invalidateQueries({ queryKey: key });
     } else if (event.type === 'chats.synced') {
       if (event.data.added > 0 && (event.data.chatJid === null || isChat(chat, event.data.chatJid))) void queryClient.invalidateQueries({ queryKey: key });
     } else if (event.type === 'messages.update' || event.type === 'poll.vote') {
@@ -476,6 +484,7 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
                   { icon: Pin, label: chat.pinned ? c.actions.unpin : c.actions.pin, run: () => onFlags({ pinned: !chat.pinned }) },
                   { icon: Archive, label: chat.archived ? c.actions.unarchive : c.actions.archive, run: () => onFlags({ archived: !chat.archived }) },
                   { icon: MailOpen, label: c.actions.markUnread, run: () => onFlags({ unread: true }) },
+                  { icon: Palette, label: c.actions.wallpaper, run: () => setWallOpen(true) },
                 ].map((item) => (
                   <button
                     key={item.label}
@@ -524,7 +533,7 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
       )}
 
       {/* thread */}
-      <div className="chat-wall relative min-h-0 flex-1">
+      <div className="chat-wall relative min-h-0 flex-1" style={wallStyle(wall)}>
         <div ref={scroller} onScroll={onScroll} className="code-scroll flex h-full flex-col-reverse overflow-y-auto overscroll-contain">
           <div className="pt-2 pb-4">
             <div ref={topSentinel} />
@@ -587,7 +596,7 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
           >
             <ArrowDown className="size-5" />
             {unseen > 0 && (
-              <span className="absolute -top-1.5 -end-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1 text-[11px] font-bold text-black">{unseen}</span>
+              <span className="absolute -top-1.5 -end-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1 text-[11px] font-bold text-on-brand">{unseen}</span>
             )}
           </button>
         )}
@@ -688,7 +697,7 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
           <button
             type="submit"
             disabled={!canSend}
-            className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-brand text-black shadow-[0_8px_24px_-10px] shadow-brand/70 transition-[transform,opacity] hover:-translate-y-0.5 active:translate-y-0 disabled:translate-y-0 disabled:opacity-40 disabled:shadow-none"
+            className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-brand text-on-brand shadow-[0_8px_24px_-10px] shadow-brand/70 transition-[transform,opacity] hover:-translate-y-0.5 active:translate-y-0 disabled:translate-y-0 disabled:opacity-40 disabled:shadow-none"
             aria-label={c.composer.send}
           >
             {send.isPending ? <Loader2 className="size-5 animate-spin" /> : <SendHorizontal className={cx('size-5', flip)} />}
@@ -697,6 +706,40 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
       </form>
 
       {lightbox !== null && lightbox >= 0 && <Lightbox items={images} index={lightbox} onIndex={setLightbox} onClose={() => setLightbox(null)} />}
+
+      {wallOpen && (
+        <Modal title={c.wall.title} description={c.wall.text} onClose={() => setWallOpen(false)}>
+          <div className="grid grid-cols-5 gap-2">
+            <button
+              type="button"
+              onClick={() => setChatWall(null)}
+              title={c.wall.default}
+              aria-pressed={wall === null}
+              className={cx(
+                'wall-swatch flex aspect-square items-center justify-center rounded-lg text-muted outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-ring',
+                wall === null ? 'ring-2 ring-brand' : 'ring-1 ring-line hover:ring-line-strong',
+              )}
+              style={{ background: 'var(--chat-wall)' }}
+            >
+              <Undo2 className="size-4" />
+            </button>
+            {CHAT_WALLS.map((hex) => (
+              <button
+                key={hex}
+                type="button"
+                onClick={() => setChatWall(hex)}
+                title={hex}
+                aria-pressed={wall === hex}
+                className={cx(
+                  'wall-swatch aspect-square rounded-lg outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-ring',
+                  wall === hex ? 'ring-2 ring-brand' : 'ring-1 ring-line hover:ring-line-strong',
+                )}
+                style={{ background: hex }}
+              />
+            ))}
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

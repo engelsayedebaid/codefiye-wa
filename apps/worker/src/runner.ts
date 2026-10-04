@@ -14,6 +14,10 @@ import {
   pgAuthStore,
   type QueuedMessage,
   recordOptOut,
+  applyMessageEdit,
+  applyMessageRevoke,
+  dropStoredEnvelope,
+  loadMessageRaw,
   recordContactNames,
   recordLidMappings,
   recordPollVote,
@@ -33,6 +37,7 @@ import {
   type LidPair,
   type MediaFetcher,
   ProviderError,
+  readStoredSecretEdit,
   type ProviderEvents,
   useEncryptedAuthState,
 } from '@wa/provider';
@@ -246,12 +251,15 @@ export class SessionRunner {
         // Pairs Baileys learnt before (or while we weren't recording them): once per start.
         this.lidsBackfilled = true;
         this.track(auth.lidMappings().then((pairs) => this.learnLids(pairs)));
+        // Encrypted edits stored as messages before edits were understood: applied, then removed.
+        this.track(this.repairEditEnvelopes(auth));
       }
       const provider = new BaileysProvider({
         sessionId: this.sessionId,
         auth,
         fetchMedia: this.ctx.fetchMedia,
         loadMessage: (waMessageId) => loadOutboundRaw(this.ctx.sql, this.sessionId, waMessageId),
+        loadOriginal: (waMessageId) => loadMessageRaw(this.ctx.sql, this.sessionId, waMessageId),
         logger: this.ctx.baileysLogger,
       });
       this.provider = provider;
@@ -266,6 +274,8 @@ export class SessionRunner {
       provider.on('chatRead', ({ chatJid }) => this.track(this.onChatRead(chatJid)));
       provider.on('history', (h) => this.track(this.onHistory(h)));
       provider.on('contacts', (c) => this.track(this.onContacts(c)));
+      provider.on('edit', (e) => this.track(this.onEdit(e)));
+      provider.on('revoke', (r) => this.track(this.onRevoke(r)));
       await provider.connect();
     } catch (err) {
       this.log.error({ err }, 'connect failed');
@@ -513,6 +523,55 @@ export class SessionRunner {
       this.log.info({ changed }, 'contact names updated');
       await this.publish({ type: 'chats.synced', data: { chatJid: null, added: 0 } });
     }
+  }
+
+  /** The sender edited a message: the stored one takes the new text (same row), never a new message. */
+  private async onEdit({ waMessageId, text, editedAt }: ProviderEvents['edit']) {
+    const row = await this.persist('apply edit', () => applyMessageEdit(this.ctx.sql, this.sessionId, waMessageId, text, editedAt));
+    if (!row) return this.log.debug({ waMessageId }, 'edit of a message not stored here (or deleted, or older); ignored');
+    await this.publish({ type: 'message.changed', data: { id: row.id, chatJid: row.remote_jid, change: 'edited' } });
+  }
+
+  /** Deleted for everyone: the stored message is marked deleted (same row), never a new message. */
+  private async onRevoke({ waMessageId }: ProviderEvents['revoke']) {
+    const row = await this.persist('apply delete', () => applyMessageRevoke(this.ctx.sql, this.sessionId, waMessageId));
+    if (!row) return this.log.debug({ waMessageId }, 'delete of a message not stored here (or already deleted); ignored');
+    await this.publish({ type: 'message.changed', data: { id: row.id, chatJid: row.remote_jid, change: 'revoked' } });
+  }
+
+  /**
+   * Before edits were understood, an encrypted edit was stored as an "unsupported" message of its own.
+   * Each such envelope is decrypted and applied to the message it edits (when we hold it), then
+   * removed: it was never a message. Runs once per start; finds nothing once repaired.
+   */
+  private async repairEditEnvelopes(auth: EncryptedAuthState) {
+    const { sql } = this.ctx;
+    const rows = await sql<{ id: number; edit_raw: unknown; target: string | null; orig_raw: unknown }[]>`
+      select e.id, e.raw as edit_raw, e.raw->'message'->'secretEncryptedMessage'->'targetMessageKey'->>'id' as target, o.raw as orig_raw
+      from messages e
+      left join messages o on o.session_id = e.session_id and o.wa_message_id = e.raw->'message'->'secretEncryptedMessage'->'targetMessageKey'->>'id'
+      where e.session_id = ${this.sessionId} and e.type = 'unknown' and e.raw->'message' ? 'secretEncryptedMessage'`;
+    if (rows.length === 0) return;
+    const { me } = auth.state.creds;
+    let applied = 0;
+    let kept = 0;
+    for (const row of rows) {
+      const edit = row.orig_raw ? readStoredSecretEdit(row.edit_raw, row.orig_raw, [me?.id, me?.lid]) : null;
+      if (row.orig_raw && !edit) {
+        // We hold the edited message but can't read its edit: keep the envelope (nothing is lost) and say so.
+        kept += 1;
+        this.log.warn({ id: row.id, target: row.target }, 'stored encrypted edit could not be decrypted; left in place');
+        continue;
+      }
+      if (edit && row.target) {
+        await applyMessageEdit(sql, this.sessionId, row.target, edit.text, edit.editedAt);
+        applied += 1;
+      }
+      // Applied, or an edit of a message we never held: either way the envelope was never a message.
+      await dropStoredEnvelope(sql, row.id);
+    }
+    this.log.info({ envelopes: rows.length, applied, kept }, 'repaired encrypted edits stored as messages');
+    await this.publish({ type: 'chats.synced', data: { chatJid: null, added: 0 } });
   }
 
   private async onChatRead(chatJid: string) {

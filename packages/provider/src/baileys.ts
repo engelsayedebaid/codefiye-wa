@@ -10,12 +10,14 @@ import makeWASocket, {
   type CacheStore,
   type Contact,
   decryptPollVote,
+  aesDecryptGCM,
   DisconnectReason,
   downloadMediaMessage,
   extractMessageContent,
   fetchLatestWaWebVersion,
   getContentType,
   getKeyAuthor,
+  hmacSign,
   isJidBroadcast,
   isJidGroup,
   isJidNewsletter,
@@ -29,6 +31,7 @@ import makeWASocket, {
   type WAMessage,
   type WASocket,
   type WAVersion,
+  WAMessageStubType,
 } from '@whiskeysockets/baileys';
 import pino, { type Logger } from 'pino';
 import type { EncryptedAuthState } from './auth-state';
@@ -58,6 +61,8 @@ export type BaileysProviderOptions = {
    * decrypt each vote; the in-memory cache doesn't survive restarts.
    */
   loadMessage?: (waMessageId: string) => Promise<unknown>;
+  /** Loads any stored message (BufferJSON) by id, sent or received: an encrypted edit needs the edited one's secret. */
+  loadOriginal?: (waMessageId: string) => Promise<unknown>;
 };
 
 /**
@@ -254,7 +259,8 @@ function parse(msg: WAMessage) {
   if (isJidStatusBroadcast(chatJid) || isJidNewsletter(chatJid) || isJidBroadcast(chatJid)) return null;
   const content = normalizeMessageContent(msg.message);
   const kind = getContentType(content);
-  if (!content || !kind || IGNORED.has(kind)) return null;
+  // An encrypted edit is a change to another message, never a message of its own (see readSecretEdit).
+  if (!content || !kind || IGNORED.has(kind) || content.secretEncryptedMessage) return null;
   return {
     waMessageId: key.id,
     chatJid,
@@ -377,6 +383,66 @@ export function readContacts(list: Partial<Contact>[]): ProviderEvents['contacts
   return { contacts, pairs };
 }
 
+/**
+ * Decrypts an encrypted edit (`secretEncryptedMessage`, type MESSAGE_EDIT) with the edited message's
+ * `messageSecret`. Baileys 7 leaves these encrypted. The key is WhatsApp's message-secret derivation
+ * (as Baileys' decryptEventResponse: HKDF over the secret, info = message id + creator + modifier +
+ * use case), with use case "Message Edit" and no additional data — verified against real edits.
+ * Only a message's sender can edit it, so creator = modifier = the sender, under whichever address
+ * (LID or phone number) the edit came with: every candidate is tried, AES-GCM rejects the wrong ones.
+ * Returns the edit (the protocol message inside), or null when it can't be read.
+ */
+/**
+ * Stored messages (`messages.raw`) keep protobuf bytes as base64 text and enums by name, which
+ * BufferJSON's reviver leaves as they are; live ones from Baileys have bytes and numbers.
+ */
+const bytes = (value: Uint8Array | string) => (typeof value === 'string' ? Buffer.from(value, 'base64') : Buffer.from(value));
+const MESSAGE_EDIT = proto.Message.SecretEncryptedMessage.SecretEncType.MESSAGE_EDIT;
+const isMessageEdit = (type: unknown) => type === MESSAGE_EDIT || type === proto.Message.SecretEncryptedMessage.SecretEncType[MESSAGE_EDIT];
+
+export function readSecretEdit(sem: proto.Message.ISecretEncryptedMessage, messageSecret: Uint8Array | string, senders: (string | null | undefined)[]): proto.Message.IProtocolMessage | null {
+  const msgId = sem.targetMessageKey?.id;
+  if (!isMessageEdit(sem.secretEncType) || !msgId || !sem.encPayload || !sem.encIv) return null;
+  const key0 = hmacSign(bytes(messageSecret), new Uint8Array(32), 'sha256');
+  for (const sender of jids(senders)) {
+    const info = Buffer.concat([Buffer.from(msgId), Buffer.from(sender), Buffer.from(sender), Buffer.from('Message Edit'), new Uint8Array([1])]);
+    try {
+      const plain = aesDecryptGCM(bytes(sem.encPayload), hmacSign(info, key0, 'sha256'), bytes(sem.encIv), Buffer.alloc(0));
+      const edit = proto.Message.decode(plain).protocolMessage;
+      return edit?.type === proto.Message.ProtocolMessage.Type.MESSAGE_EDIT ? edit : null;
+    } catch {
+      // not this address
+    }
+  }
+  return null;
+}
+
+/**
+ * Reads an encrypted edit that was stored before edits were understood (a `messages.raw` envelope),
+ * with the edited message's stored raw: its new text and time, or null if it can't be decrypted.
+ * `mine`: our own JIDs, for edits we made from the phone.
+ */
+export function readStoredSecretEdit(editRaw: unknown, originalRaw: unknown, mine: (string | null | undefined)[]): { text: string | null; editedAt: number } | null {
+  const edit = JSON.parse(JSON.stringify(editRaw), BufferJSON.reviver) as WAMessage;
+  const original = JSON.parse(JSON.stringify(originalRaw), BufferJSON.reviver) as WAMessage;
+  const sem = normalizeMessageContent(edit.message)?.secretEncryptedMessage;
+  const secret = original.message?.messageContextInfo?.messageSecret;
+  const chat = edit.key?.remoteJid;
+  if (!sem || !secret || !chat) return null;
+  const { key } = edit;
+  const senders = key.fromMe ? mine : isJidGroup(chat) ? [key.participant, key.participantAlt] : [chat, key.remoteJidAlt];
+  const read = readSecretEdit(sem, secret, senders);
+  if (!read) return null;
+  const editedAt = read.timestampMs ? Math.floor(toNumber(read.timestampMs) / 1000) : toNumber(edit.messageTimestamp as number);
+  return { text: editedText(read.editedMessage), editedAt };
+}
+
+/** The text of an edit's new content (a caption for media). */
+const editedText = (edited: proto.IMessage | null | undefined) => {
+  const content = normalizeMessageContent(edited);
+  return content ? textOf(content) : null;
+};
+
 function closeReason(statusCode: number | null, message: string, linked: boolean): CloseReason {
   if (statusCode === DisconnectReason.loggedOut) return 'logged_out';
   if (statusCode === DisconnectReason.restartRequired) return 'restart_required';
@@ -485,6 +551,12 @@ export class BaileysProvider implements Provider {
           this.onPollVote(msg).catch((err) => this.logger.warn({ err }, 'could not read poll vote'));
           continue;
         }
+        // An encrypted edit of an earlier message: applied to that message, never stored as a new one.
+        const sem = normalizeMessageContent(msg.message)?.secretEncryptedMessage;
+        if (sem) {
+          this.onSecretEdit(msg, sem).catch((err) => this.logger.warn({ err, id: msg.key.id }, 'could not apply encrypted edit'));
+          continue;
+        }
         // Messages that arrived while we were offline are delivered on reconnect as 'append', so both
         // types count. The runner drops duplicates by (session, wa_message_id).
         const inbound = toInbound(msg);
@@ -552,6 +624,18 @@ export class BaileysProvider implements Provider {
     sock.ev.on('messages.update', (updates) => {
       if (!current()) return;
       for (const { key, update } of updates) {
+        // Baileys turns plain edits and deletes-for-everyone into updates of the original message
+        // (key.id = the edited/deleted message); they change that message, nothing else.
+        if (key.id && key.remoteJid && update.message?.editedMessage) {
+          const text = editedText(update.message.editedMessage.message);
+          const editedAt = toNumber(update.messageTimestamp as number) || Math.floor(Date.now() / 1000);
+          this.track(this.phoneJid(key.remoteJid).then((chatJid) => this.emit('edit', { waMessageId: key.id!, chatJid, text, editedAt })));
+          continue;
+        }
+        if (key.id && key.remoteJid && update.messageStubType === WAMessageStubType.REVOKE) {
+          this.track(this.phoneJid(key.remoteJid).then((chatJid) => this.emit('revoke', { waMessageId: key.id!, chatJid })));
+          continue;
+        }
         // Another device of ours read (or played) a message we received.
         if (!key.fromMe && key.remoteJid && update.status != null && update.status >= proto.WebMessageInfo.Status.READ) {
           const remote = key.remoteJid;
@@ -581,6 +665,31 @@ export class BaileysProvider implements Provider {
     const stored = JSON.parse(JSON.stringify(raw), BufferJSON.reviver) as WAMessage;
     if (stored.message) this.recent.set(id, stored.message);
     return stored.message ?? undefined;
+  }
+
+  /**
+   * Decrypts an encrypted edit with the edited message's secret (from storage: any stored message
+   * keeps its raw WAMessage) and emits it as an edit. Unreadable edits are logged and dropped: the
+   * original stays as it was, and no placeholder message is created.
+   */
+  private async onSecretEdit(msg: WAMessage, sem: proto.Message.ISecretEncryptedMessage) {
+    const targetId = sem.targetMessageKey?.id;
+    const chat = msg.key.remoteJid;
+    if (!targetId || !chat) return;
+    if (!isMessageEdit(sem.secretEncType)) {
+      return this.logger.info({ id: msg.key.id, type: sem.secretEncType }, 'encrypted change of a kind we do not apply; ignored');
+    }
+    const raw = this.options.loadOriginal ? await this.options.loadOriginal(targetId).catch(() => undefined) : undefined;
+    const original = raw ? (JSON.parse(JSON.stringify(raw), BufferJSON.reviver) as WAMessage) : null;
+    const secret = original?.message?.messageContextInfo?.messageSecret;
+    if (!secret) return this.logger.warn({ id: msg.key.id, targetId }, 'encrypted edit of a message we do not hold with its secret; ignored');
+    const { key } = msg;
+    const { me } = this.options.auth.state.creds;
+    const senders = key.fromMe ? [me?.id, me?.lid] : isJidGroup(chat) ? [key.participant, key.participantAlt] : [chat, key.remoteJidAlt];
+    const edit = readSecretEdit(sem, secret, senders);
+    if (!edit) return this.logger.warn({ id: msg.key.id, targetId }, 'could not decrypt encrypted edit; ignored');
+    const editedAt = edit.timestampMs ? Math.floor(toNumber(edit.timestampMs) / 1000) : toNumber(msg.messageTimestamp as number) || Math.floor(Date.now() / 1000);
+    this.emit('edit', { waMessageId: targetId, chatJid: await this.phoneJid(chat), text: editedText(edit.editedMessage), editedAt });
   }
 
   private async onPollVote(msg: WAMessage) {

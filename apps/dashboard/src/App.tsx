@@ -9,7 +9,7 @@ import { signOut } from './session';
 import { getDict, useI18n } from './i18n';
 import { qk } from './queries';
 import { afterLoginPath, isAppPath, Link, navigate, usePath } from './router';
-import { Button, buttonClass, LangSwitch, Loading, Logo } from './ui';
+import { Button, buttonClass, LangSwitch, Loading, Logo, ThemeSwitch } from './ui';
 
 /**
  * Loads a code chunk, riding out a dropped connection: offline, it waits for the network to come
@@ -71,8 +71,9 @@ function Redirect({ to }: { to: string }) {
 
 function Centered({ children }: { children: ReactNode }) {
   return (
-    <main className="relative flex min-h-svh flex-col items-center justify-center gap-6 p-6 text-center">
+    <main className="page-wash relative flex min-h-svh flex-col items-center justify-center gap-6 p-6 text-center">
       <div className="absolute top-4 end-4 flex items-center gap-1">
+        <ThemeSwitch />
         <LangSwitch />
       </div>
       {children}

@@ -4,7 +4,7 @@ import { sessionHint } from '../api';
 import { BRAND } from '../brand';
 import { useI18n } from '../i18n';
 import { Link } from '../router';
-import { buttonClass, cx, delay, flip, LangSwitch, Logo, Reveal } from '../ui';
+import { buttonClass, cx, delay, flip, LangSwitch, Logo, Reveal, ThemeSwitch } from '../ui';
 import { CodeTabs } from './CodeTabs';
 import { FOOTER_HREFS, LANGUAGES, MESSAGE_TYPE_ICONS, NAV_HREFS, RECIPIENTS, RESOURCES, STEP_ICONS, USE_CASE_ICONS } from './content';
 import { PhoneMock } from './PhoneMock';
@@ -99,6 +99,7 @@ function Header() {
           ))}
         </nav>
         <div className="hidden min-w-[200px] items-center justify-end gap-2 lg:flex">
+          <ThemeSwitch />
           <LangSwitch />
           {signedIn ? (
             <Link href="/dashboard" className={buttonClass('white', 'md')}>
@@ -116,6 +117,7 @@ function Header() {
           )}
         </div>
         <div className="flex items-center gap-1 lg:hidden">
+          <ThemeSwitch />
           <LangSwitch />
           <button className="rounded-md p-2 text-ink-2" onClick={() => setOpen((o) => !o)} aria-label={t.common.menu} aria-expanded={open}>
             {open ? <X className="size-5" /> : <Menu className="size-5" />}
@@ -152,8 +154,8 @@ function Hero() {
   return (
     <section className="relative grid min-h-svh place-content-center overflow-hidden">
       <div aria-hidden className="pointer-events-none absolute inset-0">
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff03_1px,transparent_1px),linear-gradient(to_bottom,#ffffff03_1px,transparent_1px)] bg-[size:30px_30px]" />
-        <div className="absolute inset-0 bg-gradient-to-b from-bg to-navy" />
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff03_1px,transparent_1px),linear-gradient(to_bottom,#ffffff03_1px,transparent_1px)] bg-[size:30px_30px] light:bg-[linear-gradient(to_right,#0000000a_1px,transparent_1px),linear-gradient(to_bottom,#0000000a_1px,transparent_1px)]" />
+        <div className="absolute inset-0 bg-gradient-to-b from-bg to-navy light:from-bg/60" />
         <div className="animate-glow absolute -end-80 -top-80 size-[500px] rounded-full bg-brand/10 blur-[120px]" />
         <div className="absolute start-0 bottom-0 size-[400px] rounded-full bg-[#075e54]/10 blur-[100px]" />
       </div>
@@ -340,7 +342,7 @@ function SendReceive() {
                     <Reveal key={type.title} delay={i * 60}>
                       <div className="lift h-full rounded-xl border border-line bg-ink/[0.02] p-4">
                         <p className="flex items-center gap-2.5 font-semibold">
-                          <span className="flex size-7 items-center justify-center rounded-full bg-brand text-black">
+                          <span className="flex size-7 items-center justify-center rounded-full bg-brand text-on-brand">
                             <Icon className="size-4" />
                           </span>
                           {type.title}
@@ -375,7 +377,7 @@ function SendReceive() {
             </div>
           </div>
           <Reveal>
-            <Link href="/register" className={buttonClass('brand', 'lg', 'mt-10 bg-gradient-to-r from-brand to-teal text-black')}>
+            <Link href="/register" className={buttonClass('brand', 'lg', 'mt-10 bg-gradient-to-r from-brand to-teal text-on-brand')}>
               {s.cta} <Arrow />
             </Link>
           </Reveal>
@@ -533,7 +535,7 @@ function FinalCta() {
                   const Icon = icons[i]!;
                   return (
                     <li key={text} className="flex items-center gap-4 text-lg">
-                      <span className="flex size-8 items-center justify-center rounded-full bg-brand/90 text-black">
+                      <span className="flex size-8 items-center justify-center rounded-full bg-brand/90 text-on-brand">
                         <Icon className="size-4" />
                       </span>
                       {text}

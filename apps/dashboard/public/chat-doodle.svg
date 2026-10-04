@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 780" fill="none" stroke="#000" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+  <!-- chat bubble -->
+  <g transform="translate(40 40)">
+    <path d="M52 52h44a12 12 0 0 1 12 12v20a12 12 0 0 1-12 12H78l-14 14v-14H52a12 12 0 0 1-12-12V64a12 12 0 0 1 12-12z" transform="rotate(-8 76 76)"/>
+  </g>
+  <!-- heart -->
+  <g transform="translate(112 34)">
+    <path d="M224 90c-12-12-26-20-26-33a14 14 0 0 1 26-7 14 14 0 0 1 26 7c0 13-14 21-26 33z" transform="rotate(8 224 68)"/>
+  </g>
+  <!-- smiley -->
+  <g transform="translate(44 98)">
+    <circle cx="88" cy="196" r="24"/>
+    <path d="M79 191h.01M97 191h.01" stroke-width="10"/>
+    <path d="M79 203a12 11 0 0 0 18 0"/>
+  </g>
+  <!-- paper plane -->
+  <g transform="translate(213 100)">
+    <path d="M398 198l54-24-22 54-12-22z"/>
+    <path d="M418 206l16-16"/>
+  </g>
+  <!-- clock -->
+  <g transform="translate(38 163)">
+    <circle cx="76" cy="326" r="24"/>
+    <path d="M76 313v13l9 6"/>
+  </g>
+  <!-- music note -->
+  <g transform="translate(117 157) rotate(-10 233 314)">
+    <path d="M230 326v-32l22-5v30"/>
+    <ellipse cx="224" cy="328" rx="9" ry="7"/>
+    <ellipse cx="246" cy="321" rx="9" ry="7"/>
+  </g>
+  <!-- camera -->
+  <g transform="translate(209 161)">
+    <rect x="392" y="306" width="52" height="38" rx="8"/>
+    <path d="M405 306l4-9h18l4 9"/>
+    <circle cx="418" cy="325" r="11"/>
+  </g>
+  <!-- lock -->
+  <g transform="translate(43 225)">
+    <rect x="68" y="440" width="34" height="28" rx="7"/>
+    <path d="M77 440v-9a8 9 0 0 1 16 0v9"/>
+  </g>
+  <!-- balloon -->
+  <g transform="translate(127 221)">
+    <ellipse cx="254" cy="436" rx="19" ry="23"/>
+    <path d="M254 459l-4 7h8z"/>
+    <path d="M254 466q7 8 1 14"/>
+  </g>
+  <!-- gift -->
+  <g transform="translate(213 226)">
+    <rect x="402" y="438" width="46" height="32" rx="5"/>
+    <path d="M425 438v32M402 449h46"/>
+    <path d="M425 438c-7 0-13-4-11-9 2-5 11-3 11 9zM425 438c7 0 13-4 11-9-2-5-11-3-11 9z"/>
+  </g>
+  <!-- moon -->
+  <g transform="translate(161 208)">
+    <path d="M330 492a15 15 0 0 1-16-20 12 12 0 0 0 16 20z"/>
+  </g>
+  <!-- sprinkle dots -->
+  <circle cx="240" cy="225" r="4"/>
+  <circle cx="480" cy="180" r="4"/>
+  <circle cx="700" cy="585" r="4"/>
+  <circle cx="270" cy="660" r="4"/>
+</svg>

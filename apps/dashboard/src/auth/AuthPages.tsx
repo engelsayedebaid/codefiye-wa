@@ -5,7 +5,7 @@ import { api, ApiRequestError, errorMessage } from '../api';
 import { useI18n } from '../i18n';
 import type { Dict } from '../i18n/ar';
 import { Link } from '../router';
-import { Button, Checkbox, delay, ErrorNote, Field, LangSwitch, LogoMark } from '../ui';
+import { Button, Checkbox, delay, ErrorNote, Field, LangSwitch, LogoMark, ThemeSwitch } from '../ui';
 import { CodeStep, type Ticket } from './Otp';
 
 const linkClass = 'text-ink underline decoration-neutral-500 underline-offset-4 transition-colors hover:decoration-current';
@@ -13,9 +13,10 @@ const linkClass = 'text-ink underline decoration-neutral-500 underline-offset-4 
 function AuthLayout({ title, subtitle, children, footer }: { title: string; subtitle: ReactNode; children: ReactNode; footer: ReactNode }) {
   const { t } = useI18n();
   return (
-    <main className="relative flex min-h-svh flex-col items-center justify-center gap-6 overflow-hidden bg-bg p-6 md:p-10">
+    <main className="page-wash relative flex min-h-svh flex-col items-center justify-center gap-6 overflow-hidden bg-bg p-6 md:p-10">
       <div aria-hidden className="animate-glow pointer-events-none absolute -top-40 left-1/2 size-[480px] -translate-x-1/2 rounded-full bg-brand/[0.07] blur-[110px]" />
       <div className="absolute top-4 end-4 flex items-center gap-1">
+        <ThemeSwitch />
         <LangSwitch />
       </div>
       <div className="relative flex w-full max-w-sm flex-col gap-8">

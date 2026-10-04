@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  Ban,
   Check,
 
   Copy,
@@ -449,7 +450,14 @@ export const Bubble = memo(function Bubble({ m, sender, first, reactions, highli
   const quotedFromMe = m.content.quote ? m.content.quote.fromMe : false;
 
   let body: ReactNode = null;
-  if (m.content.viewOnce) {
+  const revoked = m.content.revoked === true;
+  if (revoked) {
+    body = (
+      <p className="flex items-center gap-1.5 py-0.5 text-sm text-ink/55 italic">
+        <Ban className="size-3.5" /> {out ? c.revokedByYou : c.revoked}
+      </p>
+    );
+  } else if (m.content.viewOnce) {
     body = (
       <p className="flex items-center gap-2 py-1 text-sm text-ink/70 italic">
         <Eye className="size-4" /> {c.media.viewOnce}
@@ -464,11 +472,12 @@ export const Bubble = memo(function Bubble({ m, sender, first, reactions, highli
   else if (m.type === 'poll') body = out ? <PollResults content={m.content as Record<string, unknown>} /> : <InboundPoll m={m} />;
   else if (m.type === 'unknown') body = <p className="py-0.5 text-sm text-ink/60 italic">{c.unsupported}</p>;
 
-  const caption = m.type === 'poll' ? (out ? text : null) : m.type === 'text' || isMedia ? text : null;
+  const caption = revoked ? null : m.type === 'poll' ? (out ? text : null) : m.type === 'text' || isMedia ? text : null;
   const time = (
     <span className={cx('flex shrink-0 items-center gap-1 text-[11px] leading-none', bare ? 'rounded-full bg-black/50 px-1.5 py-1 text-white' : 'text-ink/55')}>
       {m.broadcastId && <Megaphone className="size-3" aria-label={c.campaign} />}
       {m.content.sentFrom === 'phone' && <Smartphone className="size-3" aria-label={c.fromPhone} />}
+      {m.content.edited && !revoked && <span className="italic">{c.edited}</span>}
       <time dateTime={at.toISOString()} title={fmt.dateTime(at)}>
         {fmt.time(at)}
       </time>
