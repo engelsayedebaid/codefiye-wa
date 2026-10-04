@@ -18,12 +18,27 @@ export interface AuthStore {
 
 export type EncryptedAuthState = {
   state: AuthenticationState;
+  /**
+   * Persists the current creds. Saves run one at a time and coalesce (a save asked for while one is
+   * running writes the latest creds once it's done), so an older snapshot can never land after a
+   * newer one; transient failures are retried.
+   */
   saveCreds: () => Promise<void>;
+  /** Resolves once every save asked for so far has been written (or has finally failed). */
+  flush: () => Promise<void>;
   /** Wipes creds and keys, e.g. after the device was logged out. */
   clear: () => Promise<void>;
 };
 
+/**
+ * A store refused a write because this process no longer owns the session (another worker took it
+ * over): raised by @wa/db as an error named `AuthFenceError`. Never retried — the stale writer must stop, not win.
+ */
+export const isFenceError = (err: unknown) => (err as Error | undefined)?.name === 'AuthFenceError';
+
 const CREDS = { type: 'creds', id: 'creds' } as const;
+/** Retry delays for a failed creds write (transient database trouble). */
+const SAVE_RETRY_MS = [500, 1_000, 2_000, 4_000, 8_000];
 
 /**
  * Replacement for Baileys' `useMultiFileAuthState` (README §4.1): creds and signal keys live in
@@ -41,8 +56,43 @@ export async function useEncryptedAuthState(
   const open = (type: string, id: string, blob: Buffer) =>
     JSON.parse(decrypt(key, blob, aad(type, id)).toString(), BufferJSON.reviver);
 
+  // A failed read (database down, wrong key, corrupt row) throws: the caller retries later. It is
+  // never mistaken for "no session", which would mint new creds and lose the link.
   const stored = (await store.get(CREDS.type, [CREDS.id])).get(CREDS.id);
   const creds: AuthenticationCreds = stored ? open(CREDS.type, CREDS.id, stored) : initAuthCreds();
+
+  // One writer for creds: `pending` is the running save, `again` asks for one more after it.
+  let pending: Promise<void> | null = null;
+  let again = false;
+  const writeCreds = async () => {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        // Sealed at write time: always the latest creds, never a stale snapshot.
+        return await store.set([{ ...CREDS, value: seal(CREDS.type, CREDS.id, creds) }]);
+      } catch (err) {
+        const delay = SAVE_RETRY_MS[attempt];
+        if (isFenceError(err) || delay === undefined) throw err;
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+  };
+  const saveCreds = (): Promise<void> => {
+    if (pending) {
+      again = true;
+      return pending;
+    }
+    pending = (async () => {
+      try {
+        do {
+          again = false;
+          await writeCreds();
+        } while (again);
+      } finally {
+        pending = null;
+      }
+    })();
+    return pending;
+  };
 
   return {
     state: {
@@ -69,7 +119,10 @@ export async function useEncryptedAuthState(
         },
       },
     },
-    saveCreds: () => store.set([{ ...CREDS, value: seal(CREDS.type, CREDS.id, creds) }]),
+    saveCreds,
+    flush: async () => {
+      while (pending) await pending.catch(() => {});
+    },
     clear: () => store.clear(),
   };
 }

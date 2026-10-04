@@ -1,5 +1,5 @@
 import type { SessionSettings, Sql } from '@wa/db';
-import { CHANNELS, type ControlMessage } from '@wa/shared';
+import { CHANNELS, type ControlMessage, type SessionStatus } from '@wa/shared';
 import { type RunnerContext, SessionRunner } from './runner';
 
 export type SupervisorOptions = Omit<RunnerContext, 'onStopped'> & {
@@ -12,6 +12,8 @@ export type SupervisorOptions = Omit<RunnerContext, 'onStopped'> & {
 
 /** A worker whose heartbeat is older than this loses its sessions to other workers (README §4.7). */
 const HEARTBEAT_TIMEOUT = '30 seconds';
+/** A runner stalled this long (several ticks, not a passing moment) is restarted. */
+const STALL_RESTART_MS = 15_000;
 
 /**
  * Distributed supervisor: every worker runs one. Each tick it heartbeats, drops sessions it no
@@ -20,6 +22,8 @@ const HEARTBEAT_TIMEOUT = '30 seconds';
  */
 export class Supervisor {
   private readonly runners = new Map<string, SessionRunner>();
+  /** First tick each runner was seen stalled (see SessionRunner.stalled). */
+  private readonly stalledSince = new Map<string, number>();
   private timer: NodeJS.Timeout | null = null;
   private running: Promise<void> | null = null;
   private again = false;
@@ -106,6 +110,11 @@ export class Supervisor {
         if (!row || row.desired_state !== 'running' || row.worker_id !== workerId) {
           logger.info({ sessionId: id }, 'stopping session');
           await runner.stop();
+        } else if (this.stalledFor(runner) > STALL_RESTART_MS) {
+          // Safety net: a runner that ended up neither connected nor retrying is restarted (released
+          // here, claimed again below or on the next tick) instead of leaving the session dead.
+          logger.warn({ sessionId: id }, 'session runner stalled; restarting it');
+          await runner.stop();
         } else {
           runner.settings = row.settings;
         }
@@ -119,7 +128,7 @@ export class Supervisor {
     // 2. Claim sessions that should run but have no live owner.
     const free = capacity - this.runners.size;
     if (free > 0) {
-      const claimed = await sql<{ id: string; workspace_id: string; settings: SessionSettings }[]>`
+      const claimed = await sql<{ id: string; workspace_id: string; settings: SessionSettings; status: SessionStatus }[]>`
         update sessions set worker_id = ${workerId}, updated_at = now()
         where id in (
           select id from sessions
@@ -131,8 +140,8 @@ export class Supervisor {
           limit ${free}
           for update skip locked
         )
-        returning id, workspace_id, settings`;
-      for (const row of claimed) this.launch(row.id, row.workspace_id, row.settings);
+        returning id, workspace_id, settings, status`;
+      for (const row of claimed) this.launch(row.id, row.workspace_id, row.settings, row.status);
     }
 
     // 3. Nudge connected sessions that have due queued messages: a fallback for missed NOTIFYs, and
@@ -146,17 +155,29 @@ export class Supervisor {
     }
   }
 
-  private launch(sessionId: string, workspaceId: string, settings: SessionSettings) {
+  /** How long a runner has been stalled, as seen by consecutive ticks (0 = it is not). */
+  private stalledFor(runner: SessionRunner) {
+    if (!runner.stalled) {
+      this.stalledSince.delete(runner.sessionId);
+      return 0;
+    }
+    const since = this.stalledSince.get(runner.sessionId) ?? Date.now();
+    this.stalledSince.set(runner.sessionId, since);
+    return Date.now() - since;
+  }
+
+  private launch(sessionId: string, workspaceId: string, settings: SessionSettings, status: SessionStatus) {
     const { logger } = this.options;
     logger.info({ sessionId }, 'starting session');
     const runner = new SessionRunner(sessionId, workspaceId, settings, {
       ...this.options,
       onStopped: (id) => {
+        this.stalledSince.delete(id);
         if (this.runners.get(id) === runner) this.runners.delete(id);
       },
     });
     this.runners.set(sessionId, runner);
-    runner.start().catch(async (err) => {
+    runner.start(status).catch(async (err) => {
       logger.error({ err, sessionId }, 'session failed to start');
       await runner.stop();
     });
