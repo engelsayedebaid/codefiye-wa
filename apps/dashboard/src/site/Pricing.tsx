@@ -44,7 +44,25 @@ export function PlanCards({ currentPlanId, action }: { currentPlanId?: string; a
                     <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border border-line-strong">
                       <Check className="size-3 text-ink-2" strokeWidth={3} />
                     </span>
-                    {f}
+                    {plan.id === 'business' && f === t.plans.chatsFeature ? (
+                      <div className="min-w-0">
+                        <span className="flex flex-wrap items-center gap-2">
+                          {f}
+                          <span className="rounded-full border border-brand/40 bg-brand/10 px-2 py-px text-[11px] leading-4 font-semibold text-brand">
+                            {t.plans.newBadge}
+                          </span>
+                        </span>
+                        <ul className="mt-2 space-y-1.5 border-s border-line ps-3">
+                          {t.plans.chatsDetails.map((d) => (
+                            <li key={d} className="text-[13px] leading-snug text-muted">
+                              {d}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : (
+                      f
+                    )}
                   </li>
                 ))}
               </ul>

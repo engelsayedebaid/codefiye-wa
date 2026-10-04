@@ -49,6 +49,9 @@ export const en: Dict = {
     choose: 'Choose plan',
     startNow: 'Get started now',
     perSession: 'per session',
+    chatsFeature: 'Live chats inbox',
+    newBadge: 'New',
+    chatsDetails: ['Reply with text, images, files and voice', 'Instant notifications', 'Archive and pin'],
     blurbs: {
       basic: 'Perfect for individuals or small teams needing one WhatsApp number to reach customers.',
       pro: 'For growing businesses managing up to 3 WhatsApp numbers to reach more customers.',
