@@ -168,6 +168,38 @@ body {
 .animate-scale-in {
   animation: scale-in 0.2s cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
+/* Incoming-message notification: slides in from the inline end, its bar drains until it closes. */
+@keyframes note-in {
+  from {
+    opacity: 0;
+    transform: translateX(var(--note-from, 24px)) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes note-drain {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+.animate-note-in {
+  animation: note-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+[dir='rtl'] .animate-note-in {
+  --note-from: -24px;
+}
+.note-drain {
+  animation: note-drain var(--note-ms, 7000ms) linear forwards;
+}
+.note-stack:hover .note-drain,
+.note-stack:focus-within .note-drain {
+  animation-play-state: paused;
+}
 .animate-float {
   animation: float 6s ease-in-out infinite;
 }
@@ -390,6 +422,7 @@ body {
   .animate-fade-up,
   .animate-fade-in,
   .animate-scale-in,
+  .animate-note-in,
   .chat-bubble {
     animation-duration: 1ms;
     animation-delay: 0s;

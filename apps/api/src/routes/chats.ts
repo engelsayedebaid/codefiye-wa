@@ -12,6 +12,7 @@ import {
   type MessageType,
   ok,
   type OutboundContent,
+  planHasFeature,
   successSchema,
   UPLOAD_MAX_BYTES,
   UPLOAD_SCHEME,
@@ -20,12 +21,12 @@ import {
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { Deps } from '../deps';
-import { ownedSession, requireAdmin } from '../lib/auth';
-import { ApiError, conflict, notFound, unprocessable } from '../lib/errors';
+import { ownedSession, requirePat } from '../lib/auth';
+import { ApiError, conflict, notFound, paymentRequired, unprocessable } from '../lib/errors';
 import { assertActive } from '../lib/limits';
 import { type CachedMedia, MediaCache, sendMedia } from '../lib/media-cache';
 
-// The admin inbox (dashboard `/chats`): conversations of the admin's own numbers. Hidden from /docs.
+// The inbox (dashboard `/chats`): conversations of the workspace's own numbers, for admins and plans with `chats`. Hidden from /docs.
 const schemaBase = { tags: ['Admin'], hide: true };
 const SENDABLE = new Set(['connected', 'connecting']);
 const MEDIA_TYPES = ['image', 'video', 'audio', 'document', 'sticker'];
@@ -190,7 +191,13 @@ export function chatRoutes({ sql, workers }: Deps): FastifyPluginAsyncZod {
   const jidsOf = (chat: { jid: string; alt_jid: string | null } | null, jid: string) => (chat ? [chat.jid, ...(chat.alt_jid ? [chat.alt_jid] : [])] : [jid]);
 
   return async (app) => {
-    app.addHook('onRequest', async (req) => requireAdmin(req));
+    // Admins always get in; customers need a plan that bundles `chats` (Business and up).
+    app.addHook('onRequest', async (req) => {
+      requirePat(req);
+      if (!req.auth.isAdmin && !planHasFeature(req.auth.planId, 'chats')) {
+        throw paymentRequired('Chats are not included in your plan. Upgrade to Business to unlock them.', 'feature_not_in_plan');
+      }
+    });
 
     // Uploads are raw bytes (no multipart): the file name and type travel in headers.
     app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer', bodyLimit: UPLOAD_MAX_BYTES }, (_req, body, done) => done(null, body));
@@ -575,9 +582,11 @@ export function chatRoutes({ sql, workers }: Deps): FastifyPluginAsyncZod {
       {
         schema: {
           ...schemaBase,
-          summary: "Follow a contact's presence (online, typing…) while the chat is open",
+          summary: "Follow contacts' presence (online, typing…): the open chat and the top of the list",
           params: sessionParams,
-          body: z.object({ jid: jidSchema }),
+          body: z
+            .object({ jid: jidSchema.optional(), jids: z.array(jidSchema).max(40).optional() })
+            .refine((b) => b.jid || b.jids?.length, { message: 'jid or jids is required', path: ['jid'] }),
           response: { 200: successSchema(z.object({ live: z.boolean() })) },
         },
       },
@@ -585,7 +594,8 @@ export function chatRoutes({ sql, workers }: Deps): FastifyPluginAsyncZod {
         const session = await ownedSession(sql, req, req.params.sessionId);
         if (session.status !== 'connected') return ok({ live: false });
         try {
-          await workers.call(session.id, 'watch-chat', { jid: req.body.jid }, { timeoutMs: 15_000 });
+          const jids = [...new Set([...(req.body.jid ? [req.body.jid] : []), ...(req.body.jids ?? [])])];
+          await workers.call(session.id, 'watch-chat', { jids }, { timeoutMs: 20_000 });
           return ok({ live: true });
         } catch (err) {
           req.log.info({ err: (err as Error).message }, 'presence watch failed');

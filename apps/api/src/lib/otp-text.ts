@@ -7,7 +7,7 @@ const EMPTY: OtpTexts = { ar: null, en: null };
 
 export async function getOtpTexts(sql: Sql): Promise<OtpTexts> {
   const [row] = await sql<{ value: Partial<OtpTexts> }[]>`select value from settings where key = 'otp_text'`;
-  return { ...EMPTY, ...(row?.value ?? {}) };
+  return { ...EMPTY, ...row?.value };
 }
 
 export async function setOtpTexts(sql: Sql, texts: OtpTexts): Promise<OtpTexts> {

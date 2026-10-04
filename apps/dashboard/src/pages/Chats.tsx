@@ -1,15 +1,18 @@
 import type { ChatFilter } from '@wa/shared/chats';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { planHasFeature } from '@wa/shared/plans';
+import { type InfiniteData, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   ArrowLeft,
   BarChart3,
+  Bell,
+  BellOff,
   Check,
   CheckCheck,
   ChevronsUpDown,
   CircleCheck,
   CircleX,
-  Keyboard,
+  Lock,
   MessageSquarePlus,
   MessagesSquare,
   Phone,
@@ -17,27 +20,26 @@ import {
   Plus,
   RefreshCw,
   Search,
-  ShieldCheck,
-  Smartphone,
   WifiOff,
-  Zap,
 } from 'lucide-react';
 import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, errorMessage } from '../api';
 import { useAccount } from '../app/account';
-import { ChatList } from '../app/chats/ChatList';
+import { ChatList, TypingDots } from '../app/chats/ChatList';
 import { ContactPanel } from '../app/chats/ContactPanel';
 import { Conversation } from '../app/chats/Conversation';
 import { Insights } from '../app/chats/Insights';
-import { type ChatInfo, type ChatNumber, type ChatSummary, gradientFor, isChat, type PresenceState, type Profile } from '../app/chats/model';
-import { useLiveEvents } from '../events';
+import { type InboxNote, type NoteMessage, NoteStack, noteText, playPing, pushNote, unlockAudio } from '../app/chats/Notifier';
+import { type ChatInfo, type ChatNumber, type ChatPage, type ChatSummary, gradientFor, initials, isChat, type PresenceState, type Profile } from '../app/chats/model';
+import { useBackgroundLiveEvents, useLiveEvents } from '../events';
 import { useI18n } from '../i18n';
 import { debouncedInvalidate, qk } from '../queries';
-import { Link, navigate } from '../router';
-import { Button, buttonClass, cx, EmptyState, ErrorNote, flip, LoadError, Loading, Modal, SESSION_STATUS, TONES } from '../ui';
+import { Link } from '../router';
+import { Button, buttonClass, cx, delay, EmptyState, ErrorNote, flip, LoadError, Loading, Modal, PageHeader, SESSION_STATUS, TONES } from '../ui';
 
 const SESSION_KEY = 'wa.chats.session';
 const RECEIPTS_KEY = 'wa.chats.receipts';
+const NOTIFY_KEY = 'wa.chats.notify';
 const WATCH_EVERY_MS = 60_000;
 
 const read = (key: string) => {
@@ -95,11 +97,41 @@ function NumberSwitcher({ numbers, value, onChange }: { numbers: ChatNumber[]; v
       </span>
     );
   };
-  const mark = (n: ChatNumber, size = 'size-10') => (
-    <span className={cx('flex shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white shadow-sm', size, gradientFor(n.id))}>
-      <Smartphone className="size-[45%]" />
-    </span>
-  );
+  // Each number's own WhatsApp profile picture (only a connected number can look it up).
+  const selfJid = (n: ChatNumber) => (n.phone ? `${n.phone.replace(/\D/g, '')}@s.whatsapp.net` : null);
+  const pictureQueries = useQueries({
+    queries: numbers.map((n) => {
+      const jid = selfJid(n);
+      return {
+        queryKey: qk.chats.pictures(n.id, jid ?? ''),
+        queryFn: ({ signal }: { signal: AbortSignal }) => api<Record<string, string | null>>(`/api/chats/${n.id}/pictures?${new URLSearchParams({ jids: jid! })}`, { signal, timeoutMs: 35_000 }),
+        enabled: Boolean(jid) && n.status === 'connected',
+        staleTime: 3 * 3_600_000,
+        gcTime: 6 * 3_600_000,
+        retry: false,
+      };
+    }),
+  });
+  const pictureOf = (n: ChatNumber) => {
+    const jid = selfJid(n);
+    return jid ? (pictureQueries[numbers.indexOf(n)]?.data?.[jid] ?? null) : null;
+  };
+  const mark = (n: ChatNumber, size = 'size-10') => {
+    const picture = pictureOf(n);
+    const online = n.status === 'connected';
+    return (
+      <span className={cx('relative inline-flex shrink-0', size)}>
+        {picture ? (
+          <img src={picture} alt="" referrerPolicy="no-referrer" className="size-full rounded-full object-cover ring-1 ring-white/10" />
+        ) : (
+          <span className={cx('flex size-full items-center justify-center rounded-full bg-gradient-to-br text-sm font-semibold text-white ring-1 ring-white/10', gradientFor(n.id))}>
+            {initials(n.name) || n.name.slice(0, 1)}
+          </span>
+        )}
+        <span className={cx('absolute -end-0.5 -bottom-0.5 size-3 rounded-full ring-2 ring-card', online ? 'bg-green-500' : TONES[SESSION_STATUS[n.status].tone].dot)} />
+      </span>
+    );
+  };
 
   return (
     <div ref={ref} className="relative">
@@ -262,21 +294,56 @@ function IconAction({ label, active, onClick, disabled, children }: { label: str
   );
 }
 
+/** Shown instead of the inbox on plans without `chats`: what it does, and the way to upgrade. */
+function ChatsGate() {
+  const { t } = useI18n();
+  const g = t.chats.gate;
+  return (
+    <div className="mx-auto w-full max-w-2xl space-y-6">
+      <PageHeader title={t.chats.title} description={t.chats.description} />
+      <section className="animate-fade-up overflow-hidden rounded-xl border border-line bg-card shadow-sm">
+        <div className="relative flex flex-col items-center gap-3 px-6 py-10 text-center">
+          <span aria-hidden className="absolute -top-16 size-48 rounded-full bg-brand/15 blur-3xl" />
+          <span className="relative flex size-14 items-center justify-center rounded-2xl bg-raised text-muted shadow-lg">
+            <MessagesSquare className="size-7" />
+            <span className="absolute -bottom-1 -end-1 flex size-6 items-center justify-center rounded-full bg-card ring-1 ring-line">
+              <Lock className="size-3.5 text-muted" />
+            </span>
+          </span>
+          <h2 className="relative text-lg font-semibold">{g.title}</h2>
+          <p className="relative max-w-md text-sm text-muted">{g.text}</p>
+          <Link href="/subscription" className="relative mt-1">
+            <Button>{g.upgrade}</Button>
+          </Link>
+        </div>
+        <div className="border-t border-line bg-raised/30 px-6 py-5 text-start">
+          <p className="mb-3 text-xs font-medium text-muted">{g.featuresTitle}</p>
+          <ul className="grid gap-2.5 sm:grid-cols-2">
+            {g.features.map((f) => (
+              <li key={f} className="flex items-start gap-2 text-sm text-ink-2">
+                <Check className="mt-0.5 size-4 shrink-0 text-brand" />
+                {f}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export function ChatsPage() {
   const { t } = useI18n();
   const c = t.chats;
   const { account } = useAccount();
   const queryClient = useQueryClient();
-  const isAdmin = account?.user?.isAdmin === true;
-
-  useEffect(() => {
-    if (account && !isAdmin) navigate('/dashboard', { replace: true });
-  }, [account, isAdmin]);
+  // Admins always; customers on plans that bundle `chats` (Business and up). Others get the upgrade gate.
+  const allowed = account?.user?.isAdmin === true || (account ? planHasFeature(account.plan.id, 'chats') : false);
 
   const numbers = useQuery({
     queryKey: qk.chats.numbers,
     queryFn: ({ signal }) => api<ChatNumber[]>('/api/chats/numbers', { signal }),
-    enabled: isAdmin,
+    enabled: allowed,
   });
 
   // --- which number, which chat ---
@@ -403,6 +470,97 @@ export function ChatsPage() {
     }
   };
 
+  // --- notifications for incoming messages: a card + chime in the page, the browser's own when the tab is hidden ---
+  const [notifyOn, setNotifyOn] = useState(() => read(NOTIFY_KEY) !== '0');
+  const [notes, setNotes] = useState<InboxNote[]>([]);
+  useBackgroundLiveEvents(notifyOn);
+  const [permission, setPermission] = useState<NotificationPermission>(() => ('Notification' in window ? Notification.permission : 'denied'));
+  const askPermission = async () => {
+    if (!('Notification' in window)) return 'denied' as const;
+    const result = Notification.permission === 'default' ? await Notification.requestPermission() : Notification.permission;
+    setPermission(result);
+    return result;
+  };
+  // Any click on the page unlocks audio, so the chime can play later from a background tab.
+  useEffect(() => {
+    const unlock = () => unlockAudio();
+    document.addEventListener('pointerdown', unlock, { once: true });
+    document.addEventListener('keydown', unlock, { once: true });
+    return () => {
+      document.removeEventListener('pointerdown', unlock);
+      document.removeEventListener('keydown', unlock);
+    };
+  }, []);
+  const noteSeq = useRef(0);
+  const dismissNote = useCallback((key: number) => setNotes((ns) => ns.filter((n) => n.key !== key)), []);
+  const openNote = (note: Pick<InboxNote, 'key' | 'sessionId' | 'jid'>) => {
+    dismissNote(note.key);
+    if (note.sessionId !== activeId) switchNumber(note.sessionId);
+    setView('chats');
+    setPendingJid(note.jid);
+  };
+  const toggleNotify = async () => {
+    const next = !notifyOn;
+    setNotifyOn(next);
+    write(NOTIFY_KEY, next ? '1' : '0');
+    if (!next) return showToast(c.notify.disabled);
+    playPing(); // also unlocks audio, which browsers allow only after a click
+    const permission = await askPermission();
+    showToast(permission === 'denied' ? c.notify.blocked : c.notify.enabled, permission === 'denied' ? 'error' : 'ok');
+    // A sample right away: if it doesn't appear, the OS (Windows notification settings / Focus) is hiding them.
+    if (permission === 'granted') new Notification(c.notify.testTitle, { body: c.notify.testBody, icon: '/favicon.svg', tag: 'wa-test' });
+  };
+  /** Looks the chat up in what the list already loaded (name, picture) — no request. */
+  const cachedChat = (sid: string, jid: string) => {
+    for (const [, data] of queryClient.getQueriesData<InfiniteData<ChatPage>>({ queryKey: qk.chats.lists(sid) }))
+      for (const page of data?.pages ?? []) {
+        const hit = page.chats.find((ch) => ch.jid === jid || ch.altJid === jid);
+        if (hit) return hit;
+      }
+    return null;
+  };
+  const cachedPicture = (sid: string, jid: string) => {
+    for (const [, data] of queryClient.getQueriesData<Record<string, string | null>>({ queryKey: ['chats', sid, 'pictures'] })) if (data?.[jid]) return data[jid];
+    return null;
+  };
+  const announce = (event: Extract<Parameters<Parameters<typeof useLiveEvents>[0]>[0], { type: 'messages.received' }>) => {
+    const { chatJid, from, type, text, pushName } = event.data;
+    const jid = chatJid ?? from;
+    if (!notifyOn || type === 'reaction') return;
+    const visible = document.visibilityState === 'visible';
+    // Already looking at it: just a quiet chime, no card.
+    if (visible && event.sessionId === activeId && view === 'chats' && isChat(selected, jid)) return playPing(0.4);
+    const chat = cachedChat(event.sessionId, jid);
+    const isGroup = jid.endsWith('@g.us');
+    const phone = (j: string) => (j.endsWith('@s.whatsapp.net') ? `+${j.split('@')[0]}` : null);
+    const title = chat?.name || (isGroup ? null : pushName) || chat?.phone || phone(jid) || jid.split('@')[0]!;
+    const seq = ++noteSeq.current;
+    const message: NoteMessage = { id: event.data.id, sender: isGroup ? pushName || phone(from) : null, text, type };
+    const note = {
+      key: seq,
+      rev: seq,
+      sessionId: event.sessionId,
+      jid: chat?.jid ?? jid,
+      title,
+      picture: cachedPicture(event.sessionId, chat?.jid ?? jid),
+      isGroup,
+      number: list.length > 1 ? (list.find((n) => n.id === event.sessionId)?.name ?? null) : null,
+    };
+    if (!visible) {
+      if ('Notification' in window && Notification.permission === 'granted') {
+        const n = new Notification(note.number ? `${title} · ${note.number}` : title, { body: noteText(t, message), icon: note.picture ?? '/favicon.svg', tag: `${note.sessionId}:${note.jid}` });
+        n.onclick = () => {
+          window.focus();
+          openNote(note);
+          n.close();
+        };
+      }
+    }
+    // The chime plays in a background tab too (audio unlocked by an earlier click); the card waits there for the return.
+    playPing();
+    setNotes((ns) => pushNote(ns, note, message));
+  };
+
   // --- live ---
   const invalidate = useMemo(() => debouncedInvalidate(queryClient, 700), [queryClient]);
   useLiveEvents((event) => {
@@ -410,6 +568,7 @@ export function ChatsPage() {
       invalidate(qk.chats.numbers);
       return;
     }
+    if (event.type === 'messages.received') announce(event);
     if (event.sessionId !== activeId) {
       if (event.type === 'messages.received') invalidate(qk.chats.numbers);
       return;
@@ -467,9 +626,15 @@ export function ChatsPage() {
 
   // While a chat is open and visible, follow the contact's presence (the worker keeps us online meanwhile).
   const watchJid = selected?.jid ?? null;
+  // Presence (online, typing…) of the open chat and the top of the list, renewed every minute while the page shows.
+  const [topJids, setTopJids] = useState<string[]>([]);
+  const watched = useRef<string[]>([]);
+  watched.current = [...new Set([...(watchJid ? [watchJid] : []), ...topJids])].slice(0, 40);
+  const hasWatched = watched.current.length > 0;
   useEffect(() => {
-    if (!activeId || !watchJid || !connected) return;
-    const watch = () => document.visibilityState === 'visible' && void api(`/api/chats/${activeId}/watch`, { method: 'POST', body: { jid: watchJid } }).catch(() => {});
+    if (!activeId || !hasWatched || !connected) return;
+    const watch = () =>
+      document.visibilityState === 'visible' && watched.current.length > 0 && void api(`/api/chats/${activeId}/watch`, { method: 'POST', body: { jids: watched.current } }).catch(() => {});
     watch();
     const timer = setInterval(watch, WATCH_EVERY_MS);
     document.addEventListener('visibilitychange', watch);
@@ -477,7 +642,7 @@ export function ChatsPage() {
       clearInterval(timer);
       document.removeEventListener('visibilitychange', watch);
     };
-  }, [activeId, watchJid, connected]);
+  }, [activeId, watchJid, hasWatched, connected]);
 
   const profile = useQuery({
     queryKey: qk.chats.profile(activeId ?? '', watchJid ?? ''),
@@ -487,17 +652,28 @@ export function ChatsPage() {
     retry: false,
   });
 
+  // The chat and number travel with the call: onMutate may close the chat before the request goes out.
+  type FlagsBody = { pinned?: boolean; archived?: boolean; unread?: boolean };
   const flags = useMutation({
-    mutationFn: (body: { pinned?: boolean; archived?: boolean; unread?: boolean }) => api(`/api/chats/${activeId}/flags`, { method: 'POST', body: { jid: selected!.jid, ...body } }),
-    onMutate: (body) => {
+    mutationFn: ({ sessionId, chat, body }: { sessionId: string; chat: ChatSummary; body: FlagsBody }) =>
+      api(`/api/chats/${sessionId}/flags`, { method: 'POST', body: { jid: chat.jid, ...body } }),
+    onMutate: ({ body }) => {
       setSelected((s) => s && { ...s, ...(body.pinned !== undefined ? { pinned: body.pinned } : {}), ...(body.archived !== undefined ? { archived: body.archived } : {}) });
       if (body.unread || body.archived) setSelected(null);
     },
-    onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: qk.chats.lists(activeId!) });
+    onSuccess: (_, { body }) => {
+      if (body.archived !== undefined) showToast(body.archived ? c.actions.archived : c.actions.unarchived);
+    },
+    onError: (err, { chat }) => {
+      setSelected((s) => s ?? chat);
+      showToast(`${c.actions.flagsFailed}: ${errorMessage(err)}`, 'error');
+    },
+    onSettled: (_, __, { sessionId }) => {
+      void queryClient.invalidateQueries({ queryKey: qk.chats.lists(sessionId) });
       void queryClient.invalidateQueries({ queryKey: qk.chats.numbers });
     },
   });
+  const setFlags = (body: FlagsBody) => activeId && selected && flags.mutate({ sessionId: activeId, chat: selected, body });
 
   // Unread chats in the tab title, so a background tab still says when someone wrote.
   const unreadTotal = list.reduce((sum, n) => sum + n.unreadChats, 0);
@@ -527,7 +703,8 @@ export function ChatsPage() {
     return () => window.removeEventListener('keydown', onKey);
   }, [infoOpen]);
 
-  if (!isAdmin) return null;
+  if (!account) return <Loading className="py-24" />;
+  if (!allowed) return <ChatsGate />;
   if (numbers.isError && !numbers.data) return <LoadError error={numbers.error} onRetry={() => void numbers.refetch()} retrying={numbers.isFetching} />;
   if (!numbers.data) return <Loading className="py-24" />;
   if (!current) {
@@ -577,9 +754,25 @@ export function ChatsPage() {
               >
                 <CheckCheck className="size-[18px]" />
               </IconAction>
+              <IconAction label={notifyOn ? c.notify.on : c.notify.off} active={notifyOn} onClick={() => void toggleNotify()}>
+                {notifyOn ? <Bell className="size-[18px]" /> : <BellOff className="size-[18px]" />}
+              </IconAction>
             </div>
           </div>
           <NumberSwitcher numbers={list} value={current.id} onChange={switchNumber} />
+          {notifyOn && permission === 'default' && (
+            <div className="animate-fade-in flex items-center gap-2.5 rounded-xl border border-brand/20 bg-brand/[0.07] py-2 ps-3 pe-2 text-xs">
+              <Bell className="size-4 shrink-0 text-brand" />
+              <span className="min-w-0 flex-1 leading-snug text-ink-2">{c.notify.browserTitle}</span>
+              <button
+                type="button"
+                onClick={() => void askPermission().then((r) => r === 'denied' && showToast(c.notify.blocked, 'error'))}
+                className="shrink-0 rounded-lg bg-brand px-2.5 py-1 font-semibold text-black transition-opacity hover:opacity-90"
+              >
+                {c.notify.browserAllow}
+              </button>
+            </div>
+          )}
           {!connected && (
             <Link
               href={`/sessions/${current.id}`}
@@ -602,6 +795,7 @@ export function ChatsPage() {
             presence={presence}
             onFilter={setFilter}
             onQuery={setQuery}
+            onTopChats={setTopJids}
             onSelect={(chat) => {
               setSelected(chat);
               setPendingJid(null);
@@ -644,7 +838,7 @@ export function ChatsPage() {
               infoOpen={infoOpen}
               onBack={() => setSelected(null)}
               onToggleInfo={() => setInfoOpen((o) => !o)}
-              onFlags={(body) => flags.mutate(body)}
+              onFlags={setFlags}
               onOpenPhone={openPhone}
               onSync={() => void startSync(selected.jid)}
               syncing={sync?.scope === selected.jid}
@@ -653,32 +847,58 @@ export function ChatsPage() {
         ) : (
           <div className="chat-wall relative flex flex-1 flex-col items-center justify-center overflow-hidden p-8 text-center">
             <div className="pointer-events-none absolute top-1/2 left-1/2 size-[28rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand/10 blur-3xl" />
-            <div className="animate-fade-up relative flex max-w-md flex-col items-center">
-              <div className="relative">
-                <span className="animate-float flex size-24 items-center justify-center rounded-[2rem] bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-[0_24px_60px_-20px] shadow-emerald-500/60">
-                  <MessagesSquare className="size-11" />
-                </span>
-                <span className="absolute -end-3 -bottom-2 flex size-10 items-center justify-center rounded-2xl border border-line bg-card text-brand shadow-lg">
-                  <ShieldCheck className="size-5" />
-                </span>
+            <div className="relative flex max-w-md flex-col items-center">
+              {/* A tiny live conversation: incoming, outgoing (read), and someone typing. */}
+              <div aria-hidden className="animate-float w-72 rounded-3xl border border-line bg-card/80 p-4 shadow-[0_30px_80px_-30px] shadow-black/80 backdrop-blur">
+                <div className="flex items-center gap-2.5 border-b border-line/70 pb-3">
+                  <span className="relative size-8 rounded-full bg-gradient-to-br from-sky-500 to-indigo-600">
+                    <span className="absolute -end-0.5 -bottom-0.5 size-2.5 rounded-full bg-green-500 ring-2 ring-card" />
+                  </span>
+                  <span className="space-y-1.5">
+                    <span className="block h-2 w-20 rounded-full bg-ink/25" />
+                    <span className="block h-1.5 w-12 rounded-full bg-brand/50" />
+                  </span>
+                </div>
+                <div className="space-y-2 pt-3">
+                  <div className="animate-fade-up flex" style={delay(150)}>
+                    <span className="space-y-1.5 rounded-2xl rounded-ss-md bg-raised px-3 py-2.5">
+                      <span className="block h-1.5 w-32 rounded-full bg-ink/20" />
+                      <span className="block h-1.5 w-20 rounded-full bg-ink/20" />
+                    </span>
+                  </div>
+                  <div className="animate-fade-up flex justify-end" style={delay(450)}>
+                    <span className="flex items-end gap-1.5 rounded-2xl rounded-se-md border border-brand/20 bg-brand/15 px-3 py-2.5">
+                      <span className="space-y-1.5">
+                        <span className="block h-1.5 w-24 rounded-full bg-brand/40" />
+                        <span className="block h-1.5 w-14 rounded-full bg-brand/40" />
+                      </span>
+                      <CheckCheck className="-mb-0.5 size-3.5 text-sky-400" />
+                    </span>
+                  </div>
+                  <div className="animate-fade-up flex" style={delay(750)}>
+                    <span className="rounded-2xl rounded-ss-md bg-raised px-3.5 py-3 text-muted">
+                      <TypingDots />
+                    </span>
+                  </div>
+                </div>
               </div>
-              <h2 className="mt-8 text-2xl font-bold tracking-tight">{c.pickTitle}</h2>
-              <p className="mt-2 text-sm leading-relaxed text-muted">{c.pickText}</p>
-              <div className="mt-6 grid w-full grid-cols-3 gap-2 text-xs">
+              <h2 className="animate-fade-up mt-9 text-2xl font-bold tracking-tight" style={delay(200)}>
+                {c.pickTitle}
+              </h2>
+              <p className="animate-fade-up mt-2 text-sm leading-relaxed text-muted" style={delay(300)}>
+                {c.pickText}
+              </p>
+              <div className="animate-fade-up mt-6 flex flex-wrap items-center justify-center gap-2 text-xs text-muted" style={delay(400)}>
                 {[
-                  { icon: Zap, label: c.presence.online },
-                  { icon: CheckCheck, label: t.status.message.read },
-                  { icon: RefreshCw, label: c.tabs.chats },
-                ].map((f) => (
-                  <span key={f.label} className="flex flex-col items-center gap-1.5 rounded-xl border border-line bg-card/80 px-2 py-3 text-muted backdrop-blur">
-                    <f.icon className="size-4 text-brand" />
-                    {f.label}
+                  { key: '/', label: c.shortcuts.search },
+                  { key: 'Esc', label: c.shortcuts.close },
+                ].map((s) => (
+                  <span key={s.key} className="inline-flex items-center gap-2 rounded-full border border-line bg-card/80 py-1 ps-1 pe-3 backdrop-blur">
+                    <kbd className="ltr min-w-6 rounded-full border border-line-strong bg-raised px-1.5 py-0.5 text-center font-mono text-[11px] text-ink">{s.key}</kbd>
+                    {s.label}
                   </span>
                 ))}
               </div>
-              <p className="mt-5 flex items-center gap-1.5 text-xs text-faint">
-                <Keyboard className="size-3.5" /> {c.pickHint}
-              </p>
             </div>
           </div>
         )}
@@ -695,7 +915,7 @@ export function ChatsPage() {
                 picture={profile.data?.pictureUrl ?? null}
                 about={profile.data?.about ?? null}
                 onClose={() => setInfoOpen(false)}
-                onFlags={(body) => flags.mutate(body)}
+                onFlags={setFlags}
               />
             </aside>
           </>
@@ -713,6 +933,8 @@ export function ChatsPage() {
           }}
         />
       )}
+
+      <NoteStack notes={notes} onOpen={openNote} onDismiss={dismissNote} />
 
       {/* toast */}
       {(sync || toast) && (

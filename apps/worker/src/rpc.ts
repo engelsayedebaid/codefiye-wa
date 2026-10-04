@@ -65,8 +65,10 @@ export function buildRpcServer(supervisor: Supervisor, secret: string, logger: L
   const jid = z.string().min(5).max(128).regex(/^[\w.:-]+@(s\.whatsapp\.net|g\.us|lid)$/);
 
   app.post('/sessions/:id/watch-chat', async (req) => {
-    const body = z.object({ jid }).parse(req.body);
-    await runnerFor(req.params).watchChat(body.jid);
+    const body = z.object({ jid: jid.optional(), jids: z.array(jid).max(40).optional() }).parse(req.body);
+    const jids = [...(body.jids ?? []), ...(body.jid ? [body.jid] : [])];
+    if (jids.length === 0) throw new Error('jid or jids is required');
+    await runnerFor(req.params).watchChats(jids);
     return { ok: true };
   });
 

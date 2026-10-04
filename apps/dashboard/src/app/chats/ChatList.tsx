@@ -1,11 +1,11 @@
 import { CHAT_FILTERS, type ChatFilter } from '@wa/shared/chats';
 import { useInfiniteQuery, useQueries } from '@tanstack/react-query';
-import { Archive, CircleDot, Inbox, Loader2, MessageSquareReply, MessagesSquare, Pin, Search, Send, User, Users, X } from 'lucide-react';
-import { forwardRef, useEffect, useRef } from 'react';
+import { Archive, ChevronDown, ChevronLeft, ChevronRight, CircleDot, Inbox, Loader2, MessageSquareReply, MessagesSquare, Pin, Search, Send, User, Users, X } from 'lucide-react';
+import { forwardRef, useEffect, useEffectEvent, useRef, useState } from 'react';
 import { api } from '../../api';
 import { useI18n } from '../../i18n';
 import { qk } from '../../queries';
-import { cx, LoadError } from '../../ui';
+import { cx, flip, LoadError } from '../../ui';
 import { StatusTick } from '../MessageFeed';
 import { Avatar, TypeLabel } from './Bubble';
 import { type ChatPage, type ChatSummary, chatTitle, livePresence, type PresenceState } from './model';
@@ -20,6 +20,9 @@ const FILTER_ICONS: Record<ChatFilter, typeof Inbox> = {
   pinned: Pin,
   archived: Archive,
 };
+
+/** How many chats from the top of the list have their presence (typing…) followed. */
+const TOP_WATCHED = 25;
 
 /** "14:05" today, "Tue" this week, else "3 Oct". */
 function useStamp() {
@@ -62,9 +65,10 @@ function Row({ chat, active, presence, picture, onSelect }: { chat: ChatSummary;
       aria-current={active ? 'true' : undefined}
       className={cx(
         'group relative flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-start transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
-        active ? 'bg-brand/10 ring-1 ring-brand/25' : 'hover:bg-raised/70',
+        active ? 'bg-raised' : 'hover:bg-raised/60',
       )}
     >
+      {active && <span aria-hidden className="animate-scale-in absolute inset-y-3 start-0 w-[3px] rounded-e-full bg-brand" />}
       <Avatar name={title} id={chat.jid} picture={picture} group={chat.isGroup} online={live?.presence === 'available' || typing} />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
@@ -103,6 +107,140 @@ function Row({ chat, active, presence, picture, onSelect }: { chat: ChatSummary;
   );
 }
 
+/** The filter chips: one scrollable strip (wheel scrolls it sideways), with edge arrows when it overflows. */
+function FilterBar({ filter, counts, onFilter }: { filter: ChatFilter; counts: Partial<Record<ChatFilter, number>> | null; onFilter: (f: ChatFilter) => void }) {
+  const { t, fmt } = useI18n();
+  const c = t.chats;
+  const strip = useRef<HTMLDivElement>(null);
+  const [edges, setEdges] = useState({ start: false, end: false });
+
+  useEffect(() => {
+    const el = strip.current;
+    if (!el) return;
+    // RTL scrollLeft runs 0 → -max, LTR 0 → max; the distance from the start is the same either way.
+    const measure = () => {
+      const pos = Math.abs(el.scrollLeft);
+      const max = el.scrollWidth - el.clientWidth;
+      setEdges({ start: pos > 2, end: pos < max - 2 });
+    };
+    const onWheel = (e: WheelEvent) => {
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX) || el.scrollWidth <= el.clientWidth) return;
+      e.preventDefault();
+      el.scrollBy({ left: getComputedStyle(el).direction === 'rtl' ? -e.deltaY : e.deltaY });
+    };
+    measure();
+    el.addEventListener('scroll', measure, { passive: true });
+    el.addEventListener('wheel', onWheel, { passive: false });
+    const resize = new ResizeObserver(measure);
+    resize.observe(el);
+    return () => {
+      el.removeEventListener('scroll', measure);
+      el.removeEventListener('wheel', onWheel);
+      resize.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    strip.current?.querySelector('[aria-pressed="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+  }, [filter]);
+
+  const nudge = (toEnd: boolean) => {
+    const el = strip.current;
+    if (!el) return;
+    const rtl = getComputedStyle(el).direction === 'rtl';
+    el.scrollBy({ left: (toEnd !== rtl ? 1 : -1) * el.clientWidth * 0.6, behavior: 'smooth' });
+  };
+
+  return (
+    <div className="relative rounded-xl border border-line bg-card p-1 shadow-xs">
+      <div ref={strip} role="group" aria-label={c.title} className="flex gap-1 overflow-x-auto scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {CHAT_FILTERS.map((f) => {
+          const active = filter === f;
+          const n = counts?.[f];
+          const Icon = FILTER_ICONS[f];
+          return (
+            <button
+              key={f}
+              type="button"
+              aria-pressed={active}
+              title={c.filterHints[f]}
+              onClick={() => onFilter(f)}
+              className={cx(
+                'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+                active ? 'bg-brand text-black shadow-sm' : 'text-muted hover:bg-raised hover:text-ink',
+              )}
+            >
+              <Icon className="size-3.5" />
+              {c.filters[f]}
+              {n !== undefined && n > 0 && (
+                <span className={cx('min-w-4 rounded-full px-1 text-center text-[10px] font-semibold tabular-nums', active ? 'bg-black/15 text-black/70' : 'bg-raised text-faint')}>{fmt.number.format(n)}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      {edges.start && (
+        <button
+          type="button"
+          onClick={() => nudge(false)}
+          aria-label={c.prevFilters}
+          className="animate-scale-in absolute inset-y-1 start-1 flex w-9 items-center justify-start rounded-s-lg bg-gradient-to-r from-card via-card/90 to-transparent ps-1 text-muted hover:text-ink rtl:bg-gradient-to-l"
+        >
+          <ChevronLeft className={cx('size-4', flip)} />
+        </button>
+      )}
+      {edges.end && (
+        <button
+          type="button"
+          onClick={() => nudge(true)}
+          aria-label={c.moreFilters}
+          className="animate-scale-in absolute inset-y-1 end-1 flex w-9 items-center justify-end rounded-e-lg bg-gradient-to-l from-card via-card/90 to-transparent pe-1 text-muted hover:text-ink rtl:bg-gradient-to-r"
+        >
+          <ChevronRight className={cx('size-4', flip)} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+type Away = 'up' | 'down';
+
+/** Floating chips for chats that are typing/recording while their row is scrolled out of view. */
+function TypingFloat({ chats, side, pictures, onPick }: { chats: { chat: ChatSummary; live: PresenceState }[]; side: Away; pictures: Map<string, string | null>; onPick: (chat: ChatSummary) => void }) {
+  const { t } = useI18n();
+  const c = t.chats;
+  if (chats.length === 0) return null;
+  const shown = chats.slice(0, 3);
+  return (
+    <div className={cx('pointer-events-none absolute inset-x-0 z-10 flex items-center gap-1.5 px-3', side === 'up' ? 'top-2 flex-col' : 'bottom-3 flex-col-reverse')}>
+      {shown.map(({ chat, live }) => {
+        const title = chatTitle(chat);
+        return (
+          <button
+            key={chat.jid}
+            type="button"
+            onClick={() => onPick(chat)}
+            className="animate-fade-up pointer-events-auto flex max-w-full items-center gap-2 rounded-full border border-brand/30 bg-card/95 py-1 ps-1 pe-3 shadow-lg shadow-black/40 backdrop-blur transition-colors hover:border-brand/60 hover:bg-raised"
+          >
+            <Avatar name={title} id={chat.jid} picture={pictures.get(chat.jid)} group={chat.isGroup} size="sm" online />
+            <span dir="auto" className="min-w-0 truncate text-[13px] font-semibold text-ink">
+              {chat.name ? title : <span className="ltr font-mono text-xs">{title}</span>}
+            </span>
+            <span className="flex shrink-0 items-center gap-1.5 text-xs font-medium text-brand">
+              {live.presence === 'recording' ? c.presence.recording : c.presence.typing}
+              <TypingDots />
+            </span>
+            <ChevronDown className={cx('size-3.5 shrink-0 text-muted', side === 'up' && 'rotate-180')} />
+          </button>
+        );
+      })}
+      {chats.length > shown.length && (
+        <span className="pointer-events-auto rounded-full bg-card/95 px-2 py-0.5 text-[11px] font-semibold text-muted tabular-nums shadow-md backdrop-blur">+{chats.length - shown.length}</span>
+      )}
+    </div>
+  );
+}
+
 type Props = {
   sessionId: string;
   selected: string | null;
@@ -114,10 +252,12 @@ type Props = {
   onFilter: (filter: ChatFilter) => void;
   onQuery: (q: string) => void;
   onSelect: (chat: ChatSummary) => void;
+  /** The chats at the top of the list (their presence gets followed). */
+  onTopChats?: (jids: string[]) => void;
 };
 
-export const ChatList = forwardRef<HTMLInputElement, Props>(function ChatList({ sessionId, selected, filter, query, term, presence, onFilter, onQuery, onSelect }, searchRef) {
-  const { t, fmt } = useI18n();
+export const ChatList = forwardRef<HTMLInputElement, Props>(function ChatList({ sessionId, selected, filter, query, term, presence, onFilter, onQuery, onSelect, onTopChats }, searchRef) {
+  const { t } = useI18n();
   const c = t.chats;
   const q = term.trim();
   const list = useInfiniteQuery({
@@ -162,6 +302,47 @@ export const ChatList = forwardRef<HTMLInputElement, Props>(function ChatList({ 
     return () => observer.disconnect();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
+  // Which rows are scrolled out of view, and on which side — for the floating "typing…" chips.
+  const scroller = useRef<HTMLDivElement>(null);
+  const [away, setAway] = useState<Map<string, Away>>(new Map());
+  const jidKey = chats.map((ch) => ch.jid).join(',');
+  const topKey = chats
+    .slice(0, TOP_WATCHED)
+    .map((ch) => ch.jid)
+    .join(',');
+  const reportTop = useEffectEvent((jids: string[]) => onTopChats?.(jids));
+  useEffect(() => reportTop(topKey ? topKey.split(',') : []), [topKey]);
+  useEffect(() => {
+    const root = scroller.current;
+    if (!root) return;
+    const observer = new IntersectionObserver(
+      (entries) =>
+        setAway((prev) => {
+          const next = new Map(prev);
+          for (const e of entries) {
+            const jid = (e.target as HTMLElement).dataset.jid!;
+            // A row only counts as seen when (nearly) all of it shows — a half-hidden row hides its "typing…" line.
+            if (e.intersectionRatio >= 0.9) next.delete(jid);
+            else next.set(jid, e.boundingClientRect.top < (e.rootBounds?.top ?? 0) ? 'up' : 'down');
+          }
+          return next;
+        }),
+      { root, threshold: [0, 0.9, 1] },
+    );
+    root.querySelectorAll<HTMLElement>('[data-jid]').forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, [jidKey]);
+
+  const typingAway = (side: Away) =>
+    chats.flatMap((chat) => {
+      const live = livePresence(presence.get(chat.jid));
+      return live && (live.presence === 'composing' || live.presence === 'recording') && away.get(chat.jid) === side ? [{ chat, live }] : [];
+    });
+  const pick = (chat: ChatSummary) => {
+    scroller.current?.querySelector(`[data-jid="${CSS.escape(chat.jid)}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    onSelect(chat);
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="space-y-2.5 px-3 pt-2 pb-2">
@@ -181,33 +362,13 @@ export const ChatList = forwardRef<HTMLInputElement, Props>(function ChatList({ 
             </button>
           )}
         </label>
-        <div role="group" aria-label={c.title} className="-mx-3 flex gap-1.5 overflow-x-auto px-3 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {CHAT_FILTERS.map((f) => {
-            const active = filter === f;
-            const n = counts?.[f];
-            const Icon = FILTER_ICONS[f];
-            return (
-              <button
-                key={f}
-                type="button"
-                aria-pressed={active}
-                title={c.filterHints[f]}
-                onClick={() => onFilter(f)}
-                className={cx(
-                  'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-xl px-2.5 text-xs font-medium transition-colors',
-                  active ? 'bg-brand text-black shadow-sm' : 'border border-line bg-card text-muted hover:border-line-strong hover:text-ink',
-                )}
-              >
-                <Icon className="size-3.5" />
-                {c.filters[f]}
-                {n !== undefined && n > 0 && <span className={cx('tabular-nums', active ? 'text-black/60' : 'text-faint')}>{fmt.number.format(n)}</span>}
-              </button>
-            );
-          })}
-        </div>
+        <FilterBar filter={filter} counts={counts} onFilter={onFilter} />
       </div>
 
-      <div className={cx('code-scroll min-h-0 flex-1 overflow-y-auto transition-opacity', list.isPlaceholderData && 'opacity-60')}>
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <TypingFloat chats={typingAway('up')} side="up" pictures={pictures} onPick={pick} />
+        <TypingFloat chats={typingAway('down')} side="down" pictures={pictures} onPick={pick} />
+      <div ref={scroller} className={cx('code-scroll min-h-0 flex-1 overflow-y-auto transition-opacity', list.isPlaceholderData && 'opacity-60')}>
         {list.isError && !list.data ? (
           <div className="p-3">
             <LoadError error={list.error} onRetry={() => void list.refetch()} retrying={list.isFetching} />
@@ -234,7 +395,7 @@ export const ChatList = forwardRef<HTMLInputElement, Props>(function ChatList({ 
         ) : (
           <ul className="space-y-0.5 px-2">
             {chats.map((chat) => (
-              <li key={chat.jid} className="group">
+              <li key={chat.jid} data-jid={chat.jid} className="group">
                 <Row chat={chat} active={selected === chat.jid} presence={presence.get(chat.jid)} picture={pictures.get(chat.jid)} onSelect={() => onSelect(chat)} />
               </li>
             ))}
@@ -243,6 +404,7 @@ export const ChatList = forwardRef<HTMLInputElement, Props>(function ChatList({ 
         <div ref={sentinel} className="flex justify-center py-3">
           {isFetchingNextPage && <Loader2 className="size-4 animate-spin text-muted" />}
         </div>
+      </div>
       </div>
     </div>
   );

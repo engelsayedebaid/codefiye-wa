@@ -9,7 +9,7 @@ export type WaEvent =
   | Base<'qrcode.updated', { qr: string }>
   | Base<'pairing.updated', { code: string }>
   /** `chatJid`: the chat it belongs to (the sender in 1:1 chats, as WhatsApp addressed it — possibly a LID). */
-  | Base<'messages.received', { id: number; from: string; type: MessageType; text: string | null; chatJid?: string }>
+  | Base<'messages.received', { id: number; from: string; type: MessageType; text: string | null; chatJid?: string; pushName?: string | null }>
   | Base<'messages.update', { id: number; status: MessageStatus; error: string | null }>
   /** A message that didn't arrive through `messages.received`: sent from the phone itself, or queued from the chats page. */
   | Base<'messages.created', { id: number; chatJid: string; direction: MessageDirection; type: MessageType }>

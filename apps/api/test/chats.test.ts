@@ -1,4 +1,5 @@
 import { apiKeys, createDb, createListener, type Db, runMigrations, type Sql, users, workspaces } from '@wa/db';
+import Fastify from 'fastify';
 import pino from 'pino';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app';
@@ -6,7 +7,7 @@ import { createAuth } from '../src/lib/auth';
 import { EventBus } from '../src/lib/events';
 import { generateKey } from '../src/lib/keys';
 import { otpKey } from '../src/lib/otp';
-import { parseRange } from '../src/lib/media-cache';
+import { isInlineSafe, parseRange, sendMedia } from '../src/lib/media-cache';
 import { createThrottle } from '../src/lib/throttle';
 import { WorkerClient } from '../src/lib/workers';
 
@@ -25,6 +26,36 @@ describe('parseRange', () => {
   });
 });
 
+describe('sendMedia', () => {
+  // The mimetype of chat media is whatever the sender claimed; only plain media may render in place.
+  const serve = async (mimetype: string, query = '') => {
+    const app = Fastify();
+    app.get('/m', (req, reply) => sendMedia(req, reply, { data: Buffer.from('<script>alert(1)</script>'), mimetype, fileName: 'x' }, query === 'download'));
+    const res = await app.inject({ method: 'GET', url: '/m' });
+    await app.close();
+    return res;
+  };
+
+  it('downloads scriptable types instead of rendering them on our origin', async () => {
+    for (const type of ['text/html', 'image/svg+xml', 'application/xhtml+xml', 'text/xml', 'application/javascript', 'TEXT/HTML; charset=utf-8']) {
+      const res = await serve(type);
+      expect(res.headers['content-type']).toBe('application/octet-stream');
+      expect(res.headers['content-disposition']).toMatch(/^attachment;/);
+      expect(res.headers['content-security-policy']).toMatch(/^sandbox;/);
+    }
+  });
+
+  it('shows plain images, video and audio inline, still sandboxed', async () => {
+    for (const type of ['image/jpeg', 'image/webp', 'video/mp4', 'audio/ogg; codecs=opus']) {
+      const res = await serve(type);
+      expect(res.headers['content-type']).toBe(type);
+      expect(res.headers['content-disposition']).toBeUndefined();
+      expect(res.headers['content-security-policy']).toMatch(/^sandbox;/);
+    }
+    expect(isInlineSafe('image/svg+xml')).toBe(false);
+  });
+});
+
 describe.skipIf(!url)('chats api (integration)', () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
   let sql: Sql;
@@ -34,6 +65,7 @@ describe.skipIf(!url)('chats api (integration)', () => {
   const stamp = Date.now();
   let admin: { id: string; pat: string; userId: string };
   let customer: { id: string; pat: string };
+  let business: { id: string; pat: string };
   let sessionId: string;
 
   const workspace = async (name: string, planId: string, role?: 'admin') => {
@@ -60,6 +92,7 @@ describe.skipIf(!url)('chats api (integration)', () => {
     );
     admin = await workspace('chats-admin', 'unlimited', 'admin');
     customer = await workspace('chats-customer', 'pro');
+    business = await workspace('chats-business', 'business');
     sessionId = (await sql<{ id: string }[]>`
       insert into sessions (workspace_id, name, status, desired_state, phone) values (${admin.id}, 'Main', 'disconnected', 'stopped', '+201000000000') returning id`)[0]!.id;
     const msg = (direction: 'in' | 'out', type: string, content: object, extra: { wa?: string } = {}) => sql`
@@ -72,16 +105,27 @@ describe.skipIf(!url)('chats api (integration)', () => {
   });
 
   afterAll(async () => {
-    await sql`delete from workspaces where id in (${admin.id}, ${customer.id})`;
+    await sql`delete from workspaces where id in (${admin.id}, ${customer.id}, ${business.id})`;
     await sql`delete from users where id = ${admin.userId}`;
     await app.close();
     await events.stop();
     await end();
   });
 
-  it('is for admins only', async () => {
-    expect((await call('GET', '/api/chats/numbers', customer.pat)).json()).toMatchObject({ code: 'admin_only' });
-    expect((await call('GET', `/api/chats/${sessionId}/list`, customer.pat)).statusCode).toBe(403);
+  it('is locked below Business, with an upgrade code', async () => {
+    const res = await call('GET', '/api/chats/numbers', customer.pat);
+    expect(res.statusCode).toBe(402);
+    expect(res.json()).toMatchObject({ code: 'feature_not_in_plan' });
+    expect((await call('GET', `/api/chats/${sessionId}/list`, customer.pat)).statusCode).toBe(402);
+  });
+
+  it('opens on Business, showing only the workspace’s own numbers', async () => {
+    const res = await call('GET', '/api/chats/numbers', business.pat);
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json().data).toEqual([]);
+    // Another workspace's number stays out of reach.
+    expect((await call('GET', `/api/chats/${sessionId}/list`, business.pat)).statusCode).toBe(404);
+    expect((await call('GET', `/api/chats/${sessionId}/insights`, business.pat)).statusCode).toBe(404);
   });
 
   it('lists the numbers with their unread chats', async () => {
@@ -164,7 +208,7 @@ describe.skipIf(!url)('chats api (integration)', () => {
     expect(file.statusCode).toBe(206);
     expect(file.body).toBe('%PDF');
     expect(file.headers['cache-control']).toContain('immutable');
-    expect((await call('GET', `/api/chats/media/${sent.json().data.id}`, customer.pat)).statusCode).toBe(403);
+    expect((await call('GET', `/api/chats/media/${sent.json().data.id}`, business.pat)).statusCode).toBe(404);
   });
 
   it('reports insights for a number', async () => {
@@ -192,12 +236,12 @@ describe.skipIf(!url)('chats api (integration)', () => {
     const res = await call('GET', `/api/chats/${sessionId}/pictures?jids=${PHONE},not-a-jid`, admin.pat);
     expect(res.statusCode, res.body).toBe(200);
     expect(res.json().data).toEqual({});
-    expect((await call('GET', `/api/chats/${sessionId}/pictures?jids=${PHONE}`, customer.pat)).statusCode).toBe(403);
+    expect((await call('GET', `/api/chats/${sessionId}/pictures?jids=${PHONE}`, business.pat)).statusCode).toBe(404);
   });
 
   it('syncs only connected numbers', async () => {
     await sql`update sessions set status = 'disconnected' where id = ${sessionId}`;
     expect((await call('POST', `/api/chats/${sessionId}/sync`, admin.pat, {})).json()).toMatchObject({ code: 'session_not_connected' });
-    expect((await call('POST', `/api/chats/${sessionId}/sync`, customer.pat, {})).statusCode).toBe(403);
+    expect((await call('POST', `/api/chats/${sessionId}/sync`, business.pat, {})).statusCode).toBe(404);
   });
 });

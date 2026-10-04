@@ -1,5 +1,5 @@
 import { and, eq, notify, planRequests, type Sql, type SqlFragment, type TxSql, type UserRole, type UserStatus, workspaces, type Db } from '@wa/db';
-import { CHANNELS, ok, type PlanFeature, PLANS, successSchema, TRIAL_DAYS } from '@wa/shared';
+import { CHANNELS, ok, PLANS, successSchema, TRIAL_DAYS } from '@wa/shared';
 import type { FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -7,7 +7,7 @@ import type { Deps } from '../deps';
 import { audit, auditIn } from '../lib/audit';
 import { requireAdmin } from '../lib/auth';
 import { conflict, forbidden, notFound, unprocessable } from '../lib/errors';
-import { getFeatures, setFeature } from '../lib/features';
+import { getFeatures, type RuntimeFeature, setFeature } from '../lib/features';
 import { OTP_DEFAULT_TEXTS } from '../lib/otp';
 import { getOtpTexts, setOtpTexts } from '../lib/otp-text';
 import { planRequestDto, toPlanRequestDto, toWorkspaceDto } from './account';
@@ -529,7 +529,7 @@ export function adminRoutes({ sql, db, auth, workers }: Deps): FastifyPluginAsyn
         },
       },
       async (req) => {
-        for (const [feature, enabled] of Object.entries(req.body) as [PlanFeature, boolean][]) {
+        for (const [feature, enabled] of Object.entries(req.body) as [RuntimeFeature, boolean][]) {
           await setFeature(sql, feature, enabled);
           await audit(sql, req, { action: 'feature.update', targetType: 'feature', targetId: feature, details: { enabled } });
         }

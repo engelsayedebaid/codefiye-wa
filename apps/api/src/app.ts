@@ -7,7 +7,7 @@ import rateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import swagger from '@fastify/swagger';
 import scalar from '@scalar/fastify-api-reference';
-import { PG_ERRORS, pgErrorCode } from '@wa/db';
+import { CONNECTION_ERRORS, PG_ERRORS, pgErrorCode } from '@wa/db';
 import { getPlan, type ApiFailure } from '@wa/shared';
 import Fastify, { type FastifyError, type FastifyRequest } from 'fastify';
 import {
@@ -35,8 +35,6 @@ const CONSOLE_RPM = 240;
 /** No request may hang: anything still running after this gets a 503 (SSE streams excepted). */
 const HANDLER_TIMEOUT_MS = 60_000;
 const REQUEST_ID_RE = /^[A-Za-z0-9._-]{8,64}$/;
-/** Errors from postgres.js when the database can't be reached or dropped the connection. */
-const CONNECTION_ERRORS = new Set(['CONNECT_TIMEOUT', 'CONNECTION_CLOSED', 'CONNECTION_ENDED', 'CONNECTION_DESTROYED', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'EAI_AGAIN']);
 
 export type AppOptions = {
   logger: Logger;
@@ -130,7 +128,9 @@ export async function buildApp(deps: Deps, options: AppOptions) {
     // Chat media sets its own (immutable per message); everything else under /api is never cached.
     if (req.url.startsWith('/api') && !reply.hasHeader('cache-control')) reply.header('cache-control', 'no-store');
     const type = reply.getHeader('content-type');
-    if (csp && typeof type === 'string' && type.startsWith('text/html') && !req.url.startsWith('/docs')) reply.header('content-security-policy', csp);
+    if (csp && typeof type === 'string' && type.startsWith('text/html') && !req.url.startsWith('/docs') && !reply.hasHeader('content-security-policy')) {
+      reply.header('content-security-policy', csp);
+    }
     return payload;
   });
 

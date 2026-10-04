@@ -438,13 +438,16 @@ export class BaileysProvider implements Provider {
           this.onPollVote(msg).catch((err) => this.logger.warn({ err }, 'could not read poll vote'));
           continue;
         }
-        if (type !== 'notify') continue;
+        // Messages that arrived while we were offline are delivered on reconnect as 'append', so both
+        // types count. The runner drops duplicates by (session, wa_message_id).
         const inbound = toInbound(msg);
         if (inbound) {
           this.emit('message', inbound);
           continue;
         }
-        // Sent from the phone. Our own sends arrive as 'append', and are remembered in `recent` besides.
+        // Sent from the phone. Our own sends also arrive as 'append', but still PENDING (built locally,
+        // possibly before `send` records them in `recent`); what WhatsApp delivers is SERVER_ACK.
+        if (type === 'append' && msg.status === proto.WebMessageInfo.Status.PENDING) continue;
         const echo = msg.key.id && !this.recent.get(msg.key.id) ? toEcho(msg) : null;
         if (echo) this.emit('echo', echo);
       }

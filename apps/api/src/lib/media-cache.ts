@@ -67,10 +67,23 @@ export function parseRange(header: string | undefined, size: number): { start: n
   return start > end || start >= size ? false : { start, end };
 }
 
+/**
+ * Types a browser may render in place. The mimetype comes from whoever sent the message, so
+ * anything else (HTML, SVG, XML, scripts…) is served as an opaque download: rendered from our
+ * origin it would run with the admin's session.
+ */
+const INLINE_TYPE = /^(image\/(jpeg|png|gif|webp|avif|bmp)|video\/[\w.+-]+|audio\/[\w.+-]+)$/;
+
+export const isInlineSafe = (mimetype: string) => INLINE_TYPE.test(mimetype.split(';')[0]!.trim().toLowerCase());
+
 /** Sends media with Range support; the content never changes for a message, so browsers may keep it. */
 export function sendMedia(req: FastifyRequest, reply: FastifyReply, media: CachedMedia, download: boolean) {
   const size = media.data.length;
-  reply.header('content-type', media.mimetype);
+  const inline = isInlineSafe(media.mimetype);
+  if (!inline) download = true;
+  reply.header('content-type', inline ? media.mimetype : 'application/octet-stream');
+  // Even if a file is opened directly, nothing in it may run or reach our origin.
+  reply.header('content-security-policy', "sandbox; default-src 'none'; img-src 'self'; media-src 'self'");
   reply.header('accept-ranges', 'bytes');
   reply.header('cache-control', 'private, max-age=86400, immutable');
   if (download) {

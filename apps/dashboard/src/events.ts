@@ -6,7 +6,8 @@ const EVENT_TYPES = ['session.status', 'qrcode.updated', 'pairing.updated', 'mes
 type Handler = { current: (event: LiveEvent) => void };
 
 /**
- * One event stream per tab, shared by every component that listens. Hidden tabs let go of it:
+ * One event stream per tab, shared by every component that listens. Hidden tabs let go of it (except
+ * the one tab listening for notifications, see `useBackgroundLiveEvents`):
  * browsers allow only ~6 connections per host over HTTP/1.1, and a stream per page per tab used to
  * starve every other request. Whenever the stream comes back after a gap, the app re-fetches
  * (events sent meanwhile are gone).
@@ -27,8 +28,51 @@ export function configureLiveEvents(next: { onResync: () => void; onRefused: () 
 
 const visible = () => typeof document === 'undefined' || document.visibilityState !== 'hidden';
 
+/**
+ * Background listening (message notifications): one tab — whichever holds the Web Lock — keeps its
+ * stream while hidden; every other hidden tab still lets go, so the connection limit stays safe.
+ */
+const BACKGROUND_LOCK = 'wa-live-events-background';
+let backgroundWanted = 0;
+let leader = false;
+let claiming = false;
+let releaseLock: (() => void) | null = null;
+
+const wanted = () => visible() || (backgroundWanted > 0 && leader);
+
+function claimBackground() {
+  if (claiming) return;
+  claiming = true;
+  if (!('locks' in navigator)) {
+    leader = true;
+    return;
+  }
+  void navigator.locks.request(
+    BACKGROUND_LOCK,
+    () =>
+      new Promise<void>((resolve) => {
+        // Granted after the need passed (or twice): hand it straight to the next tab.
+        if (backgroundWanted === 0 || releaseLock) return resolve();
+        leader = true;
+        releaseLock = resolve;
+        connect();
+      }),
+  );
+}
+
+function releaseBackground() {
+  claiming = false;
+  leader = false;
+  releaseLock?.();
+  releaseLock = null;
+  if (!visible() && source) {
+    disconnect();
+    missed = true;
+  }
+}
+
 function connect() {
-  if (source || handlers.size === 0 || !visible()) return;
+  if (source || handlers.size === 0 || !wanted()) return;
   if (retryTimer) clearTimeout(retryTimer);
   retryTimer = null;
   // Same origin: the session cookie goes along, no token handling needed.
@@ -72,7 +116,7 @@ function disconnect() {
 
 if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
-    if (visible()) connect();
+    if (wanted()) connect();
     else if (source) {
       disconnect();
       missed = true;
@@ -108,3 +152,23 @@ export function useLiveEvents(onEvent: (event: LiveEvent) => void) {
     };
   }, []);
 }
+
+/** While `enabled`, keeps this tab listening when hidden (if no other tab already does) — for notifications. */
+export function useBackgroundLiveEvents(enabled: boolean) {
+  useEffect(() => {
+    if (!enabled) return;
+    backgroundWanted += 1;
+    claimBackground();
+    return () => {
+      backgroundWanted -= 1;
+      if (backgroundWanted === 0) releaseBackground();
+    };
+  }, [enabled]);
+}
+
+// Dev hot reload re-runs this module: close the old stream, or each edit leaks one open connection
+// until the browser's per-host limit is hit and no stream connects at all.
+import.meta.hot?.dispose(() => {
+  releaseBackground();
+  stopLiveEvents();
+});

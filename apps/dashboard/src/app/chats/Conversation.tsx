@@ -499,6 +499,10 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
             </>
           )}
         </div>
+        <span aria-hidden className="mx-0.5 hidden h-6 w-px bg-line lg:block" />
+        <button type="button" onClick={onBack} className="hidden rounded-full p-2 text-muted transition-colors hover:bg-red-500/10 hover:text-red-400 lg:block" aria-label={c.closeChat} title={c.closeChat}>
+          <X className="size-5" />
+        </button>
       </header>
 
       {searching && (

@@ -95,5 +95,15 @@ export function pgError(err: unknown): { code: string; constraint: string | null
   return pg instanceof postgres.PostgresError ? { code: pg.code, constraint: pg.constraint_name ?? null } : null;
 }
 
+/** Errors from postgres.js when the database can't be reached or dropped the connection. */
+export const CONNECTION_ERRORS = new Set(['CONNECT_TIMEOUT', 'CONNECTION_CLOSED', 'CONNECTION_ENDED', 'CONNECTION_DESTROYED', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'EAI_AGAIN']);
+
+/** A failure that may pass if the same statement is simply tried again (outage, timeout, deadlock). */
+export function isTransientDbError(err: unknown): boolean {
+  if (CONNECTION_ERRORS.has((err as { code?: string } | null)?.code ?? '')) return true;
+  const code = pgErrorCode(err);
+  return code === PG_ERRORS.queryCanceled || code === PG_ERRORS.serializationFailure || code === PG_ERRORS.deadlockDetected;
+}
+
 /** The SQLSTATE of a Postgres error (see `pgError`), if it is one. */
 export const pgErrorCode = (err: unknown): string | null => pgError(err)?.code ?? null;

@@ -61,19 +61,19 @@ function useNav() {
       : account.features.ads
         ? undefined
         : 'soon';
+  // Chats likewise: shown to everyone, locked below Business.
+  const chatsBadge: NavItem['badge'] = isAdmin || (account && planHasFeature(account.plan.id, 'chats')) ? undefined : 'lock';
   return {
     main: [
       { href: '/dashboard', label: n.dashboard, icon: LayoutGrid },
       { href: '/sessions', label: n.sessions, icon: PhoneCall },
+      { href: '/chats', label: n.chats, icon: MessagesSquare, badge: chatsBadge },
       { href: '/templates', label: n.templates, icon: FileText },
       { href: '/keys', label: n.keys, icon: KeyRound },
       { href: '/ads', label: n.ads, icon: Megaphone, badge: adsBadge },
       { href: '/subscription', label: n.subscription, icon: CircleDollarSign },
     ] as NavItem[],
-    admin: [
-      { href: '/chats', label: n.chats, icon: MessagesSquare },
-      { href: '/admin', label: n.admin, icon: ShieldCheck },
-    ] as NavItem[],
+    admin: [{ href: '/admin', label: n.admin, icon: ShieldCheck }] as NavItem[],
     secondary: [
       { href: '/docs', label: t.app.secondary.docs, icon: BookOpen, newTab: true },
       { href: '/#faq', label: t.app.secondary.help, icon: CircleHelp, newTab: false },

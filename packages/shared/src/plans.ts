@@ -1,5 +1,6 @@
 /** Dashboard/API features a plan can include (gated separately from quotas). */
-export type PlanFeature = 'ads';
+/** `ads` = bulk campaigns page; `chats` = the inbox of the workspace's own numbers. */
+export type PlanFeature = 'ads' | 'chats';
 
 export type Plan = {
   id: string;
@@ -22,10 +23,10 @@ export const PLANS = {
   basic: { id: 'basic', name: 'Basic', priceUsd: 6, sessions: 1, rpm: 60, dailyMessages: null, retentionDays: 30, features: [] },
   pro: { id: 'pro', name: 'Pro', priceUsd: 15, sessions: 3, rpm: 120, dailyMessages: null, retentionDays: 60, features: [] },
   plus: { id: 'plus', name: 'Plus', priceUsd: 30, sessions: 6, rpm: 120, dailyMessages: null, retentionDays: 60, features: ['ads'] },
-  business: { id: 'business', name: 'Business', priceUsd: 45, sessions: 10, rpm: 120, dailyMessages: null, retentionDays: 90, features: ['ads'] },
-  enterprise: { id: 'enterprise', name: 'Enterprise', priceUsd: null, sessions: 25, rpm: 300, dailyMessages: null, retentionDays: 90, features: ['ads'] },
+  business: { id: 'business', name: 'Business', priceUsd: 45, sessions: 10, rpm: 120, dailyMessages: null, retentionDays: 90, features: ['ads', 'chats'] },
+  enterprise: { id: 'enterprise', name: 'Enterprise', priceUsd: null, sessions: 25, rpm: 300, dailyMessages: null, retentionDays: 90, features: ['ads', 'chats'] },
   /** Internal: admin and house accounts. Never offered on the pricing page. */
-  unlimited: { id: 'unlimited', name: 'Unlimited', priceUsd: null, sessions: 10_000, rpm: 2_000, dailyMessages: null, retentionDays: 365, features: ['ads'] },
+  unlimited: { id: 'unlimited', name: 'Unlimited', priceUsd: null, sessions: 10_000, rpm: 2_000, dailyMessages: null, retentionDays: 365, features: ['ads', 'chats'] },
 } as const satisfies Record<string, Plan>;
 
 export type PlanId = keyof typeof PLANS;

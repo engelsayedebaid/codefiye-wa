@@ -4,6 +4,7 @@ import {
   advanceStatus,
   claimNextOutbound,
   failInterrupted,
+  isTransientDbError,
   loadOutboundRaw,
   markChatRead,
   markFailed,
@@ -91,11 +92,18 @@ const HISTORY_REQUEST_GAP_MS = 400;
 const PICTURE_CONCURRENCY = 4;
 /** How long the account stays online after the chats page last asked (it renews every minute). */
 const WATCH_LEASE_MS = 75_000;
+/** A followed contact's presence subscription is renewed this often. */
+const PRESENCE_RENEW_MS = 5 * 60_000;
 /** Number lookups: Baileys would wait 60s on a dead socket. */
 const LOOKUP_TIMEOUT_MS = 10_000;
 /** Sending: generous for media (uploads to WhatsApp's CDN), tight for everything else. */
 const SEND_TIMEOUT_MS = { media: 5 * 60_000, other: 45_000 };
 const MEDIA_TYPES = new Set(['image', 'video', 'audio', 'document', 'sticker']);
+/**
+ * Waits between attempts of a write that must not be lost (~3 min in all): WhatsApp delivers an
+ * inbound message once, and a sent message's id is our only proof it went out.
+ */
+const PERSIST_RETRY_MS = [500, 1_000, 2_000, 5_000, 10_000, 20_000, 30_000, 60_000, 60_000];
 
 /**
  * A campaign message due longer ago than this means the number fell behind (offline, restarted):
@@ -149,9 +157,12 @@ export class SessionRunner {
   private readonly log: Logger;
   /** Groups whose subject we already looked up. */
   private readonly groupNames = new Set<string>();
-  /** The account shows as online until then: someone is watching a chat on the chats page (see `watchChat`). */
+  /** The account shows as online until then: someone is watching a chat on the chats page (see `watchChats`). */
   private onlineUntil = 0;
   private onlineTimer: NodeJS.Timeout | null = null;
+  /** Contacts whose presence we follow → when subscribed; valid only for `subscribedOn` (that socket) while online. */
+  private readonly subscribed = new Map<string, number>();
+  private subscribedOn: object | null = null;
   private auth: EncryptedAuthState | null = null;
   private connecting = false;
   /** Started from `logged_out`: one more 401 confirms the logout (see onLoggedOut). */
@@ -237,6 +248,23 @@ export class SessionRunner {
     promise.catch((err) => this.log.error({ err }, 'session event handler failed'));
   }
 
+  /**
+   * Runs a write that has no second chance, retrying while the database is unreachable or busy.
+   * Keeps going after the runner stops: the data came from WhatsApp and exists nowhere else.
+   */
+  private async persist<T>(what: string, write: () => Promise<T>): Promise<T> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await write();
+      } catch (err) {
+        const delay = PERSIST_RETRY_MS[attempt];
+        if (delay === undefined || !isTransientDbError(err)) throw err;
+        this.log.warn({ err, attempt: attempt + 1 }, `${what}: database unavailable, retrying`);
+        await sleep(delay);
+      }
+    }
+  }
+
   private async onQr(qr: string) {
     const status = this.status === 'pairing' ? 'pairing' : 'qr';
     if (await this.write({ status, qr })) await this.publish({ type: 'qrcode.updated', data: { qr } });
@@ -314,14 +342,17 @@ export class SessionRunner {
       timestamp: m.timestamp,
       ...m.extras,
     };
-    const [row] = await sql<{ id: number }[]>`
-      insert into messages (workspace_id, session_id, direction, remote_jid, wa_message_id, type, content, raw, status)
-      values (${this.workspaceId}, ${this.sessionId}, 'in', ${m.chatJid}, ${m.waMessageId}, ${m.type},
-              ${sql.json(content as never)}, ${sql.json(m.raw as never)}, 'received')
-      on conflict (session_id, wa_message_id) do nothing
-      returning id`;
+    const [row] = await this.persist(
+      'store inbound message',
+      () => sql<{ id: number }[]>`
+        insert into messages (workspace_id, session_id, direction, remote_jid, wa_message_id, type, content, raw, status)
+        values (${this.workspaceId}, ${this.sessionId}, 'in', ${m.chatJid}, ${m.waMessageId}, ${m.type},
+                ${sql.json(content as never)}, ${sql.json(m.raw as never)}, 'received')
+        on conflict (session_id, wa_message_id) do nothing
+        returning id`,
+    );
     if (!row) return; // duplicate delivery
-    await this.publish({ type: 'messages.received', data: { id: row.id, from: m.from, type: m.type, text: m.text, chatJid: m.chatJid } });
+    await this.publish({ type: 'messages.received', data: { id: row.id, from: m.from, type: m.type, text: m.text, chatJid: m.chatJid, pushName: m.pushName } });
     if (this.settings.autoRead) {
       await this.provider?.markRead([m]).catch((err) => this.log.warn({ err }, 'markRead failed'));
       await markChatRead(sql, this.sessionId, m.chatJid);
@@ -338,12 +369,15 @@ export class SessionRunner {
   private async onEcho(m: EchoMessage) {
     const { sql } = this.ctx;
     const content = { text: m.text, isGroup: m.isGroup, timestamp: m.timestamp, sentFrom: 'phone', ...m.extras };
-    const [row] = await sql<{ id: number }[]>`
-      insert into messages (workspace_id, session_id, direction, remote_jid, wa_message_id, type, content, raw, status, sent_at)
-      values (${this.workspaceId}, ${this.sessionId}, 'out', ${m.chatJid}, ${m.waMessageId}, ${m.type},
-              ${sql.json(content as never)}, ${sql.json(m.raw as never)}, 'sent', to_timestamp(${m.timestamp}))
-      on conflict (session_id, wa_message_id) do nothing
-      returning id`;
+    const [row] = await this.persist(
+      'store message sent from the phone',
+      () => sql<{ id: number }[]>`
+        insert into messages (workspace_id, session_id, direction, remote_jid, wa_message_id, type, content, raw, status, sent_at)
+        values (${this.workspaceId}, ${this.sessionId}, 'out', ${m.chatJid}, ${m.waMessageId}, ${m.type},
+                ${sql.json(content as never)}, ${sql.json(m.raw as never)}, 'sent', to_timestamp(${m.timestamp}))
+        on conflict (session_id, wa_message_id) do nothing
+        returning id`,
+    );
     if (!row) return;
     await this.publish({ type: 'messages.created', data: { id: row.id, chatJid: m.chatJid, direction: 'out', type: m.type } });
     if (m.type !== 'reaction') await this.onChatRead(m.chatJid);
@@ -371,13 +405,16 @@ export class SessionRunner {
         status: m.fromMe ? 'sent' : 'received',
         ts: m.timestamp,
       }));
-      const inserted = await sql<{ remote_jid: string }[]>`
-        insert into messages (workspace_id, session_id, direction, remote_jid, wa_message_id, type, content, raw, status, created_at, sent_at)
-        select ${this.workspaceId}, ${this.sessionId}, x.direction, x.remote_jid, x.wa, x.type, x.content, x.raw, x.status,
-          to_timestamp(x.ts), case when x.direction = 'out' then to_timestamp(x.ts) end
-        from jsonb_to_recordset(${sql.json(rows as never)}) as x(direction text, remote_jid text, wa text, type text, content jsonb, raw jsonb, status text, ts float8)
-        on conflict (session_id, wa_message_id) do nothing
-        returning remote_jid`;
+      const inserted = await this.persist(
+        'store history',
+        () => sql<{ remote_jid: string }[]>`
+          insert into messages (workspace_id, session_id, direction, remote_jid, wa_message_id, type, content, raw, status, created_at, sent_at)
+          select ${this.workspaceId}, ${this.sessionId}, x.direction, x.remote_jid, x.wa, x.type, x.content, x.raw, x.status,
+            to_timestamp(x.ts), case when x.direction = 'out' then to_timestamp(x.ts) end
+          from jsonb_to_recordset(${sql.json(rows as never)}) as x(direction text, remote_jid text, wa text, type text, content jsonb, raw jsonb, status text, ts float8)
+          on conflict (session_id, wa_message_id) do nothing
+          returning remote_jid`,
+      );
       added += inserted.length;
       for (const r of inserted) chatJids.add(r.remote_jid);
     }
@@ -437,7 +474,7 @@ export class SessionRunner {
     const { waMessageId } = receipt;
     const pending = this.storing.get(waMessageId);
     if (pending) await pending.catch(() => {});
-    if (await this.applyReceipt(receipt)) return;
+    if (await this.persist('apply receipt', () => this.applyReceipt(receipt))) return;
     // No row matched. If our send stored its id while we were querying, retry once; if the send
     // hasn't even returned yet, hold the receipt for sendOne. Otherwise it's not ours, or stale.
     const late = this.storing.get(waMessageId);
@@ -540,6 +577,8 @@ export class SessionRunner {
     const jid = job.remote_jid;
     // A campaign's buttons poll follows its card at once; recipients are what the campaign paces.
     const recipient = job.pace !== null && job.content.type !== 'poll';
+    /** WhatsApp took the message: from here on, an error is ours to record, not a failed send. */
+    let accepted = false;
     try {
       if (isUserJid(jid) && !(await this.recipientExists(provider, jid))) {
         return await this.fail(job.id, 'Recipient is not on WhatsApp');
@@ -551,8 +590,9 @@ export class SessionRunner {
         media ? SEND_TIMEOUT_MS.media : SEND_TIMEOUT_MS.other,
         'WhatsApp did not confirm this message in time. It may still be delivered — check before resending.',
       );
+      accepted = true;
       // Receipts that arrive during this write wait for it (see onReceipt).
-      const stored = markSent(sql, job.id, waMessageId, raw);
+      const stored = this.persist('mark message sent', () => markSent(sql, job.id, waMessageId, raw));
       this.storing.set(waMessageId, stored);
       setTimeout(() => this.storing.delete(waMessageId), EARLY_RECEIPT_TTL_MS).unref();
       await stored;
@@ -567,6 +607,12 @@ export class SessionRunner {
         await this.applyReceipt(early);
       }
     } catch (err) {
+      if (accepted) {
+        // Sent, but recording it failed even after retries. Marking it failed would invite a duplicate
+        // resend; the row stays `sending` and is flagged "interrupted, resend if needed" on the next start.
+        this.log.error({ err, messageId: job.id }, 'message was sent but its status could not be saved');
+        return;
+      }
       if (err instanceof ProviderError && err.code === 'not_connected') return requeue(sql, job.id);
       if (err instanceof TimeoutError) {
         // Failed, not requeued: it may have gone out, and a resend must stay the client's call (no duplicates).
@@ -661,17 +707,35 @@ export class SessionRunner {
   }
 
   /**
-   * Someone opened this chat on the chats page: subscribe to the contact's presence. WhatsApp only
-   * delivers presence to online clients, so the account shows online while anyone watches (the page
+   * The chats page is open: follow the presence of the chats it shows (the open one plus the top of
+   * the list), so "typing…" appears in the list without opening each chat first. WhatsApp only
+   * delivers presence to online clients, so the account shows online while the page watches (it
    * renews this every minute) and goes back offline shortly after, letting the phone notify again.
+   * Each contact is subscribed once per socket and online stretch, renewed every few minutes.
    */
-  async watchChat(jid: string) {
+  async watchChats(jids: string[]) {
     const provider = this.live();
     const wasOnline = this.onlineUntil > Date.now();
     this.onlineUntil = Date.now() + WATCH_LEASE_MS;
+    if (!wasOnline || this.subscribedOn !== provider) {
+      this.subscribed.clear();
+      this.subscribedOn = provider;
+    }
     if (!wasOnline) await withTimeout(provider.setOnline(true), LOOKUP_TIMEOUT_MS, 'presence update timed out');
-    await withTimeout(provider.subscribePresence(jid), LOOKUP_TIMEOUT_MS, 'presence subscribe timed out');
+    const now = Date.now();
+    const due = [...new Set(jids)].filter((j) => now - (this.subscribed.get(j) ?? 0) > PRESENCE_RENEW_MS);
+    const failed: string[] = [];
+    for (const j of due) {
+      try {
+        await withTimeout(provider.subscribePresence(j), LOOKUP_TIMEOUT_MS, 'presence subscribe timed out');
+        this.subscribed.set(j, Date.now());
+      } catch {
+        failed.push(j);
+      }
+    }
     this.scheduleOffline();
+    // One chat asked for and it failed: say so, as before.
+    if (failed.length > 0 && failed.length === due.length && jids.length === 1) throw new Error('presence subscribe failed');
   }
 
   private scheduleOffline() {
