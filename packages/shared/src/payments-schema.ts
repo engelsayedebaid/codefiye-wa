@@ -32,6 +32,22 @@ export const paymentDetailsSchema: z.ZodType<PaymentDetails, unknown> = z.discri
   }),
 ]);
 
+/**
+ * Stored payment details, for responses. Fastify serializes responses with `z.encode`, which throws on the
+ * one-way transforms of `paymentDetailsSchema` (and stored rows shouldn't be re-validated against input rules).
+ */
+export const paymentDetailsDto: z.ZodType<PaymentDetails> = z.discriminatedUnion('method', [
+  z.object({ method: z.literal('vodafone_cash'), senderPhone: z.string(), amount: z.number().optional() }),
+  z.object({ method: z.literal('instapay'), sender: z.string(), amount: z.number().optional() }),
+  z.object({
+    method: z.literal('bank_transfer'),
+    senderName: z.string(),
+    bankName: z.string().optional(),
+    reference: z.string().optional(),
+    amount: z.number().optional(),
+  }),
+]);
+
 export const paymentSettingsSchema: z.ZodType<PaymentSettings> = z.object({
   egpPerUsd: z.number().positive().max(1_000),
   vodafone_cash: z.object({ enabled: z.boolean(), number: z.string().trim().max(20), name: z.string().trim().max(120) }),

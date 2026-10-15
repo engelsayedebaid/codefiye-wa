@@ -31,10 +31,10 @@ export const NAV_HREFS = ['#features', '#how', '#pricing', '/guide', '#faq'];
 export const LANGUAGES = ['Node.js', 'Python', 'PHP', 'Laravel', 'Go', 'Java', 'C#', 'Ruby', 'n8n', 'Make'];
 
 export const RESOURCES = [
-  { icon: BookOpen, tint: 'text-sky-400', href: '/guide' },
-  { icon: KeyRound, tint: 'text-amber-400', href: '/guide#get-key' },
+  { icon: BookOpen, tint: 'text-info', href: '/guide' },
+  { icon: KeyRound, tint: 'text-sender-amber', href: '/guide#get-key' },
   { icon: ShieldCheck, tint: 'text-brand', href: '/guide#playground' },
-  { icon: ArrowLeftRight, tint: 'text-rose-400', href: '/guide#code' },
+  { icon: ArrowLeftRight, tint: 'text-sender-rose', href: '/guide#code' },
 ];
 
 export const STEP_ICONS = [QrCode, MessageSquare, BarChart3];
@@ -42,8 +42,8 @@ export const STEP_ICONS = [QrCode, MessageSquare, BarChart3];
 export const MESSAGE_TYPE_ICONS = [Type, Image, FileText, Mic, Contact, MapPin];
 
 export const RECIPIENTS = [
-  { icon: User, tint: 'from-sky-500 to-blue-600' },
-  { icon: Users, tint: 'from-emerald-400 to-green-600' },
+  { icon: User, tint: 'from-teal to-brand' },
+  { icon: Users, tint: 'from-brand-strong to-brand-deep' },
 ];
 
 export const USE_CASE_ICONS = [MessageSquare, Bell, Bot, Users, ShoppingCart, Send];

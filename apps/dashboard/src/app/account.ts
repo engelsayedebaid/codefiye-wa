@@ -40,8 +40,12 @@ export type Account = {
     phone: string | null;
     /** Confirmed by a code; needed to request a plan (admins are exempt). */
     phoneVerified: boolean;
-    /** An authenticator app is set up; until then the dashboard shows only the setup screen. */
+    /** An authenticator app is set up. */
     twoFactorEnabled: boolean;
+    /** When a one-time skip still lets the dashboard through. Null once it expires or was never used. */
+    twoFactorGraceUntil: string | null;
+    /** The skip button is offered only before that one skip is used. */
+    twoFactorSkippable: boolean;
   } | null;
   workspace: { id: string; name: string; planId: string; trialEndsAt: string | null; planExpiresAt: string | null };
   plan: Plan;

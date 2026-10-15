@@ -174,7 +174,7 @@ export function SessionsPage() {
                   <dt className="text-muted">{s.created}</dt>
                   <dd className="text-ink-2">{fmt.timeAgo(session.createdAt)}</dd>
                   {session.lastError && (
-                    <dd className="col-span-2 truncate text-xs text-red-400" title={session.lastError}>
+                    <dd className="col-span-2 truncate text-xs text-critical" title={session.lastError}>
                       {session.lastError}
                     </dd>
                   )}
@@ -184,7 +184,7 @@ export function SessionsPage() {
                     {needsLink ? <Smartphone className="size-4" /> : <Settings2 className="size-4" />}
                     {needsLink ? s.link : s.manage}
                   </Link>
-                  <Button variant="ghost" size="sm" icon={<Trash2 className="size-4" />} onClick={() => remove(session)} className="text-red-400 hover:text-red-300">
+                  <Button variant="ghost" size="sm" icon={<Trash2 className="size-4" />} onClick={() => remove(session)} className="text-critical hover:text-critical">
                     {t.common.delete}
                   </Button>
                 </footer>

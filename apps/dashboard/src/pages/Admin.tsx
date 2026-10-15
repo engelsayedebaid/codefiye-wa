@@ -128,7 +128,7 @@ function Stat({ icon: Icon, label, value, index, accent }: { icon: typeof Users;
       <span
         className={cx(
           'flex size-9 shrink-0 items-center justify-center rounded-lg',
-          accent === 'info' ? 'bg-sky-500/15 text-sky-400' : accent === 'danger' ? 'bg-red-500/15 text-red-400' : accent === 'brand' ? 'bg-brand/15 text-brand' : 'bg-raised text-muted',
+          accent === 'info' ? 'bg-info/15 text-info' : accent === 'danger' ? 'bg-critical/15 text-critical' : accent === 'brand' ? 'bg-brand/15 text-brand' : 'bg-raised text-muted',
         )}
       >
         <Icon className="size-4" />
@@ -269,7 +269,7 @@ function RequestCard({ req, index, egpPerUsd, onProof, onReject }: { req: AdminR
             <Button variant="brand" loading={approve.isPending} onClick={() => approve.mutate()}>
               {r.approve}
             </Button>
-            <Button variant="ghost" disabled={approve.isPending} onClick={onReject} className="text-red-400 hover:text-red-300">
+            <Button variant="ghost" disabled={approve.isPending} onClick={onReject} className="text-critical hover:text-critical">
               {r.reject}
             </Button>
           </div>
@@ -286,7 +286,7 @@ function RequestCard({ req, index, egpPerUsd, onProof, onReject }: { req: AdminR
                 <MethodGlyph method={req.payment.method} size="sm" />
                 <span className="text-sm font-semibold">{p.methods[req.payment.method]}</span>
                 {expected !== null && egpPerUsd > 0 && (
-                  <span className={cx('rounded-full px-2 py-0.5 text-xs tabular-nums', req.payment.amount && Math.abs(req.payment.amount - expected) > expected * 0.02 ? 'bg-amber-500/15 text-amber-400' : 'bg-raised text-muted')}>
+                  <span className={cx('rounded-full px-2 py-0.5 text-xs tabular-nums', req.payment.amount && Math.abs(req.payment.amount - expected) > expected * 0.02 ? 'bg-warning/15 text-warning' : 'bg-raised text-muted')}>
                     {r.expected(p.egp(expected))}
                   </span>
                 )}
@@ -302,7 +302,7 @@ function RequestCard({ req, index, egpPerUsd, onProof, onReject }: { req: AdminR
           </>
         ) : (
           <div className="flex items-center gap-2 text-sm text-muted">
-            <AlertTriangle className="size-4 text-amber-400" />
+            <AlertTriangle className="size-4 text-warning" />
             {r.noPayment}
             {req.note && (
               <>
@@ -387,7 +387,7 @@ function MethodSettings({ method, enabled, complete, onToggle, children }: { met
       </div>
       <div className={cx('grid gap-3 p-4 transition-opacity', !enabled && 'opacity-60')}>{children}</div>
       {enabled && !complete && (
-        <p className="flex items-center gap-2 border-t border-line/60 px-4 py-2 text-xs text-amber-400">
+        <p className="flex items-center gap-2 border-t border-line/60 px-4 py-2 text-xs text-warning">
           <AlertTriangle className="size-3.5" /> {t.admin.payments.incomplete}
         </p>
       )}
@@ -652,7 +652,7 @@ function UsersTable({ selfId }: { selfId: string | null }) {
     if (ws.planId === 'trial') return ws.trialEndsAt ? w.trialEnds(fmt.date(ws.trialEndsAt)) : '—';
     if (!ws.planExpiresAt) return w.noExpiry;
     const expired = new Date(ws.planExpiresAt).getTime() < Date.now();
-    return expired ? <span className="text-red-400">{`${w.expired} · ${fmt.date(ws.planExpiresAt)}`}</span> : fmt.date(ws.planExpiresAt);
+    return expired ? <span className="text-critical">{`${w.expired} · ${fmt.date(ws.planExpiresAt)}`}</span> : fmt.date(ws.planExpiresAt);
   };
 
   const th = 'h-10 px-2 text-start font-medium whitespace-nowrap text-muted';
@@ -723,7 +723,7 @@ function UsersTable({ selfId }: { selfId: string | null }) {
                       <p className="ltr text-xs text-muted">{row.email}</p>
                       <p className="mt-0.5 flex items-center gap-1 text-xs">
                         <Smartphone className="size-3 text-muted" />
-                        {row.phone && row.phoneVerified ? <span className="ltr text-muted">{row.phone}</span> : <span className="text-amber-400">{u.phoneUnverified}</span>}
+                        {row.phone && row.phoneVerified ? <span className="ltr text-muted">{row.phone}</span> : <span className="text-warning">{u.phoneUnverified}</span>}
                       </p>
                     </td>
                     <td className={td}>
@@ -768,12 +768,12 @@ function UsersTable({ selfId }: { selfId: string | null }) {
                               {u.reactivate}
                             </Button>
                           ) : (
-                            <Button variant="ghost" size="sm" icon={<Ban className="size-4" />} onClick={() => setDialog({ kind: 'suspend', user: row })} className="text-amber-400 hover:text-amber-300">
+                            <Button variant="ghost" size="sm" icon={<Ban className="size-4" />} onClick={() => setDialog({ kind: 'suspend', user: row })} className="text-warning hover:text-warning">
                               {u.suspend}
                             </Button>
                           ))}
                         {manageable && (
-                          <Button variant="ghost" size="sm" onClick={() => setDialog({ kind: 'delete', user: row })} className="text-red-400 hover:text-red-300">
+                          <Button variant="ghost" size="sm" onClick={() => setDialog({ kind: 'delete', user: row })} className="text-critical hover:text-critical">
                             {u.delete}
                           </Button>
                         )}
@@ -856,7 +856,7 @@ function OtpText() {
             {o.hint}{' '}
             <code className="ltr rounded bg-raised px-1 font-mono">{'{{code}}'}</code> <code className="ltr rounded bg-raised px-1 font-mono">{'{{minutes}}'}</code>
           </p>
-          {needsCode(current[lang]) && <p className="text-xs text-red-400">{o.missingCode}</p>}
+          {needsCode(current[lang]) && <p className="text-xs text-critical">{o.missingCode}</p>}
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="brand" loading={save.isPending} disabled={invalid || !dirty} onClick={() => save.mutate()}>
               {o.save}

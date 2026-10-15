@@ -22,6 +22,7 @@ import {
 import type { Logger } from 'pino';
 import type { Deps } from './deps';
 import { ApiError, codeForStatus, forbidden, notFound, tooMany } from './lib/errors';
+import { twoFactorGraceUntil } from './lib/totp';
 import { accountRoutes, publicAccountRoutes } from './routes/account';
 import { adminRoutes } from './routes/admin';
 import { broadcastRoutes } from './routes/broadcasts';
@@ -233,8 +234,9 @@ export async function buildApp(deps: Deps, options: AppOptions) {
     async (api) => {
       api.addHook('onRequest', async (req) => {
         await deps.auth.authenticate(req);
-        // Two-factor is mandatory: a dashboard session of a user without it can only set it up.
-        if (req.auth.console && req.auth.userId && !req.auth.twoFactorEnabled && !TWO_FACTOR_EXEMPT.test(req.url)) {
+        // Two-factor is mandatory, with one 48-hour skip. After that a dashboard session can only set it up.
+        const grace = twoFactorGraceUntil(req.auth.twoFactorSkippedAt);
+        if (req.auth.console && req.auth.userId && !req.auth.twoFactorEnabled && !grace && !TWO_FACTOR_EXEMPT.test(req.url)) {
           throw forbidden('Set up two-factor authentication first', 'two_factor_required');
         }
       });

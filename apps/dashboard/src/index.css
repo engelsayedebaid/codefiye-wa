@@ -5,8 +5,9 @@
 @custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
 
 /*
- * shadcn "neutral" dark palette (same values as the reference theme) with one green accent. These are
- * the dark values; `:root[data-theme='light']` below overrides the same variables.
+ * Cool teal neutrals with one brand. These are the dark values; `:root[data-theme='light']` below
+ * overrides the same variables. Status inks (--color-good and friends) are the readable color, so
+ * `bg-good/12 text-good` is a soft chip in both themes.
  * Latin glyphs render in Instrument Sans, Arabic falls through to IBM Plex Sans Arabic.
  */
 @theme {
@@ -17,42 +18,55 @@
   --radius-lg: 0.625rem;
   --radius-xl: 0.875rem;
 
-  --color-bg: oklch(0.19 0.005 165);
+  --color-bg: oklch(0.155 0.012 175);
   /* Sidebar and the frame around the inset content panel. */
-  --color-surface: oklch(0.235 0.006 165);
-  --color-card: oklch(0.19 0.005 165);
+  --color-surface: oklch(0.185 0.014 175);
+  --color-card: oklch(0.21 0.014 175);
   /* secondary / accent / muted surfaces */
-  --color-raised: oklch(0.285 0.007 165);
-  --color-line: oklch(0.285 0.007 165);
-  --color-line-strong: oklch(0.385 0.008 165);
-  --color-ring: oklch(0.46 0.008 165);
-  --color-ink: oklch(0.985 0 0);
-  --color-ink-2: oklch(0.87 0 0);
-  --color-muted: oklch(0.708 0 0);
-  --color-faint: oklch(0.556 0 0);
-  --color-navy: oklch(0.21 0.034 264.665);
+  --color-raised: oklch(0.27 0.016 175);
+  --color-line: oklch(0.33 0.014 175);
+  --color-line-strong: oklch(0.43 0.016 175);
+  --color-ring: oklch(0.72 0.12 168);
+  --color-ink: oklch(0.97 0.005 175);
+  --color-ink-2: oklch(0.88 0.012 175);
+  --color-muted: oklch(0.75 0.016 175);
+  --color-faint: oklch(0.66 0.016 175);
+  --color-navy: oklch(0.22 0.03 200);
   --color-destructive: oklch(0.396 0.141 25.723);
   --color-destructive-ink: oklch(0.637 0.237 25.331);
 
-  --color-brand: oklch(0.76 0.2015 149.74);
-  --color-brand-strong: oklch(0.7 0.19 149.74);
-  --color-brand-deep: #0eaf51;
-  --color-teal: #0f9b8e;
+  --color-brand: oklch(0.78 0.14 168);
+  --color-brand-strong: oklch(0.7 0.14 168);
+  --color-brand-deep: oklch(0.62 0.13 168);
+  --color-teal: oklch(0.72 0.12 180);
   /* Text and icons drawn on a bg-brand fill. */
-  --color-on-brand: #000;
+  --color-on-brand: oklch(0.2 0.03 175);
   /* Accent gradient (progress, launch, hero icons). */
-  --color-grad-from: #3be37f;
-  --color-grad-to: #0e9488;
+  --color-grad-from: oklch(0.82 0.15 165);
+  --color-grad-to: oklch(0.62 0.12 185);
 
-  /* Chart series (validated on the card surface, see apps/dashboard/src/app/MessagesChart.tsx). */
-  --color-series-sent: #0eaf51;
-  --color-series-received: #3987e5;
+  /* Chart series: teal vs blue, separated in lightness so they still split under CVD. */
+  --color-series-sent: oklch(0.75 0.14 170);
+  --color-series-received: oklch(0.72 0.13 250);
 
-  /* Status (fixed; always paired with an icon or label). */
-  --color-good: #0ca30c;
-  --color-warning: #fab219;
+  /* Status inks (bright on this dark surface; the light theme deepens them). */
+  --color-good: oklch(0.8 0.15 155);
+  --color-info: oklch(0.78 0.11 230);
+  --color-warning: oklch(0.84 0.14 85);
+  --color-on-warning: oklch(0.28 0.05 85);
   --color-serious: #ec835a;
-  --color-critical: #d03b3b;
+  --color-critical: oklch(0.75 0.16 25);
+  --color-progress: oklch(0.74 0.14 305);
+
+  /* Group-sender names. Bright here; the light theme points the same names at deep shades. */
+  --color-sender-emerald: oklch(0.8 0.14 160);
+  --color-sender-sky: oklch(0.8 0.1 230);
+  --color-sender-violet: oklch(0.78 0.13 305);
+  --color-sender-amber: oklch(0.84 0.13 85);
+  --color-sender-rose: oklch(0.75 0.15 15);
+  --color-sender-cyan: oklch(0.82 0.1 200);
+  --color-sender-lime: oklch(0.86 0.16 125);
+  --color-sender-fuchsia: oklch(0.75 0.16 330);
 }
 
 /*
@@ -66,13 +80,13 @@
   --color-raised: #edf1ef;
   --color-line: #e1e6e3;
   --color-line-strong: #cdd5d1;
-  --color-ring: #94aea5;
+  --color-ring: #367a6b;
   --color-ink: #111714;
   --color-ink-2: #2e3934;
   --color-muted: #646e69;
-  --color-faint: #89928d;
+  --color-faint: #6b7570;
   --color-navy: #e3f1ec;
-  --color-destructive: #dc2626;
+  --color-destructive: #b91c1c;
   --color-destructive-ink: #b91c1c;
 
   --color-brand: #367a6b;
@@ -80,53 +94,26 @@
   --color-brand-deep: #2b6558;
   --color-teal: #0f766e;
   --color-on-brand: #fff;
-  --color-grad-from: #45917f;
+  --color-grad-from: #3a7f6e;
   --color-grad-to: #22594d;
 
-  --color-series-sent: #1f8f57;
-  --color-series-received: #2f74c9;
+  --color-series-sent: #0f766e;
+  --color-series-received: #1d4ed8;
   --color-good: #15803d;
+  --color-info: #1d4ed8;
   --color-warning: #b45309;
+  --color-on-warning: #fff;
+  --color-critical: #b91c1c;
+  --color-progress: #6d28d9;
 
-  /*
-   * The pale palette shades the dark UI uses for text (red-400 on a red-500/10 chip, amber-300 notes…)
-   * wash out on white: point them at the deep shades instead.
-   */
-  --color-red-200: #b91c1c;
-  --color-red-300: #b91c1c;
-  --color-red-400: #dc2626;
-  --color-rose-300: #be123c;
-  --color-rose-400: #e11d48;
-  --color-pink-400: #db2777;
-  --color-orange-300: #c2410c;
-  --color-orange-400: #c2410c;
-  --color-amber-200: #92400e;
-  --color-amber-300: #b45309;
-  --color-amber-400: #b45309;
-  --color-amber-500: #d97706;
-  --color-yellow-300: #a16207;
-  --color-yellow-400: #a16207;
-  --color-yellow-500: #ca8a04;
-  --color-lime-400: #4d7c0f;
-  --color-lime-500: #65a30d;
-  --color-green-200: #15803d;
-  --color-green-300: #15803d;
-  --color-green-400: #16a34a;
-  --color-green-500: #16a34a;
-  --color-emerald-300: #047857;
-  --color-emerald-400: #059669;
-  --color-teal-300: #0f766e;
-  --color-teal-400: #0d9488;
-  --color-sky-200: #0369a1;
-  --color-sky-300: #0369a1;
-  --color-sky-400: #0284c7;
-  --color-blue-300: #1d4ed8;
-  --color-blue-400: #2563eb;
-  --color-violet-300: #6d28d9;
-  --color-violet-400: #7c3aed;
-  --color-purple-300: #7e22ce;
-  --color-purple-400: #9333ea;
-  --color-fuchsia-400: #c026d3;
+  --color-sender-emerald: #047857;
+  --color-sender-sky: #0369a1;
+  --color-sender-violet: #6d28d9;
+  --color-sender-amber: #b45309;
+  --color-sender-rose: #be123c;
+  --color-sender-cyan: #0e7490;
+  --color-sender-lime: #3f6212;
+  --color-sender-fuchsia: #a21caf;
 }
 
 html {
@@ -232,16 +219,16 @@ body {
 [data-theme='light'] .page-wash {
   background-color: var(--color-bg);
   background-image:
-    radial-gradient(ellipse 60% 55% at 0% 0%, rgb(54 122 107 / 0.14), transparent 70%),
-    radial-gradient(rgb(17 23 20 / 0.08) 1px, transparent 1.3px);
+    radial-gradient(ellipse 60% 55% at 0% 0%, color-mix(in oklab, var(--color-brand) 14%, transparent), transparent 70%),
+    radial-gradient(color-mix(in oklab, var(--color-ink) 8%, transparent) 1px, transparent 1.3px);
   background-size:
     100% 100%,
     24px 24px;
 }
 [data-theme='light'][dir='rtl'] .page-wash {
   background-image:
-    radial-gradient(ellipse 60% 55% at 100% 0%, rgb(54 122 107 / 0.14), transparent 70%),
-    radial-gradient(rgb(17 23 20 / 0.08) 1px, transparent 1.3px);
+    radial-gradient(ellipse 60% 55% at 100% 0%, color-mix(in oklab, var(--color-brand) 14%, transparent), transparent 70%),
+    radial-gradient(color-mix(in oklab, var(--color-ink) 8%, transparent) 1px, transparent 1.3px);
 }
 
 .code-scroll {
@@ -379,15 +366,19 @@ body {
 }
 /* Green sweep across the accent word of a headline. */
 .text-shimmer {
-  background: linear-gradient(90deg, var(--color-brand) 0%, var(--color-brand) 40%, #b9f8cf 50%, var(--color-brand) 60%, var(--color-brand) 100%);
+  background: linear-gradient(
+    90deg,
+    var(--color-brand) 0%,
+    var(--color-brand) 40%,
+    color-mix(in oklab, var(--color-brand) 45%, white) 50%,
+    var(--color-brand) 60%,
+    var(--color-brand) 100%
+  );
   background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
   animation: shimmer 6s linear infinite;
-}
-[data-theme='light'] .text-shimmer {
-  background-image: linear-gradient(90deg, var(--color-brand) 0%, var(--color-brand) 40%, #7cc9b0 50%, var(--color-brand) 60%, var(--color-brand) 100%);
 }
 
 /* Scroll reveal: <Reveal> sets data-shown once the element enters the viewport. */

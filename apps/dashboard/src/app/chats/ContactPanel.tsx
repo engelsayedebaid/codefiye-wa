@@ -35,7 +35,7 @@ function Gallery({ sessionId, jid, kind }: { sessionId: string; jid: string; kin
         {items.map((m) => (
           <li key={m.id}>
             <a href={mediaUrl(m.id, true)} className="flex items-center gap-3 rounded-lg p-2 transition-colors hover:bg-raised">
-              <FileText className="size-8 shrink-0 text-rose-400" />
+              <FileText className="size-8 shrink-0 text-sender-rose" />
               <span className="min-w-0 flex-1 pii">
                 <span dir="auto" className="block truncate text-sm">
                   {m.content.media?.fileName ?? m.content.fileName ?? t.chats.media.document}
@@ -206,7 +206,7 @@ export function ContactPanel({
             <PresenceLine chat={chat} presence={presence} />
           </p>
           {info.data?.optedOut && (
-            <p className="mt-3 flex items-start gap-2 rounded-lg bg-amber-500/10 px-3 py-2 text-start text-xs text-amber-400">
+            <p className="mt-3 flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-start text-xs text-warning">
               <BellOff className="mt-0.5 size-4 shrink-0" />
               <span>
                 <span className="block font-semibold">{p.optedOut}</span>
@@ -248,7 +248,7 @@ export function ContactPanel({
               <div>
                 <p className="mb-1 text-xs text-muted">{p.phone}</p>
                 <CopyField value={chat.phone} />
-                <a href={`https://wa.me/${chat.phone.slice(1)}`} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-xs text-sky-400 hover:underline">
+                <a href={`https://wa.me/${chat.phone.slice(1)}`} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-xs text-info hover:underline">
                   <ExternalLink className="size-3.5" /> {c.actions.openWhatsApp}
                 </a>
               </div>

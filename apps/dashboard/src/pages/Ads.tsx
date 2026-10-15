@@ -418,8 +418,8 @@ function StateBadge({ state }: { state: CampaignState }) {
     return (
       <Badge tone="progress" className="gap-1.5">
         <span className="relative flex size-2">
-          <span className="absolute inset-0 animate-ping rounded-full bg-purple-400" />
-          <span className="relative size-2 rounded-full bg-purple-400" />
+          <span className="absolute inset-0 animate-ping rounded-full bg-progress" />
+          <span className="relative size-2 rounded-full bg-progress" />
         </span>
         {l.running}
       </Badge>
@@ -439,10 +439,10 @@ function StateBadge({ state }: { state: CampaignState }) {
 /** Read / delivered / sent / failed as one bar, out of `total`. */
 function StackedBar({ stats, total, className }: { stats: Stats; total: number; className?: string }) {
   const parts = [
-    { key: 'read', value: stats.read, tone: 'bg-sky-500' },
+    { key: 'read', value: stats.read, tone: 'bg-info' },
     { key: 'delivered', value: stats.delivered, tone: 'bg-brand' },
     { key: 'sent', value: stats.sent, tone: 'bg-ink/70' },
-    { key: 'failed', value: stats.failed, tone: 'bg-red-500' },
+    { key: 'failed', value: stats.failed, tone: 'bg-critical' },
   ];
   return (
     <div className={cx('flex h-2 w-full overflow-hidden rounded-full bg-raised', className)}>
@@ -494,7 +494,7 @@ function ShieldBanner() {
           <p className="flex flex-wrap items-center gap-2 font-semibold">
             {s.title}
             <Badge tone="good" className="gap-1.5">
-              <span className="size-1.5 animate-pulse rounded-full bg-green-500" />
+              <span className="size-1.5 animate-pulse rounded-full bg-good" />
               {s.on}
             </Badge>
           </p>
@@ -533,8 +533,8 @@ function ShieldBanner() {
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             {[
-              { title: g.do, items: g.dos, icon: CircleCheck, tone: 'border-green-500/20 bg-green-500/5', ink: 'text-green-400' },
-              { title: g.dont, items: g.donts, icon: XCircle, tone: 'border-red-500/20 bg-red-500/5', ink: 'text-red-400' },
+              { title: g.do, items: g.dos, icon: CircleCheck, tone: 'border-good/25 bg-good/8', ink: 'text-good' },
+              { title: g.dont, items: g.donts, icon: XCircle, tone: 'border-critical/25 bg-critical/8', ink: 'text-critical' },
             ].map(({ title, items, icon: Icon, tone, ink }) => (
               <div key={title} className={cx('space-y-3 rounded-lg border p-4', tone)}>
                 <p className={cx('flex items-center gap-2 text-sm font-semibold', ink)}>
@@ -551,8 +551,8 @@ function ShieldBanner() {
               </div>
             ))}
           </div>
-          <p className="flex items-start gap-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-200">
-            <Info className="mt-0.5 size-4 shrink-0 text-amber-300" />
+          <p className="flex items-start gap-2 rounded-lg border border-warning/25 bg-warning/10 px-3 py-2.5 text-sm text-warning">
+            <Info className="mt-0.5 size-4 shrink-0 text-warning" />
             {g.disclaimer}
           </p>
         </div>
@@ -562,15 +562,15 @@ function ShieldBanner() {
 }
 
 const SAFETY_TONES: Record<SafetyTone, { icon: LucideIcon; ink: string }> = {
-  risk: { icon: ShieldAlert, ink: 'text-red-400' },
-  warn: { icon: CircleAlert, ink: 'text-amber-400' },
-  info: { icon: Info, ink: 'text-sky-400' },
-  good: { icon: CircleCheck, ink: 'text-green-500' },
+  risk: { icon: ShieldAlert, ink: 'text-critical' },
+  warn: { icon: CircleAlert, ink: 'text-warning' },
+  info: { icon: Info, ink: 'text-info' },
+  good: { icon: CircleCheck, ink: 'text-good' },
 };
 const SAFETY_LEVELS = {
-  high: { ink: 'text-green-500', bar: 'bg-gradient-to-r from-grad-from to-grad-to rtl:bg-gradient-to-l' },
-  medium: { ink: 'text-amber-400', bar: 'bg-amber-400' },
-  low: { ink: 'text-red-400', bar: 'bg-red-500' },
+  high: { ink: 'text-good', bar: 'bg-gradient-to-r from-grad-from to-grad-to rtl:bg-gradient-to-l' },
+  medium: { ink: 'text-warning', bar: 'bg-warning' },
+  low: { ink: 'text-critical', bar: 'bg-critical' },
 } as const;
 
 /** The campaign's safety score and what moves it, updated as the campaign is composed. */
@@ -741,7 +741,7 @@ function PartCard({ icon: Icon, title, removeLabel, onRemove, children }: { icon
           onClick={onRemove}
           title={removeLabel}
           aria-label={removeLabel}
-          className="rounded-md p-1.5 text-muted transition-colors hover:bg-raised hover:text-red-400"
+          className="rounded-md p-1.5 text-muted transition-colors hover:bg-raised hover:text-critical"
         >
           <X className="size-4" />
         </button>
@@ -1064,7 +1064,7 @@ function MessageStep({
                     type="button"
                     onClick={() => setDraft((d) => ({ ...d, buttons: d.buttons.filter((_, j) => j !== i) }))}
                     aria-label={e.removeButton}
-                    className="rounded-md p-1.5 text-muted transition-colors hover:bg-raised hover:text-red-400"
+                    className="rounded-md p-1.5 text-muted transition-colors hover:bg-raised hover:text-critical"
                   >
                     <X className="size-4" />
                   </button>
@@ -1310,7 +1310,7 @@ function AudienceStep({
               setManual('');
               setFile(null);
             }}
-            className="ms-auto text-xs text-muted hover:text-red-400"
+            className="ms-auto text-xs text-muted hover:text-critical"
           >
             {a.clear}
           </button>
@@ -1328,7 +1328,7 @@ function AudienceStep({
       )}
 
       {(audience.local.length > 0 || countryCode) && (
-        <div className="animate-fade-in flex flex-wrap items-center gap-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2.5">
+        <div className="animate-fade-in flex flex-wrap items-center gap-3 rounded-lg border border-warning/25 bg-warning/10 px-3 py-2.5">
           <label className="flex items-center gap-2 text-sm font-medium">
             {a.countryCode}
             <span className="ltr flex items-center rounded-md border border-line bg-bg ps-2">
@@ -1342,7 +1342,7 @@ function AudienceStep({
               />
             </span>
           </label>
-          {audience.local.length > 0 && <span className="text-sm text-amber-200">{a.localHint(audience.local.length)}</span>}
+          {audience.local.length > 0 && <span className="text-sm text-warning">{a.localHint(audience.local.length)}</span>}
         </div>
       )}
 
@@ -1494,20 +1494,20 @@ function NumbersStep({
               </span>
               <span className={cx('relative flex size-10 shrink-0 items-center justify-center rounded-full', on ? 'bg-brand/20 text-brand' : 'bg-raised text-muted')}>
                 <Smartphone className="size-5" />
-                {s.status === 'connected' && <span className="absolute end-0 bottom-0 size-2.5 rounded-full border-2 border-card bg-green-500" />}
+                {s.status === 'connected' && <span className="absolute end-0 bottom-0 size-2.5 rounded-full border-2 border-card bg-good" />}
               </span>
               <span className="min-w-0 flex-1 space-y-1.5">
                 <span className="flex items-center gap-2">
                   <span className="truncate text-sm font-medium">{s.name}</span>
                   {warming && (
-                    <span title={n.warmup(cap)} className="inline-flex shrink-0 items-center gap-1 rounded-full bg-sky-500/10 px-1.5 py-0.5 text-[11px] text-sky-400">
+                    <span title={n.warmup(cap)} className="inline-flex shrink-0 items-center gap-1 rounded-full bg-info/12 px-1.5 py-0.5 text-[11px] text-info">
                       <Sprout className="size-3" /> {n.newNumber}
                     </span>
                   )}
                 </span>
                 <span className="ltr block truncate font-mono text-xs text-muted">{s.phoneNumber ?? n.noPhone}</span>
                 {resting ? (
-                  <span className="flex items-center gap-1.5 text-xs text-amber-300">
+                  <span className="flex items-center gap-1.5 text-xs text-warning">
                     <ShieldAlert className="size-3.5 shrink-0" /> {n.resting(fmt.upcoming(resting))}
                   </span>
                 ) : (
@@ -1519,7 +1519,7 @@ function NumbersStep({
                       </span>
                       <span className="block h-1 overflow-hidden rounded-full bg-raised">
                         <span
-                          className={cx('block h-full rounded-full transition-[width] duration-500', used >= cap ? 'bg-amber-400' : 'bg-brand')}
+                          className={cx('block h-full rounded-full transition-[width] duration-500', used >= cap ? 'bg-warning' : 'bg-brand')}
                           style={{ width: `${Math.min(100, (used / Math.max(1, cap)) * 100)}%` }}
                         />
                       </span>
@@ -1666,7 +1666,7 @@ function ProtectionStep({
               <p className="flex items-center gap-2 text-sm font-medium">
                 <MoonStar className="size-4 text-muted" /> {p.hoursToggle}
               </p>
-              <p className={cx('text-sm', hoursOn ? 'text-muted' : 'text-amber-300')}>{hoursOn ? p.hoursOn(timeZone) : p.hoursOff}</p>
+              <p className={cx('text-sm', hoursOn ? 'text-muted' : 'text-warning')}>{hoursOn ? p.hoursOn(timeZone) : p.hoursOff}</p>
             </div>
             <Switch checked={hoursOn} onChange={setHoursOn} label={p.hoursToggle} />
           </div>
@@ -1698,7 +1698,7 @@ function ProtectionStep({
               <p className="flex items-center gap-2 text-sm font-medium">
                 <BellOff className="size-4 text-muted" /> {p.optOut}
               </p>
-              <p className={cx('text-sm', optOut ? 'text-muted' : 'text-amber-300')}>{optOut ? p.optOutOn : p.optOutOff}</p>
+              <p className={cx('text-sm', optOut ? 'text-muted' : 'text-warning')}>{optOut ? p.optOutOn : p.optOutOff}</p>
             </div>
             <Switch checked={optOut} onChange={setOptOut} label={p.optOut} />
           </div>
@@ -1992,9 +1992,9 @@ function Composer({ onLaunched }: { onLaunched: (created: Created) => void }) {
               <CalendarClock className="size-3.5 shrink-0" /> {s.finishes(fmt.upcoming(finishAt))}
             </p>
           )}
-          {willSkip > 0 && <p className="text-xs text-amber-300">{t.ads.audience.willSkip(willSkip)}</p>}
+          {willSkip > 0 && <p className="text-xs text-warning">{t.ads.audience.willSkip(willSkip)}</p>}
           {complete.length > BROADCAST_LIMITS.recipients && (
-            <p className="text-xs text-amber-300">{t.ads.audience.tooMany(fmt.number.format(BROADCAST_LIMITS.recipients))}</p>
+            <p className="text-xs text-warning">{t.ads.audience.tooMany(fmt.number.format(BROADCAST_LIMITS.recipients))}</p>
           )}
           <button
             type="button"
@@ -2087,7 +2087,7 @@ function Planes({ count }: { count: number }) {
   return (
     <>
       {planes.map((p) => (
-        <Send key={p.id} aria-hidden className="animate-plane pointer-events-none absolute top-1/2 left-1/2 -mt-2.5 -ml-2.5 size-5 text-brand drop-shadow-[0_0_6px_rgb(59_227_127/0.8)]" style={p.style} />
+        <Send key={p.id} aria-hidden className="animate-plane pointer-events-none absolute top-1/2 left-1/2 -mt-2.5 -ml-2.5 size-5 text-brand drop-shadow-[0_0_6px_color-mix(in_oklab,var(--color-brand)_80%,transparent)]" style={p.style} />
       ))}
     </>
   );
@@ -2127,7 +2127,7 @@ function ProgressRing({ value, total, running }: { value: number; total: number;
           stroke="url(#ads-ring)"
           strokeDasharray={circumference}
           strokeDashoffset={offset}
-          style={{ transition: 'stroke-dashoffset 1.1s cubic-bezier(0.22, 1, 0.36, 1)', filter: 'drop-shadow(0 0 6px rgb(59 227 127 / 0.45))' }}
+          style={{ transition: 'stroke-dashoffset 1.1s cubic-bezier(0.22, 1, 0.36, 1)', filter: 'drop-shadow(0 0 6px color-mix(in oklab, var(--color-brand) 45%, transparent))' }}
         />
       </svg>
       <div role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct * 100)} className="absolute inset-0 flex flex-col items-center justify-center">
@@ -2155,7 +2155,7 @@ function StatTile({ label, value, icon: Icon, tone, index }: { label: string; va
   );
 }
 
-const CONFETTI_COLORS = ['#3BE37F', '#0E9488', '#fab219', '#ec4899', '#3b82f6', '#ffffff'];
+const CONFETTI_COLORS = ['#40d4a6', '#0f766e', '#fab219', '#ec4899', '#3b82f6', '#ffffff'];
 
 function Confetti() {
   const pieces = useMemo(
@@ -2261,9 +2261,9 @@ function LiveCampaign({ id }: { id: string }) {
   const tiles = [
     { label: l.waiting, value: stats.queued + stats.sending, icon: Clock, tone: 'bg-raised text-muted' },
     { label: l.sent, value: stats.sent, icon: Check, tone: 'bg-ink/10 text-ink' },
-    { label: l.delivered, value: stats.delivered, icon: CheckCheck, tone: 'bg-green-500/15 text-green-400' },
-    { label: l.read, value: stats.read, icon: CheckCheck, tone: 'bg-sky-500/15 text-sky-400' },
-    { label: l.failed, value: stats.failed, icon: XCircle, tone: 'bg-red-500/15 text-red-400' },
+    { label: l.delivered, value: stats.delivered, icon: CheckCheck, tone: 'bg-good/15 text-good' },
+    { label: l.read, value: stats.read, icon: CheckCheck, tone: 'bg-info/15 text-info' },
+    { label: l.failed, value: stats.failed, icon: XCircle, tone: 'bg-critical/15 text-critical' },
   ];
 
   return (
@@ -2283,9 +2283,9 @@ function LiveCampaign({ id }: { id: string }) {
       <ErrorNote>{cancel.error ? errorMessage(cancel.error) : null}</ErrorNote>
 
       {shielded.length > 0 && (
-        <section role="alert" className="animate-fade-up space-y-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
-          <p className="flex items-center gap-2 font-semibold text-amber-200">
-            <ShieldAlert className="size-5 shrink-0 text-amber-300" /> {l.shield.title}
+        <section role="alert" className="animate-fade-up space-y-3 rounded-xl border border-warning/30 bg-warning/10 p-4">
+          <p className="flex items-center gap-2 font-semibold text-warning">
+            <ShieldAlert className="size-5 shrink-0 text-warning" /> {l.shield.title}
           </p>
           <ul className="space-y-2">
             {shielded.map((lane) => (
@@ -2311,7 +2311,7 @@ function LiveCampaign({ id }: { id: string }) {
             </div>
             <p className="text-sm text-muted">{meta.join(' · ')}</p>
             {nextAt !== null && nextAt > now && (
-              <p className={cx('flex items-center gap-1.5 text-sm', waiting ? 'text-sky-300' : 'text-muted')}>
+              <p className={cx('flex items-center gap-1.5 text-sm', waiting ? 'text-info' : 'text-muted')}>
                 {waiting ? <Coffee className="size-4 shrink-0" /> : <Clock className="size-4 shrink-0" />}
                 {waiting ? l.pausedUntil(fmt.upcoming(nextAt)) : l.next(fmt.upcoming(nextAt))}
               </p>
@@ -2324,7 +2324,7 @@ function LiveCampaign({ id }: { id: string }) {
                 icon={<CircleStop className="size-4" />}
                 loading={cancel.isPending}
                 onClick={() => confirm(l.cancelConfirm) && cancel.mutate()}
-                className="text-red-400 hover:text-red-300"
+                className="text-critical hover:text-critical"
               >
                 {l.cancel}
               </Button>
@@ -2346,8 +2346,8 @@ function LiveCampaign({ id }: { id: string }) {
           <ProgressRing value={processed} total={total} running={running} />
           <div className="space-y-4">
             {data.state === 'done' && (
-              <div className="animate-scale-in rounded-xl border border-green-500/25 bg-green-500/10 p-4">
-                <p className="flex items-center gap-2 font-semibold text-green-300">
+              <div className="animate-scale-in rounded-xl border border-good/25 bg-good/12 p-4">
+                <p className="flex items-center gap-2 font-semibold text-good">
                   <PartyPopper className="size-5" /> {l.complete}
                 </p>
                 <p className="mt-1 text-sm text-muted">
@@ -2381,7 +2381,7 @@ function LiveCampaign({ id }: { id: string }) {
                     <StatusIcon tone={meta.tone} icon={meta.icon} spin={m.status === 'sending'} />
                     <div className="min-w-0 flex-1">
                       <p className="ltr truncate font-mono text-sm">{m.phone ?? '—'}</p>
-                      {m.error && <p className="truncate text-xs text-red-400">{reason(m.error)}</p>}
+                      {m.error && <p className="truncate text-xs text-critical">{reason(m.error)}</p>}
                     </div>
                     <span className="shrink-0 text-xs text-muted">{fmt.timeAgo(m.updatedAt)}</span>
                   </li>
@@ -2399,11 +2399,11 @@ function LiveCampaign({ id }: { id: string }) {
                 const now = lane.id === active;
                 const offline = running && lane.pending > 0 && lane.status !== 'connected';
                 const status = lane.shield ? (
-                  <span className="flex items-center gap-1 text-xs font-normal text-amber-300">
+                  <span className="flex items-center gap-1 text-xs font-normal text-warning">
                     <OctagonX className="size-3.5" /> {l.reasons[lane.shield]}
                   </span>
                 ) : lane.restingUntil ? (
-                  <span className="flex items-center gap-1 text-xs font-normal text-amber-300">
+                  <span className="flex items-center gap-1 text-xs font-normal text-warning">
                     <ShieldAlert className="size-3.5" /> {t.ads.numbers.resting(fmt.upcoming(lane.restingUntil))}
                   </span>
                 ) : offline ? (
@@ -2434,7 +2434,7 @@ function LiveCampaign({ id }: { id: string }) {
                     </div>
                     <div className="flex h-1.5 overflow-hidden rounded-full bg-raised">
                       <span className="h-full bg-brand transition-[width] duration-700" style={{ width: `${(lane.done / Math.max(1, lane.total)) * 100}%` }} />
-                      <span className="h-full bg-red-500 transition-[width] duration-700" style={{ width: `${(lane.failed / Math.max(1, lane.total)) * 100}%` }} />
+                      <span className="h-full bg-critical transition-[width] duration-700" style={{ width: `${(lane.failed / Math.max(1, lane.total)) * 100}%` }} />
                     </div>
                   </li>
                 );
@@ -2458,7 +2458,7 @@ function LiveCampaign({ id }: { id: string }) {
             {data.failures.map((f, i) => (
               <li key={i} className="flex flex-wrap items-center justify-between gap-2 py-2">
                 <span className="ltr font-mono">{f.phone ?? '—'}</span>
-                <span className="text-xs text-red-400">{reason(f.error)}</span>
+                <span className="text-xs text-critical">{reason(f.error)}</span>
               </li>
             ))}
           </ul>
@@ -2532,10 +2532,10 @@ function History() {
                   <span className="size-2 rounded-full bg-brand" /> {t.ads.live.delivered} {fmt.number.format(c.stats.delivered)}
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span className="size-2 rounded-full bg-sky-500" /> {t.ads.live.read} {fmt.number.format(c.stats.read)}
+                  <span className="size-2 rounded-full bg-info" /> {t.ads.live.read} {fmt.number.format(c.stats.read)}
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span className="size-2 rounded-full bg-red-500" /> {t.ads.live.failed} {fmt.number.format(c.stats.failed)}
+                  <span className="size-2 rounded-full bg-critical" /> {t.ads.live.failed} {fmt.number.format(c.stats.failed)}
                 </span>
                 {c.stats.queued + c.stats.sending > 0 && (
                   <span className="flex items-center gap-1.5">

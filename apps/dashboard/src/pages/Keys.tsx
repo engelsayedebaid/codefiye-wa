@@ -92,7 +92,7 @@ export function KeysPage() {
                         size="sm"
                         icon={<Trash2 className="size-4" />}
                         onClick={() => confirm(k.confirmRevoke(key.name, key.prefix)) && revoke.mutate(key)}
-                        className="text-red-400 hover:text-red-300"
+                        className="text-critical hover:text-critical"
                       >
                         {k.revoke}
                       </Button>

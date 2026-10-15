@@ -6,9 +6,8 @@ import { cx } from '../ui';
 export type DailyPoint = { day: string; sent: number; received: number; failed: number };
 
 /**
- * Two categorical series on the card surface. Validated with the dataviz skill's validator against
- * #171717 (lightness band, chroma, CVD ΔE 25.1, contrast). Grid/axis/halo follow --color-ink, so the
- * same chart reads on the dark and the light card.
+ * Two categorical series on the card surface: teal sent, blue received, split in lightness so they
+ * still separate under CVD. Grid/axis/halo follow --color-ink, so the same chart reads on both cards.
  */
 const SERIES = [
   { key: 'sent', color: 'var(--color-series-sent)' },

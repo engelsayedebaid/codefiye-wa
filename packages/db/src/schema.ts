@@ -67,6 +67,11 @@ export const users = pgTable(
      */
     totpSecret: text(),
     totpEnabledAt: timestamp({ withTimezone: true }),
+    /**
+     * When the user skipped authenticator setup. One skip, for 48 hours; after that the setup
+     * screen is mandatory and another skip is refused. Cleared when two-factor is turned on.
+     */
+    totpSkippedAt: timestamp({ withTimezone: true }),
     /** Last accepted 30 s step, so a code can't be replayed within its window. */
     totpLastStep: bigint({ mode: 'number' }),
     /** SHA-256 of the unused single-use recovery codes. */

@@ -48,7 +48,7 @@ const STATUS_TICKS: Record<MessageStatus, { icon: typeof Check; className: strin
   sent: { icon: Check, className: 'text-muted' },
   delivered: { icon: CheckCheck, className: 'text-muted' },
   read: { icon: CheckCheck, className: 'text-[#53bdeb]' },
-  failed: { icon: AlertTriangle, className: 'text-red-400', labelled: true },
+  failed: { icon: AlertTriangle, className: 'text-critical', labelled: true },
   received: { icon: ArrowDownLeft, className: 'text-faint' },
 };
 
@@ -205,13 +205,13 @@ function MessageRow({ message: m, index }: { message: Message; index: number }) 
   return (
     <li className="animate-fade-up flex gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-raised/40" style={delay(Math.min(index, 8) * 35)}>
       <span
-        className={cx('relative mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full', inbound ? 'bg-blue-500/10 text-blue-400' : 'bg-brand/10 text-brand')}
+        className={cx('relative mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full', inbound ? 'bg-info/12 text-info' : 'bg-brand/10 text-brand')}
         title={typeLabel}
         aria-hidden
       >
         <TypeIcon className="size-4" />
         <span className="absolute -end-0.5 -bottom-0.5 flex size-4 items-center justify-center rounded-full bg-card">
-          {inbound ? <ArrowDownLeft className="size-3 text-blue-400" /> : <ArrowUpRight className="size-3 text-brand" />}
+          {inbound ? <ArrowDownLeft className="size-3 text-info" /> : <ArrowUpRight className="size-3 text-brand" />}
         </span>
       </span>
 
@@ -255,13 +255,13 @@ function MessageRow({ message: m, index }: { message: Message; index: number }) 
 
         {m.type === 'poll' && !inbound && <PollResults content={m.content} />}
         {stuck && (
-          <p className="flex items-start gap-1.5 rounded-md bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-400">
+          <p className="flex items-start gap-1.5 rounded-md bg-warning/10 px-2.5 py-1.5 text-xs text-warning">
             <Clock className="mt-px size-3.5 shrink-0" aria-hidden />
             <span>{d.notDelivered}</span>
           </p>
         )}
         {m.error && (
-          <p className="flex items-start gap-1.5 rounded-md bg-red-500/10 px-2.5 py-1.5 text-xs text-red-400">
+          <p className="flex items-start gap-1.5 rounded-md bg-critical/10 px-2.5 py-1.5 text-xs text-critical">
             <AlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden />
             <span dir="auto" className="min-w-0 flex-1" title={m.error}>
               {errorText(m.error, d.errors)}
@@ -338,7 +338,7 @@ export function MessageFeed({
                     )}
                   >
                     {d.filters[f]}
-                    <span className={cx('tabular-nums', active ? 'text-brand' : f === 'failed' && n > 0 ? 'text-red-400' : 'text-faint')}>{n}</span>
+                    <span className={cx('tabular-nums', active ? 'text-brand' : f === 'failed' && n > 0 ? 'text-critical' : 'text-faint')}>{n}</span>
                   </button>
                 );
               })}

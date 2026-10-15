@@ -10,7 +10,7 @@ function linkify(text: string, key: string): ReactNode[] {
   for (const m of text.matchAll(LINK)) {
     if (m.index! > last) out.push(text.slice(last, m.index));
     out.push(
-      <a key={`${key}-${m.index}`} href={m[0]} target="_blank" rel="noreferrer noopener" className="text-sky-400 underline-offset-2 hover:underline" dir="ltr">
+      <a key={`${key}-${m.index}`} href={m[0]} target="_blank" rel="noreferrer noopener" className="text-info underline-offset-2 hover:underline" dir="ltr">
         {m[0]}
       </a>,
     );
@@ -57,7 +57,7 @@ function mark(text: string, term: string, key: string): ReactNode[] {
   for (let at = lower.indexOf(needle); at >= 0 && needle; at = lower.indexOf(needle, from)) {
     out.push(text.slice(from, at));
     out.push(
-      <mark key={`${key}-${at}`} className="rounded-sm bg-amber-400/30 px-0.5 text-ink">
+      <mark key={`${key}-${at}`} className="rounded-sm bg-warning/30 px-0.5 text-ink">
         {text.slice(at, at + needle.length)}
       </mark>,
     );

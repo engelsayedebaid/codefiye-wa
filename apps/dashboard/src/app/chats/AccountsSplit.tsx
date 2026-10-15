@@ -369,14 +369,14 @@ function AccountPane({
             onClick={onClose}
             aria-label={c.focus.removeAccount}
             title={c.focus.removeAccount}
-            className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-lg text-muted transition-colors hover:bg-red-500/10 hover:text-red-400"
+            className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-lg text-muted transition-colors hover:bg-critical/10 hover:text-critical"
           >
             <X className="size-4" />
           </button>
         )}
       </div>
       {!connected && (
-        <Link href={`/sessions/${sessionId}`} className="flex shrink-0 items-center gap-2 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-400 transition-colors hover:bg-amber-500/15">
+        <Link href={`/sessions/${sessionId}`} className="flex shrink-0 items-center gap-2 bg-warning/10 px-3 py-1.5 text-xs text-warning transition-colors hover:bg-warning/15">
           <WifiOff className="size-3.5 shrink-0" />
           <span className="min-w-0 flex-1 truncate">{c.offlineNumber}</span>
         </Link>

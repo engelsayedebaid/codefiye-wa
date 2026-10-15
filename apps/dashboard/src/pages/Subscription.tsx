@@ -120,14 +120,14 @@ export function SubscriptionPage() {
       <SuccessNote>{sent && !pending && s.sent}</SuccessNote>
 
       {pending && (
-        <div className="animate-fade-up rounded-xl border border-sky-500/25 bg-sky-500/10 p-4">
+        <div className="animate-fade-up rounded-xl border border-info/25 bg-info/12 p-4">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="flex min-w-0 items-start gap-3">
-              <Hourglass className="mt-0.5 size-5 shrink-0 animate-pulse text-sky-300" />
+              <Hourglass className="mt-0.5 size-5 shrink-0 animate-pulse text-info" />
               <div className="min-w-0">
-                <p className="flex flex-wrap items-center gap-2 font-medium text-sky-200">
+                <p className="flex flex-wrap items-center gap-2 font-medium text-info">
                   {s.pendingTitle(planName(getPlan(pending.planId)))}
-                  <span className="rounded-full bg-sky-500/15 px-2 py-0.5 text-xs font-medium text-sky-200">{s.payment.months(pending.months)}</span>
+                  <span className="rounded-full bg-info/15 px-2 py-0.5 text-xs font-medium text-info">{s.payment.months(pending.months)}</span>
                 </p>
                 <p className="text-sm text-muted">{pending.payment ? s.payment.pendingPaid(fmt.timeAgo(pending.createdAt)) : s.pendingText(fmt.timeAgo(pending.createdAt))}</p>
               </div>
@@ -137,7 +137,7 @@ export function SubscriptionPage() {
             </Button>
           </div>
           {pending.payment && (
-            <div className="mt-3 flex flex-wrap items-start gap-x-6 gap-y-2 border-t border-sky-500/15 pt-3 ps-8">
+            <div className="mt-3 flex flex-wrap items-start gap-x-6 gap-y-2 border-t border-info/20 pt-3 ps-8">
               <MethodChip method={pending.payment.method} />
               <PaymentDetailsRows payment={pending.payment} className="flex-1" />
               {pending.hasProof && (
@@ -153,9 +153,9 @@ export function SubscriptionPage() {
       {!unlimited && (
         <>
           {needsPhone && (
-            <div className="animate-fade-up flex flex-wrap items-center gap-3 rounded-lg border border-amber-500/25 bg-amber-500/10 p-4 text-sm">
-              <Smartphone className="size-5 shrink-0 text-amber-300" />
-              <p className="min-w-0 flex-1 text-amber-100">{s.phoneRequired}</p>
+            <div className="animate-fade-up flex flex-wrap items-center gap-3 rounded-lg border border-warning/25 bg-warning/10 p-4 text-sm">
+              <Smartphone className="size-5 shrink-0 text-warning" />
+              <p className="min-w-0 flex-1 text-warning">{s.phoneRequired}</p>
               <Button size="sm" onClick={() => setVerifying(true)}>
                 {s.verifyPhone}
               </Button>
@@ -178,7 +178,7 @@ export function SubscriptionPage() {
               action={(p) => {
                 const isCurrent = p.id === plan?.id;
                 if (pending?.planId === p.id) {
-                  return <span className={buttonClass('outline', 'lg', 'pointer-events-none w-full border-sky-500/40 text-sky-200')}>{s.requested}</span>;
+                  return <span className={buttonClass('outline', 'lg', 'pointer-events-none w-full border-info/40 text-info')}>{s.requested}</span>;
                 }
                 if (isCurrent && !inactive && state?.kind !== 'expiring') {
                   return <span className={buttonClass('outline', 'lg', 'pointer-events-none w-full opacity-60')}>{t.plans.current}</span>;

@@ -29,15 +29,60 @@ const PERIODS = [7, 30, 90] as const;
 const ALL = '';
 const STATUS_ORDER: CustomerStatus[] = ['hot', 'waiting', 'complaint', 'interested', 'done', 'cold'];
 const STATUS_TONE: Record<CustomerStatus, string> = {
-  hot: 'bg-green-500/12 text-green-500 ring-green-500/25',
-  interested: 'bg-sky-500/12 text-sky-500 ring-sky-500/25',
-  waiting: 'bg-amber-500/12 text-amber-500 ring-amber-500/25',
-  complaint: 'bg-red-500/12 text-red-500 ring-red-500/25',
+  hot: 'bg-good/12 text-good ring-good/25',
+  interested: 'bg-info/12 text-info ring-info/25',
+  waiting: 'bg-warning/12 text-warning ring-warning/25',
+  complaint: 'bg-critical/12 text-critical ring-critical/25',
   done: 'bg-ink/8 text-ink-2 ring-line',
   cold: 'bg-ink/5 text-muted ring-line',
 };
-const MOOD_TONE: Record<Mood, string> = { positive: 'bg-green-500', neutral: 'bg-ink-3', negative: 'bg-red-500' };
-const PRIORITY_TONE = { high: 'bg-red-500/12 text-red-500', medium: 'bg-amber-500/12 text-amber-500', low: 'bg-ink/8 text-ink-2' };
+const MOOD_TONE: Record<Mood, string> = { positive: 'bg-good', neutral: 'bg-ink-3', negative: 'bg-critical' };
+const PRIORITY_TONE = { high: 'bg-critical/12 text-critical', medium: 'bg-warning/12 text-warning', low: 'bg-ink/8 text-ink-2' };
+
+/** While true, the AI icon opens a "coming soon" note instead of the report. */
+export const AI_REPORT_SOON = true;
+
+export function AiReportSoon({ onClose }: { onClose: () => void }) {
+  const { t } = useI18n();
+  const a = t.chats.ai;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      onClose();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [onClose]);
+
+  return (
+    <div className="animate-fade-in fixed inset-0 z-[65] flex items-center justify-center bg-black/55 p-4 backdrop-blur-[2px]" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-modal
+        aria-label={a.title}
+        onClick={(e) => e.stopPropagation()}
+        className="animate-scale-in relative w-full max-w-md overflow-hidden rounded-2xl border border-line bg-card px-6 pt-10 pb-6 text-center shadow-2xl"
+      >
+        <button type="button" onClick={onClose} className="absolute end-3 top-3 grid size-9 cursor-pointer place-items-center rounded-lg text-muted transition-colors hover:bg-raised hover:text-ink" aria-label={t.common.close}>
+          <X className="size-5" />
+        </button>
+        <span className="mx-auto grid size-16 place-items-center rounded-2xl bg-gradient-to-br from-grad-from to-grad-to text-on-brand shadow-lg">
+          <Sparkles className="size-8" />
+        </span>
+        <span className="mt-5 inline-flex items-center gap-1.5 rounded-full bg-brand/12 px-3 py-1 text-xs font-semibold text-brand">
+          <Clock className="size-3.5" /> {a.soon}
+        </span>
+        <h2 className="mt-3 text-lg font-bold tracking-tight">{a.soonTitle}</h2>
+        <p className="mt-2 text-sm leading-relaxed text-muted">{a.soonText}</p>
+        <Button className="mt-6 w-full" variant="brand" onClick={onClose}>
+          {a.soonOk}
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 /**
  * The AI analysis of the inbox (admins): pick the numbers and the period, and the server builds the
@@ -149,7 +194,7 @@ export function AiReport({ numbers, onOpenChat, onClose }: { numbers: ChatNumber
             {current ? a.rerun : a.run}
           </Button>
         </div>
-        {start.isError && !unavailable && <p className="border-b border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-red-400">{errorMessage(start.error)}</p>}
+        {start.isError && !unavailable && <p className="border-b border-critical/25 bg-critical/10 px-4 py-2 text-sm text-critical">{errorMessage(start.error)}</p>}
         <div className="min-h-0 flex-1 overflow-y-auto">{body}</div>
         <p className="border-t border-line px-4 py-2 text-[11px] text-faint">{a.privacyNote}</p>
       </div>
@@ -185,7 +230,7 @@ function Loading() {
 function Notice({ icon: Icon, title, text, tone }: { icon: typeof Sparkles; title: string; text: string; tone?: 'error' }) {
   return (
     <div className="flex flex-col items-center px-6 py-16 text-center">
-      <span className={cx('grid size-12 place-items-center rounded-xl', tone === 'error' ? 'bg-red-500/10 text-red-400' : 'bg-amber-500/10 text-amber-500')}>
+      <span className={cx('grid size-12 place-items-center rounded-xl', tone === 'error' ? 'bg-critical/10 text-critical' : 'bg-warning/10 text-warning')}>
         <Icon className="size-6" />
       </span>
       <h3 className="mt-4 font-semibold">{title}</h3>
@@ -310,7 +355,7 @@ function ResultView({ result, numbers, onOpenChat }: { result: AnalysisResult; n
                     {u.lastText ?? `[${u.lastType}]`}
                   </span>
                 </span>
-                <span className="shrink-0 text-[11px] text-amber-500">{a.waitingSince(fmt.timeAgo(u.since))}</span>
+                <span className="shrink-0 text-[11px] text-warning">{a.waitingSince(fmt.timeAgo(u.since))}</span>
                 <OpenButton onClick={() => onOpenChat(u.sessionId, u.jid)} />
               </li>
             ))}
@@ -333,8 +378,8 @@ function ResultView({ result, numbers, onOpenChat }: { result: AnalysisResult; n
         <Section icon={MessageSquareWarning} title={a.sections.risks}>
           <ul className="space-y-1.5">
             {r.risks.map((x) => (
-              <li key={x} className="flex items-start gap-2 rounded-lg bg-red-500/[0.06] px-3 py-2 text-[13px] text-ink-2 ring-1 ring-red-500/15">
-                <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-red-400" /> {x}
+              <li key={x} className="flex items-start gap-2 rounded-lg bg-critical/[0.06] px-3 py-2 text-[13px] text-ink-2 ring-1 ring-critical/20">
+                <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-critical" /> {x}
               </li>
             ))}
           </ul>
@@ -371,7 +416,7 @@ function StatsCard({ stats: s, employee }: { stats: NumberStats; employee?: Anal
   const rate = s.turns > 0 ? Math.round((s.answered / s.turns) * 100) : null;
   const sent = s.fromPhone + s.fromDashboard + s.fromApi;
   const score = employee ? Math.max(0, Math.min(100, Math.round(employee.score))) : null;
-  const scoreTone = score === null ? '' : score >= 75 ? 'text-green-500' : score >= 50 ? 'text-amber-500' : 'text-red-500';
+  const scoreTone = score === null ? '' : score >= 75 ? 'text-good' : score >= 50 ? 'text-warning' : 'text-critical';
   const tiles = [
     { label: st.customers, value: fmt.number.format(s.customers), sub: s.newCustomers ? `+${fmt.number.format(s.newCustomers)} ${st.newCustomers}` : undefined },
     { label: st.reply, value: duration(s.medianReplySeconds) },
@@ -402,8 +447,8 @@ function StatsCard({ stats: s, employee }: { stats: NumberStats; employee?: Anal
         {tiles.map((x) => (
           <div key={x.label} className="rounded-lg bg-raised/60 px-2 py-1.5">
             <dt className="truncate text-[10.5px] text-muted">{x.label}</dt>
-            <dd className={cx('text-sm font-semibold tabular-nums', x.warn && 'text-amber-500')}>{x.value}</dd>
-            {x.sub && <dd className="text-[10px] text-green-500">{x.sub}</dd>}
+            <dd className={cx('text-sm font-semibold tabular-nums', x.warn && 'text-warning')}>{x.value}</dd>
+            {x.sub && <dd className="text-[10px] text-good">{x.sub}</dd>}
           </div>
         ))}
       </dl>
@@ -411,13 +456,13 @@ function StatsCard({ stats: s, employee }: { stats: NumberStats; employee?: Anal
         <div className="mt-3">
           <div className="flex h-1.5 overflow-hidden rounded-full bg-raised">
             <span className="bg-brand" style={{ width: `${(s.fromPhone / sent) * 100}%` }} />
-            <span className="bg-sky-500" style={{ width: `${(s.fromDashboard / sent) * 100}%` }} />
-            <span className="bg-violet-500" style={{ width: `${(s.fromApi / sent) * 100}%` }} />
+            <span className="bg-info" style={{ width: `${(s.fromDashboard / sent) * 100}%` }} />
+            <span className="bg-progress" style={{ width: `${(s.fromApi / sent) * 100}%` }} />
           </div>
           <p className="mt-1.5 flex flex-wrap gap-x-3 text-[10.5px] text-muted">
             <Legend tone="bg-brand" label={`${st.fromPhone} ${fmt.number.format(s.fromPhone)}`} />
-            <Legend tone="bg-sky-500" label={`${st.fromDashboard} ${fmt.number.format(s.fromDashboard)}`} />
-            <Legend tone="bg-violet-500" label={`${st.fromApi} ${fmt.number.format(s.fromApi)}`} />
+            <Legend tone="bg-info" label={`${st.fromDashboard} ${fmt.number.format(s.fromDashboard)}`} />
+            <Legend tone="bg-progress" label={`${st.fromApi} ${fmt.number.format(s.fromApi)}`} />
             {s.campaign > 0 && <span>{`${st.campaign} ${fmt.number.format(s.campaign)}`}</span>}
             {s.groups > 0 && <span>{`${st.groups} ${fmt.number.format(s.groups)}`}</span>}
           </p>
@@ -425,8 +470,8 @@ function StatsCard({ stats: s, employee }: { stats: NumberStats; employee?: Anal
       )}
       {employee && (
         <div className="mt-3 space-y-2 border-t border-line/70 pt-3 text-[12.5px]">
-          {employee.strengths.length > 0 && <Points icon={CircleCheck} tone="text-green-500" title={a.strengths} items={employee.strengths} />}
-          {employee.weaknesses.length > 0 && <Points icon={CircleX} tone="text-red-400" title={a.weaknesses} items={employee.weaknesses} />}
+          {employee.strengths.length > 0 && <Points icon={CircleCheck} tone="text-good" title={a.strengths} items={employee.strengths} />}
+          {employee.weaknesses.length > 0 && <Points icon={CircleX} tone="text-critical" title={a.weaknesses} items={employee.weaknesses} />}
           {employee.tone && (
             <p className="text-muted">
               <span className="font-medium text-ink-2">{a.tone}: </span>

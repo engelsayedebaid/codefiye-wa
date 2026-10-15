@@ -80,7 +80,7 @@ function Delta({ now, before }: { now: number; before: number }) {
   if (before === 0 && now === 0) return <span className="text-[11px] text-faint">{t.dashboard.noChange}</span>;
   const pct = before === 0 ? 100 : Math.round(((now - before) / before) * 100);
   const Icon = pct > 0 ? TrendingUp : pct < 0 ? TrendingDown : Minus;
-  const tone = pct > 0 ? 'text-green-500 bg-green-500/10' : pct < 0 ? 'text-red-400 bg-red-500/10' : 'text-muted bg-raised';
+  const tone = pct > 0 ? 'text-good bg-good/12' : pct < 0 ? 'text-critical bg-critical/12' : 'text-muted bg-raised';
   return (
     <span className="flex items-center gap-1.5 text-[11px] text-faint">
       <span className={cx('ltr inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 font-semibold tabular-nums', tone)}>
@@ -214,7 +214,7 @@ function Hero({ overview, days, onDays, loading }: { overview: Overview | null; 
       label: d.kpiConnected,
       value: `${fmt.number.format(connected)} / ${fmt.number.format(total)}`,
       icon: Wifi,
-      tint: 'text-emerald-400 bg-emerald-500/12',
+      tint: 'text-series-sent bg-series-sent/12',
       foot: <span className="text-[11px] text-faint">{d.kpiActiveOfTotal(fmt.number.format(connected), fmt.number.format(total))}</span>,
     },
     {
@@ -233,7 +233,7 @@ function Hero({ overview, days, onDays, loading }: { overview: Overview | null; 
       label: d.kpiReceivedToday,
       value: fmt.number.format(received),
       icon: ArrowDownLeft,
-      tint: 'text-sky-400 bg-sky-500/12',
+      tint: 'text-series-received bg-series-received/12',
       foot: (
         <span className="flex items-center justify-between gap-3">
           <Delta now={today?.received ?? received} before={yesterday?.received ?? 0} />
@@ -245,8 +245,8 @@ function Hero({ overview, days, onDays, loading }: { overview: Overview | null; 
       label: d.kpiDeliveryHealth,
       value: `${health}%`,
       icon: CheckCircle2,
-      tint: health >= 95 ? 'text-teal-400 bg-teal-500/12' : 'text-amber-400 bg-amber-500/12',
-      foot: <span className={cx('text-[11px]', failed > 0 ? 'text-amber-400' : 'text-faint')}>{failed > 0 ? d.kpiFailedToday(fmt.number.format(failed)) : d.kpiNoFailures}</span>,
+      tint: health >= 95 ? 'text-good bg-good/12' : 'text-warning bg-warning/12',
+      foot: <span className={cx('text-[11px]', failed > 0 ? 'text-warning' : 'text-faint')}>{failed > 0 ? d.kpiFailedToday(fmt.number.format(failed)) : d.kpiNoFailures}</span>,
     },
   ];
 
@@ -432,7 +432,7 @@ function PlanCard({ overview }: { overview: Overview | null }) {
       eyebrow={d.subscription}
       title={plan ? planName(plan) : '…'}
       index={3}
-      aside={daysLeft !== null && !expired && <span className={cx('rounded-full px-2.5 py-1 text-xs font-semibold tabular-nums', daysLeft <= 5 ? 'bg-amber-500/15 text-amber-400' : 'bg-brand/12 text-brand')}>{d.daysLeft(daysLeft)}</span>}
+      aside={daysLeft !== null && !expired && <span className={cx('rounded-full px-2.5 py-1 text-xs font-semibold tabular-nums', daysLeft <= 5 ? 'bg-warning/15 text-warning' : 'bg-brand/12 text-brand')}>{d.daysLeft(daysLeft)}</span>}
     >
       {!plan || !overview ? (
         <div className="space-y-3">
@@ -443,7 +443,7 @@ function PlanCard({ overview }: { overview: Overview | null }) {
         <div className="space-y-4">
           {meter(d.sessionsMeter, overview.sessions.total, unlimited ? null : plan.sessions)}
           {plan.dailyMessages !== null && meter(d.todayMeter, overview.messages.today.sent, plan.dailyMessages)}
-          <p className={cx('text-xs font-medium', expired ? 'text-red-400' : 'text-muted')}>{ends}</p>
+          <p className={cx('text-xs font-medium', expired ? 'text-critical' : 'text-muted')}>{ends}</p>
         </div>
       )}
       <Link href="/subscription" className="group mt-auto inline-flex items-center gap-1 pt-5 text-sm font-semibold text-brand hover:underline">

@@ -195,12 +195,12 @@ export const Composer = memo(function Composer({ sessionId, jid, connected, titl
     <form onSubmit={submit} className="chat-composer relative shrink-0 border-t border-line/60 bg-card/80 px-2 py-2.5 backdrop-blur md:px-4">
       {panel === 'voice' && <VoiceRecorder onSend={(blob, seconds) => void sendVoice(blob, seconds)} onClose={closePanel} onRecording={onRecording} />}
       {!connected && (
-        <p className="mb-2 flex items-center gap-2 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
+        <p className="mb-2 flex items-center gap-2 rounded-md bg-warning/10 px-3 py-2 text-xs text-warning">
           <WifiOff className="size-4 shrink-0" /> {c.composer.disconnected}
         </p>
       )}
       {error && (
-        <p role="alert" className="mb-2 flex items-start justify-between gap-2 rounded-md bg-red-500/10 px-3 py-2 text-xs text-red-400">
+        <p role="alert" className="mb-2 flex items-start justify-between gap-2 rounded-md bg-critical/10 px-3 py-2 text-xs text-critical">
           <span>{error}</span>
           <button type="button" onClick={() => setError(null)} aria-label={t.common.close}>
             <X className="size-3.5" />

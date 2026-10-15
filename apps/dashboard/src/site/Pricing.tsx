@@ -26,7 +26,7 @@ export function PlanCards({ currentPlanId, action }: { currentPlanId?: string; a
                 <span
                   className={cx(
                     'absolute -top-3.5 left-1/2 -translate-x-1/2 rounded-full border px-3.5 py-1 text-xs font-bold whitespace-nowrap shadow-sm backdrop-blur-md',
-                    current ? 'border-sky-400/50 bg-sky-500/15 text-sky-300' : 'border-brand/60 bg-brand text-on-brand',
+                    current ? 'border-info/50 bg-info/15 text-info' : 'border-brand/60 bg-brand text-on-brand',
                   )}
                 >
                   {current ? t.plans.current : t.plans.popular}

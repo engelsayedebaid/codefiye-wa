@@ -553,7 +553,7 @@ export function Checkbox({ label, checked, onChange, hint }: { label: string; ch
 export function ErrorNote({ children }: { children: ReactNode }) {
   if (!children) return null;
   return (
-    <p role="alert" className="animate-fade-up flex items-start gap-3 rounded-lg border border-destructive-ink/30 bg-destructive/15 px-4 py-3 text-sm text-red-200">
+    <p role="alert" className="animate-fade-up flex items-start gap-3 rounded-lg border border-destructive-ink/30 bg-destructive/15 px-4 py-3 text-sm text-critical">
       <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive-ink" />
       <span>{children}</span>
     </p>
@@ -563,8 +563,8 @@ export function ErrorNote({ children }: { children: ReactNode }) {
 export function SuccessNote({ children }: { children: ReactNode }) {
   if (!children) return null;
   return (
-    <p className="animate-fade-up flex items-start gap-3 rounded-lg border border-green-500/25 bg-green-500/10 px-4 py-3 text-sm text-green-200">
-      <Check className="mt-0.5 size-4 shrink-0 text-green-500" />
+    <p className="animate-fade-up flex items-start gap-3 rounded-lg border border-good/25 bg-good/10 px-4 py-3 text-sm text-good">
+      <Check className="mt-0.5 size-4 shrink-0 text-good" />
       <span>{children}</span>
     </p>
   );
@@ -674,11 +674,11 @@ export type Tone = 'good' | 'info' | 'progress' | 'warning' | 'critical' | 'neut
 
 /** Soft tinted chips, as in the reference dashboard ("Connected", "Scan QR", "Logged Out"). */
 export const TONES: Record<Tone, { chip: string; dot: string; text: string }> = {
-  good: { chip: 'bg-green-500/10 text-green-500', dot: 'bg-green-500', text: 'text-green-500' },
-  info: { chip: 'bg-blue-500/10 text-blue-500', dot: 'bg-blue-500', text: 'text-blue-500' },
-  progress: { chip: 'bg-purple-500/10 text-purple-400', dot: 'bg-purple-500', text: 'text-purple-400' },
-  warning: { chip: 'bg-amber-500/10 text-amber-400', dot: 'bg-amber-500', text: 'text-amber-400' },
-  critical: { chip: 'bg-red-500/10 text-red-400', dot: 'bg-red-500', text: 'text-red-400' },
+  good: { chip: 'bg-good/12 text-good', dot: 'bg-good', text: 'text-good' },
+  info: { chip: 'bg-info/12 text-info', dot: 'bg-info', text: 'text-info' },
+  progress: { chip: 'bg-progress/12 text-progress', dot: 'bg-progress', text: 'text-progress' },
+  warning: { chip: 'bg-warning/12 text-warning', dot: 'bg-warning', text: 'text-warning' },
+  critical: { chip: 'bg-critical/12 text-critical', dot: 'bg-critical', text: 'text-critical' },
   neutral: { chip: 'bg-raised text-muted', dot: 'bg-muted', text: 'text-muted' },
 };
 
@@ -707,8 +707,8 @@ export const MESSAGE_STATUS: Record<MessageStatus, { tone: Tone; icon: typeof Wi
 export function VerifiedMark({ className }: { className?: string }) {
   const { t } = useI18n();
   return (
-    <span title={`${t.profile.verified} · ${t.profile.verifiedHint}`} className={cx('inline-flex shrink-0 text-sky-500', className)}>
-      <BadgeCheck className="size-4 fill-sky-500 text-bg" aria-label={t.profile.verified} />
+    <span title={`${t.profile.verified} · ${t.profile.verifiedHint}`} className={cx('inline-flex shrink-0 text-info', className)}>
+      <BadgeCheck className="size-4 fill-info text-bg" aria-label={t.profile.verified} />
     </span>
   );
 }
@@ -759,7 +759,7 @@ export function usePlanName() {
 export function LoadError({ error, onRetry, retrying, className }: { error: unknown; onRetry: () => void; retrying?: boolean; className?: string }) {
   const { t } = useI18n();
   return (
-    <div role="alert" className={cx('animate-fade-up flex flex-wrap items-center gap-3 rounded-lg border border-destructive-ink/30 bg-destructive/15 px-4 py-3 text-sm text-red-200', className)}>
+    <div role="alert" className={cx('animate-fade-up flex flex-wrap items-center gap-3 rounded-lg border border-destructive-ink/30 bg-destructive/15 px-4 py-3 text-sm text-critical', className)}>
       <AlertTriangle className="size-4 shrink-0 text-destructive-ink" />
       <span className="min-w-0 flex-1">
         {t.errors.loadFailed} {errorMessage(error)}

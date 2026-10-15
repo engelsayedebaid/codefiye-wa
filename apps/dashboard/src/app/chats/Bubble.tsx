@@ -373,7 +373,7 @@ function LocationCard({ m }: { m: ChatMessage }) {
       <MapPreview latitude={loc.latitude} longitude={loc.longitude} />
       <div className="p-2.5">
         <p className="flex items-center gap-1.5 text-sm font-medium">
-          <MapPin className="size-4 text-red-400" />
+          <MapPin className="size-4 text-sender-rose" />
           {loc.name || ('live' in loc && loc.live ? t.chats.liveLocation : t.chats.location)}
         </p>
         {loc.address && (
@@ -403,7 +403,7 @@ function ContactCards({ m, onOpenChat }: { m: ChatMessage; onOpenChat?: (phone: 
             </div>
           </div>
           {c.phone && onOpenChat && (
-            <button type="button" onClick={() => onOpenChat(c.phone!)} className="flex w-full items-center justify-center gap-1.5 border-t border-line py-2 text-xs font-medium text-sky-400 transition-colors hover:bg-ink/5">
+            <button type="button" onClick={() => onOpenChat(c.phone!)} className="flex w-full items-center justify-center gap-1.5 border-t border-line py-2 text-xs font-medium text-info transition-colors hover:bg-ink/5">
               <MessageCircle className="size-3.5" /> {t.chats.openChat}
             </button>
           )}
@@ -442,9 +442,9 @@ function Quote({ author, text, type, mine, onClick }: { author: string; text: st
       onClick={onClick}
       className={cx('mb-1 flex w-full min-w-0 overflow-hidden rounded-md bg-ink/[0.06] text-start transition-colors hover:bg-ink/10', !onClick && 'cursor-default')}
     >
-      <span className={cx('w-1 shrink-0', mine ? 'bg-brand' : 'bg-sky-400')} />
+      <span className={cx('w-1 shrink-0', mine ? 'bg-brand' : 'bg-info')} />
       <span className="min-w-0 px-2.5 py-1.5">
-        <span className={cx('block truncate text-xs font-semibold', mine ? 'text-brand' : 'text-sky-400')}>{author}</span>
+        <span className={cx('block truncate text-xs font-semibold', mine ? 'text-brand' : 'text-info')}>{author}</span>
         <span dir="auto" className="line-clamp-2 text-xs text-ink/70">
           {text || t.chats.media[type as 'image'] || type}
         </span>
@@ -633,7 +633,7 @@ export const Bubble = memo(function Bubble({ m, sender, first, reactions, myReac
             bare ? '' : cx('rounded-[18px] shadow-[0_1px_2px_rgb(0_0_0/0.13)]', framed ? 'p-1' : 'px-3 pt-1.5 pb-1.5'),
             !bare && (out ? 'bg-(--chat-out) ring-1 ring-(--chat-out-ring)' : 'bg-(--chat-in) ring-1 ring-line/60'),
             !bare && first && (out ? 'rounded-se-[6px]' : 'rounded-ss-[6px]'),
-            m.status === 'failed' && 'ring-red-500/40',
+            m.status === 'failed' && 'ring-critical/40',
           )}
         >
           {sender && first && !out && (
@@ -676,7 +676,7 @@ export const Bubble = memo(function Bubble({ m, sender, first, reactions, myReac
             <div className={cx('flex justify-end pt-1', framed && 'px-1.5 pb-0.5')}>{time}</div>
           )}
           {m.error && m.status === 'failed' && (
-            <p className="mt-1 flex items-start gap-1.5 rounded-md bg-red-500/15 px-2 py-1 text-xs text-red-300">
+            <p className="mt-1 flex items-start gap-1.5 rounded-md bg-critical/15 px-2 py-1 text-xs text-critical">
               <AlertTriangle className="mt-px size-3.5 shrink-0" />
               <span dir="auto">{errorText(m.error, t.sessionDetail.errors)}</span>
             </p>

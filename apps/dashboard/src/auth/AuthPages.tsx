@@ -302,7 +302,7 @@ function StrengthMeter({ password }: { password: string }) {
   const level = passwordStrength(password);
   if (!password) return null;
   const label = level <= 1 ? s.weak : level === 2 ? s.fair : s.strong;
-  const color = level <= 1 ? 'bg-red-500' : level === 2 ? 'bg-amber-500' : 'bg-brand';
+  const color = level <= 1 ? 'bg-critical' : level === 2 ? 'bg-warning' : 'bg-brand';
   return (
     <div className="animate-fade-in flex items-center gap-2" aria-live="polite">
       <span className="flex flex-1 gap-1">

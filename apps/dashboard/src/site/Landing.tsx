@@ -184,8 +184,8 @@ function HeroShowcase() {
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-surface/70 px-4 py-2.5 text-xs">
           <div className="flex items-center gap-2.5">
             <span className="relative flex size-2.5">
-              <span className="absolute inset-0 animate-ping rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative size-2.5 rounded-full bg-emerald-500" />
+              <span className="absolute inset-0 animate-ping rounded-full bg-good opacity-75" />
+              <span className="relative size-2.5 rounded-full bg-good" />
             </span>
             <span className="font-semibold text-ink">{h.preview.liveStatus}</span>
           </div>
@@ -344,7 +344,7 @@ function Hero() {
             return (
               <li key={item} className="flex items-center gap-2">
                 {i > 0 && <span className="me-3 hidden h-3.5 w-px bg-line-strong sm:block" />}
-                <Icon className={cx('size-4', i === 0 ? 'text-brand' : i === 1 ? 'text-sky-400' : 'text-emerald-400')} />
+                <Icon className={cx('size-4', i === 0 ? 'text-brand' : i === 1 ? 'text-info' : 'text-good')} />
                 {item}
               </li>
             );
@@ -520,7 +520,7 @@ function SendReceive() {
                     <Reveal key={r.title} delay={i * 80}>
                       <div className="lift card-luxury rounded-2xl border border-line p-4">
                         <p className="flex items-center gap-2.5 font-semibold">
-                          <span className={cx('flex size-8 items-center justify-center rounded-xl bg-gradient-to-br text-white shadow-xs', tint)}>
+                          <span className={cx('flex size-8 items-center justify-center rounded-xl bg-gradient-to-br text-on-brand shadow-xs', tint)}>
                             <Icon className="size-4" />
                           </span>
                           {r.title}
@@ -552,7 +552,7 @@ function SendReceive() {
 function UseCases() {
   const { t } = useI18n();
   const s = t.landing.useCases;
-  const tints = ['from-teal to-brand', 'from-emerald-600 to-teal', 'from-brand to-emerald-600'];
+  const tints = ['from-teal to-brand', 'from-brand-strong to-teal', 'from-brand to-brand-deep'];
   return (
     <section className="section-wash py-24 sm:py-32">
       <div className="mx-auto max-w-7xl px-4 sm:px-6">
@@ -566,7 +566,7 @@ function UseCases() {
                   <div className="flex items-center justify-between">
                     <span
                       className={cx(
-                        'flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br text-white shadow-md transition-transform duration-500 group-hover:-rotate-6 group-hover:scale-110',
+                        'flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br text-on-brand shadow-md transition-transform duration-500 group-hover:-rotate-6 group-hover:scale-110',
                         tints[i % tints.length],
                       )}
                     >

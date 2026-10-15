@@ -31,10 +31,10 @@ export function NumberSwitcher({ numbers, value, onChange, compact = false }: { 
   const state = (n: ChatNumber) => {
     const online = n.status === 'connected';
     return (
-      <span className={cx('inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold', online ? 'bg-green-500/10 text-green-500' : TONES[SESSION_STATUS[n.status].tone].chip)}>
+      <span className={cx('inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold', online ? 'bg-good/12 text-good' : TONES[SESSION_STATUS[n.status].tone].chip)}>
         <span className="relative flex size-1.5">
-          {online && <span className="absolute inset-0 animate-ping rounded-full bg-green-500 opacity-60 motion-reduce:animate-none" />}
-          <span className={cx('relative size-1.5 rounded-full', online ? 'bg-green-500' : TONES[SESSION_STATUS[n.status].tone].dot)} />
+          {online && <span className="absolute inset-0 animate-ping rounded-full bg-good opacity-60 motion-reduce:animate-none" />}
+          <span className={cx('relative size-1.5 rounded-full', online ? 'bg-good' : TONES[SESSION_STATUS[n.status].tone].dot)} />
         </span>
         {online ? c.online : t.status.session[n.status].label}
       </span>
@@ -71,7 +71,7 @@ export function NumberSwitcher({ numbers, value, onChange, compact = false }: { 
             {initials(n.name) || n.name.slice(0, 1)}
           </span>
         )}
-        <span className={cx('absolute -end-0.5 -bottom-0.5 size-3 rounded-full ring-2 ring-card', online ? 'bg-green-500' : TONES[SESSION_STATUS[n.status].tone].dot)} />
+        <span className={cx('absolute -end-0.5 -bottom-0.5 size-3 rounded-full ring-2 ring-card', online ? 'bg-good' : TONES[SESSION_STATUS[n.status].tone].dot)} />
       </span>
     );
   };

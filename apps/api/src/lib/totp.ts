@@ -6,6 +6,21 @@ import { createCipheriv, createDecipheriv, createHash, createHmac, hkdfSync, ran
  */
 export const TOTP = { digits: 6, periodSec: 30, /** Steps accepted either side of now, for clock drift. */ window: 1 } as const;
 
+/** How long a one-time skip of the setup screen lasts. After it, setup is mandatory. */
+export const TWO_FACTOR_GRACE_MS = 48 * 60 * 60 * 1000;
+
+/**
+ * End of a one-time skip, while it still lets the dashboard through.
+ * Null when the user never skipped, or the 48 hours have passed.
+ */
+export function twoFactorGraceUntil(skippedAt: Date | string | null, now = Date.now()): Date | null {
+  if (!skippedAt) return null;
+  const at = skippedAt instanceof Date ? skippedAt.getTime() : Date.parse(skippedAt);
+  if (!Number.isFinite(at)) return null;
+  const until = at + TWO_FACTOR_GRACE_MS;
+  return until > now ? new Date(until) : null;
+}
+
 const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
 export function base32Encode(buf: Buffer): string {

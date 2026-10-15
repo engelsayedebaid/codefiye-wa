@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Copy, Download, ShieldCheck, Smartphone } from 'lucide-react';
 import { type FormEvent, type ReactNode, useState } from 'react';
 import { api, ApiRequestError, errorMessage } from '../api';
+import type { Account } from '../app/account';
 import { useI18n } from '../i18n';
 import { qk } from '../queries';
 import { signOut } from '../session';
@@ -12,11 +13,12 @@ import { AuthLayout } from './AuthPages';
 type Setup = { secret: string; otpauthUrl: string; qrImage: string };
 
 /**
- * Two-factor is mandatory: a signed-in user without it sees only this until an authenticator app is
- * set up (the API refuses everything else with `two_factor_required`). `onEnabled` gets the recovery
- * codes, which the caller keeps on screen until the user confirms they saved them.
+ * A signed-in user without two-factor sees only this until an authenticator app is set up (the API
+ * refuses everything else with `two_factor_required`). The first time they may skip for 48 hours
+ * (`canSkip`); after that the screen is mandatory. `onEnabled` gets the recovery codes, which the
+ * caller keeps on screen until the user confirms they saved them.
  */
-export function TwoFactorSetup({ onEnabled }: { onEnabled: (codes: string[]) => void }) {
+export function TwoFactorSetup({ canSkip, onEnabled }: { canSkip: boolean; onEnabled: (codes: string[]) => void }) {
   const { t } = useI18n();
   const s = t.auth.setup2fa;
   const queryClient = useQueryClient();
@@ -32,6 +34,20 @@ export function TwoFactorSetup({ onEnabled }: { onEnabled: (codes: string[]) => 
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [skipping, setSkipping] = useState(false);
+
+  const skip = async () => {
+    if (skipping) return;
+    setSkipping(true);
+    setError(null);
+    try {
+      const account = await api<Account>('/api/account/2fa/skip', { method: 'POST' });
+      queryClient.setQueryData(qk.me, account);
+    } catch (err) {
+      setError(errorMessage(err));
+      setSkipping(false);
+    }
+  };
 
   const verify = async (value: string) => {
     if (value.length !== 6 || loading) return;
@@ -59,14 +75,27 @@ export function TwoFactorSetup({ onEnabled }: { onEnabled: (codes: string[]) => 
     </button>
   );
 
+  const skipButton = canSkip ? (
+    <div className="grid w-full gap-2">
+      <Button type="button" variant="outline" loading={skipping} onClick={() => void skip()} className="h-11 w-full">
+        {s.skip}
+      </Button>
+      <p className="text-center text-xs leading-relaxed text-muted">{s.skipHint}</p>
+    </div>
+  ) : null;
+
   return (
-    <AuthLayout title={s.title} subtitle={s.text} footer={logout} wide>
+    <AuthLayout title={s.title} subtitle={canSkip ? s.text : s.mandatory} footer={logout} wide>
       {setup.isPending ? (
-        <Loading className="py-16" />
+        <div className="mx-auto grid max-w-sm gap-4">
+          <Loading className="py-16" />
+          {skipButton}
+        </div>
       ) : setup.isError ? (
         <div className="mx-auto grid max-w-sm gap-4">
-          <ErrorNote>{errorMessage(setup.error)}</ErrorNote>
+          <ErrorNote>{error ?? errorMessage(setup.error)}</ErrorNote>
           <Button onClick={() => void setup.refetch()}>{t.common.retry}</Button>
+          {skipButton}
         </div>
       ) : (
         <form onSubmit={submit} className="overflow-hidden rounded-3xl border border-line bg-card shadow-xl md:grid md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
@@ -115,9 +144,10 @@ export function TwoFactorSetup({ onEnabled }: { onEnabled: (codes: string[]) => 
               }}
             />
             <ErrorNote>{error}</ErrorNote>
-            <Button type="submit" loading={loading} disabled={code.length !== 6} icon={<ShieldCheck className="size-4" />} className="h-11 w-full">
+            <Button type="submit" loading={loading} disabled={code.length !== 6 || skipping} icon={<ShieldCheck className="size-4" />} className="h-11 w-full">
               {s.submit}
             </Button>
+            {skipButton}
           </section>
         </form>
       )}

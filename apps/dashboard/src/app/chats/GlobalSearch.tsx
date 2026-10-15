@@ -173,7 +173,7 @@ export function GlobalSearch({ numbers, initialSession, onOpen, onClose }: { num
       <ul className="divide-y divide-line/70">
         {hits.map((m) => (
           <li key={m.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
-            <span className={cx('grid size-10 shrink-0 place-items-center rounded-full', isVoice(m) ? 'bg-brand/15 text-brand' : 'bg-violet-500/15 text-violet-400')}>
+            <span className={cx('grid size-10 shrink-0 place-items-center rounded-full', isVoice(m) ? 'bg-brand/15 text-brand' : 'bg-sender-violet/15 text-sender-violet')}>
               {isVoice(m) ? <Mic className="size-[18px]" /> : <AudioLines className="size-[18px]" />}
             </span>
             <HitTitle m={m} number={numberName(m.sessionId)} onOpen={() => open(m.sessionId, m.chat.jid)} subtitle={<TypeLabel type={m.type} voice={isVoice(m)} />} />
@@ -193,7 +193,7 @@ export function GlobalSearch({ numbers, initialSession, onOpen, onClose }: { num
           const name = m.content.media?.fileName ?? m.content.fileName ?? t.chats.media.document;
           return (
             <li key={m.id} className="flex items-center gap-3 px-4 py-3">
-              <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-rose-500/10 text-rose-400">
+              <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-sender-rose/15 text-sender-rose">
                 <FileText className="size-5" />
               </span>
               <HitTitle

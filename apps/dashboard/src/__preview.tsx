@@ -26,6 +26,8 @@ const account: Account = {
           phone: v === 'nophone' ? null : '+201001234567',
           phoneVerified: v === 'admin' || v === 'expired',
           twoFactorEnabled: v !== 'no2fa',
+          twoFactorGraceUntil: null,
+          twoFactorSkippable: v === 'no2fa',
         },
   workspace: {
     id: 'w1',

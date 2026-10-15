@@ -552,7 +552,7 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
           )}
         </div>
         <span aria-hidden className="mx-0.5 hidden h-6 w-px bg-line lg:block" />
-        <button type="button" onClick={onBack} className="hidden rounded-full p-2 text-muted transition-colors hover:bg-red-500/10 hover:text-red-400 lg:block" aria-label={c.closeChat} title={c.closeChat}>
+        <button type="button" onClick={onBack} className="hidden rounded-full p-2 text-muted transition-colors hover:bg-critical/10 hover:text-critical lg:block" aria-label={c.closeChat} title={c.closeChat}>
           <X className="size-5" />
         </button>
       </header>
@@ -579,7 +579,7 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
       {/* thread */}
       <div className="chat-wall relative min-h-0 flex-1" style={wallStyle(wall)}>
         {reactError && (
-          <p role="status" className="animate-fade-up absolute inset-x-0 top-3 z-20 mx-auto w-fit max-w-[90%] rounded-full bg-red-500/90 px-3 py-1.5 text-xs font-medium text-white shadow-lg">
+          <p role="status" className="animate-fade-up absolute inset-x-0 top-3 z-20 mx-auto w-fit max-w-[90%] rounded-full bg-critical px-3 py-1.5 text-xs font-medium text-bg shadow-lg">
             {reactError}
           </p>
         )}
@@ -698,15 +698,15 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
                     title={n?.phone ?? undefined}
                     className={cx(
                       'flex shrink-0 cursor-pointer items-center gap-1 rounded-full border px-2 py-0.5 transition-colors disabled:cursor-not-allowed disabled:opacity-45',
-                      active ? (n ? 'border-amber-500/50 bg-amber-500/10 text-amber-500' : 'border-brand/40 bg-brand/10 text-brand') : 'border-line text-ink-2 hover:border-line-strong',
+                      active ? (n ? 'border-warning/50 bg-warning/10 text-warning' : 'border-brand/40 bg-brand/10 text-brand') : 'border-line text-ink-2 hover:border-line-strong',
                     )}
                   >
-                    <span className={cx('size-1.5 rounded-full', online ? 'bg-green-500' : 'bg-ink-3')} />
+                    <span className={cx('size-1.5 rounded-full', online ? 'bg-good' : 'bg-ink-3')} />
                     <span className="pii max-w-32 truncate">{n ? n.name : c.cross.thisNumber}</span>
                   </button>
                 );
               })}
-              {viaNumber && <span className="pii shrink-0 text-amber-500">· {c.cross.via(viaNumber.name)}</span>}
+              {viaNumber && <span className="pii shrink-0 text-warning">· {c.cross.via(viaNumber.name)}</span>}
             </div>
           ) : (
             <p className="text-[11.5px] text-muted">{c.cross.onlyDirect}</p>
@@ -830,9 +830,9 @@ function ViaStatus({ number, jid, onOpen }: { number: ChatNumber; jid: string; o
           <Loader2 className="size-3.5 animate-spin" /> {x.sending(number.name)}
         </span>
       ) : failed.length > 0 ? (
-        <span className="pii text-red-400">{x.failed(number.name)}</span>
+        <span className="pii text-critical">{x.failed(number.name)}</span>
       ) : (
-        <span className="pii text-green-500">✓ {x.sent(number.name)}</span>
+        <span className="pii text-good">✓ {x.sent(number.name)}</span>
       )}
       <span className="ms-auto flex items-center gap-1">
         {failed.length > 0 && (

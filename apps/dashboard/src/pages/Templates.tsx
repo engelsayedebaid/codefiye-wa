@@ -693,7 +693,7 @@ function TemplateEditor({
                       type="button"
                       onClick={() => removeButton(i)}
                       aria-label={tt.removeButton}
-                      className="rounded-md p-1.5 text-muted transition-colors hover:bg-raised hover:text-red-400"
+                      className="rounded-md p-1.5 text-muted transition-colors hover:bg-raised hover:text-critical"
                     >
                       <X className="size-4" />
                     </button>
@@ -706,7 +706,7 @@ function TemplateEditor({
                 {tt.addButton}
               </Button>
             )}
-            {tooFewButtons && <p className="text-sm text-amber-400">{tt.needTwoButtons}</p>}
+            {tooFewButtons && <p className="text-sm text-warning">{tt.needTwoButtons}</p>}
             {fieldError('buttons')}
             {fieldError('buttonsTitle')}
           </fieldset>
@@ -896,7 +896,7 @@ export function TemplatesPage() {
                     </Button>
                     <CopyButton text={apiRequest(template, tt.samples)} label={tt.copy} />
                   </div>
-                  <Button variant="ghost" size="sm" icon={<Trash2 className="size-4" />} onClick={() => remove(template)} className="text-red-400 hover:text-red-300">
+                  <Button variant="ghost" size="sm" icon={<Trash2 className="size-4" />} onClick={() => remove(template)} className="text-critical hover:text-critical">
                     {t.common.delete}
                   </Button>
                 </footer>

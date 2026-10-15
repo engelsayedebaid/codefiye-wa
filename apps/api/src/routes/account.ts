@@ -5,6 +5,7 @@ import {
   normalizePhone,
   ok,
   type PaymentDetails,
+  paymentDetailsDto,
   paymentDetailsSchema,
   paymentMonthsSchema,
   paymentSettingsSchema,
@@ -27,7 +28,7 @@ import { getFeatures } from '../lib/features';
 import { generateKey, hashKey } from '../lib/keys';
 import { getPaymentSettings } from '../lib/payments';
 import { hashPassword, needsRehash, passwordProblems, verifyPassword } from '../lib/passwords';
-import { generateRecoveryCodes, generateTotpSecret, hashRecoveryCode, looksLikeRecoveryCode, matchTotp, otpauthUrl, totpCipher, type TotpCipher } from '../lib/totp';
+import { generateRecoveryCodes, generateTotpSecret, hashRecoveryCode, looksLikeRecoveryCode, matchTotp, otpauthUrl, totpCipher, twoFactorGraceUntil, type TotpCipher } from '../lib/totp';
 import { createVerifications, type Lang, normalizeCode, type VerificationTicket } from '../lib/verification';
 
 const tags = ['Account'];
@@ -42,8 +43,15 @@ const userDto = z.object({
   status: z.enum(['active', 'suspended']),
   phone: z.string().nullable(),
   phoneVerified: z.boolean(),
-  /** An authenticator app is set up. Dashboard sessions of a user without one can only set it up (`two_factor_required`). */
+  /** An authenticator app is set up. */
   twoFactorEnabled: z.boolean(),
+  /**
+   * When a one-time skip still lets the dashboard through (48 hours from the skip).
+   * Null if they never skipped, the skip expired, or two-factor is already on.
+   */
+  twoFactorGraceUntil: z.string().nullable(),
+  /** The skip button is offered only before that one skip is used. */
+  twoFactorSkippable: z.boolean(),
 });
 const workspaceDto = z.object({
   id: z.uuid(),
@@ -93,6 +101,7 @@ type UserRow = {
   phone: string | null;
   phone_verified_at: Date | null;
   totp_enabled_at: Date | null;
+  totp_skipped_at: Date | null;
 };
 type WorkspaceRow = { id: string; name: string; plan_id: string; trial_ends_at: Date | null; plan_expires_at: Date | null };
 
@@ -106,6 +115,8 @@ const toUserDto = (u: UserRow): z.infer<typeof userDto> => ({
   phone: u.phone,
   phoneVerified: u.phone_verified_at !== null,
   twoFactorEnabled: u.totp_enabled_at !== null,
+  twoFactorGraceUntil: u.totp_enabled_at ? null : (twoFactorGraceUntil(u.totp_skipped_at)?.toISOString() ?? null),
+  twoFactorSkippable: u.totp_enabled_at === null && u.totp_skipped_at === null,
 });
 const workspaceRowDto = (w: WorkspaceRow): z.infer<typeof workspaceDto> => ({
   id: w.id,
@@ -122,7 +133,7 @@ export const planRequestDto = z.object({
   /** Months the customer paid for. */
   months: z.number(),
   /** How the customer paid; null for requests without payment details. */
-  payment: paymentDetailsSchema.nullable(),
+  payment: paymentDetailsDto.nullable(),
   /** A transfer screenshot is attached (admins fetch it from `/api/admin/plan-requests/:id/proof`). */
   hasProof: z.boolean(),
   note: z.string().nullable(),
@@ -184,7 +195,7 @@ export const planRequestRowDto = (r: PlanRequestRow) =>
     decidedAt: r.decided_at,
   });
 
-const USER_COLUMNS = (sql: Sql | TxSql) => sql`id, name, email, password_hash, role, status, suspended_reason, phone, phone_verified_at, totp_enabled_at`;
+const USER_COLUMNS = (sql: Sql | TxSql) => sql`id, name, email, password_hash, role, status, suspended_reason, phone, phone_verified_at, totp_enabled_at, totp_skipped_at`;
 
 /** A dashboard login token: a workspace token with scope `console` that expires; it lives in the session cookie. */
 async function issueConsoleToken(sql: Sql | TxSql, workspaceId: string, remember: boolean) {
@@ -709,11 +720,12 @@ export function accountRoutes(deps: Deps): FastifyPluginAsyncZod {
         phone: string | null;
         phone_verified_at: Date | null;
         totp_enabled_at: Date | null;
+        totp_skipped_at: Date | null;
         request: PlanRequestRow | null;
       })[]
     >`
       select w.id, w.name, w.plan_id, w.trial_ends_at, w.plan_expires_at,
-        u.id as user_id, u.name as user_name, u.email, u.role, u.status, u.phone, u.phone_verified_at, u.totp_enabled_at,
+        u.id as user_id, u.name as user_name, u.email, u.role, u.status, u.phone, u.phone_verified_at, u.totp_enabled_at, u.totp_skipped_at,
         (select to_jsonb(r) from (select ${sql.unsafe(PLAN_REQUEST_COLUMNS)} from plan_requests x where x.workspace_id = w.id and x.status = 'pending' limit 1) r) as request
       from workspaces w
       left join users u on u.id = w.owner_id
@@ -736,6 +748,7 @@ export function accountRoutes(deps: Deps): FastifyPluginAsyncZod {
               phone: row.phone,
               phone_verified_at: row.phone_verified_at,
               totp_enabled_at: row.totp_enabled_at,
+              totp_skipped_at: row.totp_skipped_at,
             })
           : null,
       workspace: workspaceRowDto(row),
@@ -968,11 +981,41 @@ export function accountRoutes(deps: Deps): FastifyPluginAsyncZod {
         }
         const codes = generateRecoveryCodes();
         await sql`
-          update users set totp_enabled_at = now(), recovery_codes = ${codes.map(hashRecoveryCode)}::text[]
+          update users set totp_enabled_at = now(), totp_skipped_at = null, recovery_codes = ${codes.map(hashRecoveryCode)}::text[]
           where id = ${userId} and totp_enabled_at is null`;
         // Cached credentials carry the "two-factor required" flag; drop them so this session is let through now.
         await auth.revoke({ workspaceIds: await ownedWorkspaces(userId) });
         return ok({ recoveryCodes: codes });
+      },
+    );
+
+    app.post(
+      '/account/2fa/skip',
+      {
+        schema: {
+          tags,
+          summary: 'Skip two-factor setup for 48 hours',
+          description:
+            'One skip per account. The dashboard works until 48 hours after this call; then setup is mandatory and this route refuses.',
+          response: { 200: successSchema(meResponse) },
+        },
+      },
+      async (req) => {
+        const userId = requireUser(req);
+        const [updated] = await sql<{ totp_skipped_at: Date }[]>`
+          update users set totp_skipped_at = now()
+          where id = ${userId} and totp_enabled_at is null and totp_skipped_at is null
+          returning totp_skipped_at`;
+        if (!updated) {
+          const [user] = await sql<{ totp_enabled_at: Date | null; totp_skipped_at: Date | null }[]>`
+            select totp_enabled_at, totp_skipped_at from users where id = ${userId}`;
+          if (!user) throw notFound('This workspace has no owner account', 'no_owner');
+          if (user.totp_enabled_at) throw conflict('Two-factor authentication is already on', 'two_factor_on');
+          // A second call during the grace period leaves the original deadline in place.
+          if (!twoFactorGraceUntil(user.totp_skipped_at)) throw forbidden('The skip period has ended', 'two_factor_required');
+        }
+        await auth.revoke({ workspaceIds: await ownedWorkspaces(userId) });
+        return ok(await loadMe(req.auth.workspaceId));
       },
     );
 

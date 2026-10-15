@@ -430,8 +430,8 @@ function PlanAlert({ account }: { account: Account | null }) {
   let tone: Tone | null = null;
   if (pending) {
     tone = {
-      box: 'border-sky-500/20 bg-sky-500/10',
-      title: 'text-sky-300',
+      box: 'border-info/25 bg-info/12',
+      title: 'text-info',
       icon: <Hourglass className="size-7 animate-pulse" />,
       heading: a.pending.title(planName(getPlan(pending.planId))),
       text: a.pending.text,
@@ -440,7 +440,7 @@ function PlanAlert({ account }: { account: Account | null }) {
     };
   } else if (state.kind === 'trial-expired' || state.kind === 'expired') {
     const copy = state.kind === 'expired' ? a.planExpired : a.trialExpired;
-    tone = { box: 'border-destructive-ink/20 bg-destructive/15', title: 'text-red-500', icon: <CircleX className="size-7" />, heading: copy.title, text: copy.text, cta: copy.cta, variant: 'danger' };
+    tone = { box: 'border-destructive-ink/20 bg-destructive/15', title: 'text-critical', icon: <CircleX className="size-7" />, heading: copy.title, text: copy.text, cta: copy.cta, variant: 'danger' };
   } else if (state.kind === 'trial') {
     tone = {
       box: 'border-ink/20 bg-ink/10',
@@ -453,8 +453,8 @@ function PlanAlert({ account }: { account: Account | null }) {
     };
   } else if (state.kind === 'expiring') {
     tone = {
-      box: 'border-amber-500/25 bg-amber-500/10',
-      title: 'text-amber-300',
+      box: 'border-warning/25 bg-warning/10',
+      title: 'text-warning',
       icon: <Clock className="size-7" />,
       heading: a.planExpiring.title,
       text: a.planExpiring.text(fmt.date(state.endsAt)),
@@ -489,10 +489,10 @@ function PhoneAlert({ account }: { account: Account }) {
   const [open, setOpen] = useState(false);
   if (!account.user || account.user.phoneVerified || account.user.isAdmin) return null;
   return (
-    <div className="animate-fade-up mx-auto flex w-full max-w-3xl flex-wrap items-center gap-4 rounded-lg border border-amber-500/25 bg-amber-500/10 p-4">
-      <Smartphone className="size-6 shrink-0 text-amber-300" />
+    <div className="animate-fade-up mx-auto flex w-full max-w-3xl flex-wrap items-center gap-4 rounded-lg border border-warning/25 bg-warning/10 p-4">
+      <Smartphone className="size-6 shrink-0 text-warning" />
       <div className="min-w-0 flex-1">
-        <h2 className="text-sm font-medium text-amber-200">{p.bannerTitle}</h2>
+        <h2 className="text-sm font-medium text-warning">{p.bannerTitle}</h2>
         <p className="text-sm text-muted">{p.bannerText}</p>
       </div>
       <Button variant="white" onClick={() => setOpen(true)}>

@@ -24,6 +24,8 @@ export type AuthContext = {
   phoneVerified: boolean;
   /** The owner set up an authenticator app. Until then a dashboard session may only set it up (see app.ts). */
   twoFactorEnabled: boolean;
+  /** When the owner skipped setup. The 48-hour grace is computed at request time, so a cached session still locks when it ends. */
+  twoFactorSkippedAt: Date | null;
   /** Dashboard login token (scope `console`): expires and is revoked on logout. */
   console: boolean;
   expiresAt: Date | null;
@@ -100,11 +102,12 @@ export function createAuth(sql: Sql) {
         suspended_reason: string | null;
         phone_verified: boolean | null;
         two_factor: boolean | null;
+        totp_skipped_at: Date | string | null;
       }[]
     >`
       select k.id, k.workspace_id, k.session_id, k.scopes, k.expires_at, w.plan_id, w.trial_ends_at, w.plan_expires_at,
         u.id as user_id, u.role, u.status, u.suspended_reason, u.phone_verified_at is not null as phone_verified,
-        u.totp_enabled_at is not null as two_factor
+        u.totp_enabled_at is not null as two_factor, u.totp_skipped_at
       from api_keys k
       join workspaces w on w.id = k.workspace_id
       left join users u on u.id = w.owner_id
@@ -124,6 +127,7 @@ export function createAuth(sql: Sql) {
           suspendedReason: row.suspended_reason,
           phoneVerified: row.phone_verified === true,
           twoFactorEnabled: row.two_factor === true,
+          twoFactorSkippedAt: row.totp_skipped_at ? new Date(row.totp_skipped_at) : null,
           console: row.scopes.includes('console'),
           expiresAt: row.expires_at,
         }

@@ -28,7 +28,7 @@ const KEYS = {
   saved: ['ads', 'library', 'saved'] as const,
   search: (params: Record<string, string>) => ['ads', 'library', 'search', params] as const,
 };
-const TIER_TONE = { high: 'bg-green-600 text-white', mid: 'bg-amber-600 text-white', low: 'bg-ink-3 text-bg' };
+const TIER_TONE = { high: 'bg-good text-bg', mid: 'bg-warning text-on-warning', low: 'bg-ink-3 text-bg' };
 const COUNTRY_KEY = 'wa.ads.libraryCountry';
 const LAUNCH_KEY = 'wa.ads.launchCountry';
 const remembered = (key: string, fallback: string) => {
@@ -200,8 +200,8 @@ export function AdLibrary() {
   return (
     <div className="space-y-5">
       {status.data && !live && (
-        <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/[0.07] px-4 py-3">
-          <Sparkles className="mt-0.5 size-4 shrink-0 text-amber-500" />
+        <div className="flex items-start gap-3 rounded-xl border border-warning/30 bg-warning/[0.07] px-4 py-3">
+          <Sparkles className="mt-0.5 size-4 shrink-0 text-warning" />
           <div className="min-w-0 text-sm">
             <p className="font-medium text-ink">{l.demoTitle}</p>
             <p className="mt-0.5 text-muted">{refused === 'library_token_expired' ? l.tokenExpired : refused ? l.notAllowed : l.demoText}</p>
@@ -386,7 +386,7 @@ export function AdLibrary() {
             </p>
           )}
           {sourceErrors.map(([source, message]) => (
-            <p key={source} className="text-red-400">
+            <p key={source} className="text-critical">
               {l.sourceFailed(l.platforms[source as LibraryPlatform] ?? source)}: <span className="ltr">{message}</span>
             </p>
           ))}
@@ -405,7 +405,7 @@ export function AdLibrary() {
         <Empty
           title={l.failed}
           text={errorCode === 'library_token_expired' ? l.tokenExpired : errorCode === 'library_not_allowed' ? l.notAllowed : errorMessage(search.error)}
-          icon={<Info className="size-8 text-red-400" />}
+          icon={<Info className="size-8 text-critical" />}
         />
       ) : remote && !q && category === 'all' ? (
         <Empty title={l.startTitle} text={l.startText} icon={<Search className="size-8 text-muted" />} />

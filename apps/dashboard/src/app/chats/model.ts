@@ -173,15 +173,15 @@ export function initials(name: string) {
   return ((letters[0]?.[0] ?? '') + (letters[1]?.[0] ?? '')).toUpperCase();
 }
 
-/** Stable gradient per contact, from a small set that reads well on the dark theme. */
+/** Stable gradient per contact. The 600 stops stay dark enough for the white initials. */
 const GRADIENTS = [
   'from-emerald-500 to-teal-600',
   'from-sky-500 to-indigo-600',
   'from-violet-500 to-fuchsia-600',
-  'from-amber-500 to-orange-600',
+  'from-amber-600 to-orange-700',
   'from-rose-500 to-pink-600',
   'from-cyan-500 to-blue-600',
-  'from-lime-500 to-green-600',
+  'from-lime-600 to-green-700',
   'from-fuchsia-500 to-purple-600',
 ];
 export function hashOf(value: string) {
@@ -191,8 +191,17 @@ export function hashOf(value: string) {
 }
 export const gradientFor = (key: string) => GRADIENTS[hashOf(key) % GRADIENTS.length]!;
 
-/** Text colors for group senders (as WhatsApp tints each member). */
-const SENDER_COLORS = ['text-emerald-400', 'text-sky-400', 'text-violet-400', 'text-amber-400', 'text-rose-400', 'text-cyan-400', 'text-lime-400', 'text-fuchsia-400'];
+/** Text colors for group senders (as WhatsApp tints each member). Theme-aware, so they stay readable on both bubbles. */
+const SENDER_COLORS = [
+  'text-sender-emerald',
+  'text-sender-sky',
+  'text-sender-violet',
+  'text-sender-amber',
+  'text-sender-rose',
+  'text-sender-cyan',
+  'text-sender-lime',
+  'text-sender-fuchsia',
+];
 export const senderColor = (key: string) => SENDER_COLORS[hashOf(key) % SENDER_COLORS.length]!;
 
 export function formatBytes(n: number | undefined) {

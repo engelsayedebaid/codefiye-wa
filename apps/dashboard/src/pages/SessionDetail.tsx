@@ -184,7 +184,7 @@ export function SessionDetailPage({ id }: { id: string }) {
             ) : (
               <div className="space-y-2 text-sm text-muted">
                 <p>{linked ? d.stoppedLinked : d.stoppedUnlinked}</p>
-                {session.lastError && <p className="text-red-400">{session.lastError}</p>}
+                {session.lastError && <p className="text-critical">{session.lastError}</p>}
               </div>
             )}
           </Card>

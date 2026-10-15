@@ -90,12 +90,12 @@ function useStats(job: SyncProgress) {
 }
 
 const TONE: Record<SyncProgress['status'], { bar: string; text: string }> = {
-  queued: { bar: 'bg-sky-400', text: 'text-sky-400' },
+  queued: { bar: 'bg-info', text: 'text-info' },
   running: { bar: 'bg-brand', text: 'text-brand' },
-  paused: { bar: 'bg-amber-400', text: 'text-amber-400' },
+  paused: { bar: 'bg-warning', text: 'text-warning' },
   completed: { bar: 'bg-brand', text: 'text-brand' },
   cancelled: { bar: 'bg-ink-3', text: 'text-ink-3' },
-  failed: { bar: 'bg-red-500', text: 'text-red-400' },
+  failed: { bar: 'bg-critical', text: 'text-critical' },
 };
 
 function StatusIcon({ status, className }: { status: SyncProgress['status']; className?: string }) {
@@ -160,11 +160,11 @@ function SyncCardBody({ job, onOpen, onDismiss, label }: { job: SyncProgress; on
           <span className="tabular-nums">{s.messages(job.messagesAdded)}</span>
         </div>
         {job.status === 'running' && job.current && <p className="mt-1 truncate text-[11.5px] text-ink-2">{s.now(job.current.name ?? job.current.jid.split('@')[0]!)}</p>}
-        {job.status === 'paused' && job.pauseReason === 'phone_unresponsive' && <p className="mt-1 text-[11.5px] leading-snug text-amber-400">{s.phonePaused}</p>}
+        {job.status === 'paused' && job.pauseReason === 'phone_unresponsive' && <p className="mt-1 text-[11.5px] leading-snug text-warning">{s.phonePaused}</p>}
         {(job.chatsFailed > 0 || eta !== null) && (
           <div className="mt-1 flex items-center justify-between gap-2 text-[11.5px]">
             {job.chatsFailed > 0 ? (
-              <span className="flex items-center gap-1 text-amber-400">
+              <span className="flex items-center gap-1 text-warning">
                 <AlertTriangle className="size-3" /> {s.failed(job.chatsFailed)}
               </span>
             ) : (
@@ -189,11 +189,11 @@ function SyncCardBody({ job, onOpen, onDismiss, label }: { job: SyncProgress; on
 }
 
 const LEVEL: Record<SyncLogLevel, { icon: typeof Info; cls: string }> = {
-  info: { icon: Info, cls: 'text-sky-400' },
+  info: { icon: Info, cls: 'text-info' },
   progress: { icon: ArrowRight, cls: 'text-ink-2' },
   success: { icon: CircleCheck, cls: 'text-brand' },
-  warning: { icon: AlertTriangle, cls: 'text-amber-400' },
-  error: { icon: CircleX, cls: 'text-red-400' },
+  warning: { icon: AlertTriangle, cls: 'text-warning' },
+  error: { icon: CircleX, cls: 'text-critical' },
 };
 
 const time = (iso: string) => new Date(iso).toLocaleTimeString('en-GB', { hour12: false });
@@ -207,7 +207,7 @@ function LogLine({ line, className, style }: { line: SyncLogEntry; className?: s
     <div className={cx('flex items-center gap-2 px-2.5 font-mono text-[11px]', className)} style={{ height: ROW_HEIGHT, ...style }}>
       <span className="ltr shrink-0 text-ink-3 tabular-nums">{time(line.at)}</span>
       <Icon className={cx('size-3 shrink-0', cls, line.level === 'progress' && flip)} />
-      <span className={cx('min-w-0 flex-1 truncate font-sans text-[12px]', line.level === 'error' ? 'text-red-300' : line.level === 'warning' ? 'text-amber-300' : 'text-ink-2')} title={text}>
+      <span className={cx('min-w-0 flex-1 truncate font-sans text-[12px]', line.level === 'error' ? 'text-critical' : line.level === 'warning' ? 'text-warning' : 'text-ink-2')} title={text}>
         {text}
       </span>
     </div>
@@ -326,7 +326,7 @@ export function SyncModal({ sessionId, connected, onClose }: { sessionId: string
           </Button>
         )}
         {job && isActiveSync(job.status) && (
-          <Button variant="ghost" size="sm" className="ms-auto h-7 px-2 text-xs text-red-400 hover:text-red-300" onClick={() => control('cancel')} loading={busy === 'cancel'} icon={<Square className="size-3" />}>
+          <Button variant="ghost" size="sm" className="ms-auto h-7 px-2 text-xs text-critical hover:text-critical" onClick={() => control('cancel')} loading={busy === 'cancel'} icon={<Square className="size-3" />}>
             {s.cancel}
           </Button>
         )}
@@ -378,13 +378,13 @@ function SyncStats({ job }: { job: SyncProgress }) {
         <span className="flex items-center gap-1 text-brand">
           <CircleCheck className="size-3" /> {s.synced(job.chatsDone)}
         </span>
-        <span className={cx('flex items-center gap-1', job.chatsFailed > 0 ? 'text-amber-400' : 'text-muted')}>
+        <span className={cx('flex items-center gap-1', job.chatsFailed > 0 ? 'text-warning' : 'text-muted')}>
           <AlertTriangle className="size-3" /> {s.failed(job.chatsFailed)}
         </span>
         {speed !== null && <span className="text-muted">{s.speed(speed)}</span>}
         {eta !== null && <span className="text-muted">{s.eta(s.duration(eta))}</span>}
       </div>
-      {job.status === 'paused' && job.pauseReason === 'phone_unresponsive' && <p className="text-[11.5px] leading-snug text-amber-400">{s.phonePaused}</p>}
+      {job.status === 'paused' && job.pauseReason === 'phone_unresponsive' && <p className="text-[11.5px] leading-snug text-warning">{s.phonePaused}</p>}
     </div>
   );
 }

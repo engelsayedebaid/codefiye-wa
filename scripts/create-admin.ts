@@ -38,7 +38,7 @@ const [user] = existing
         suspendedAt: null,
         suspendedReason: null,
         ...(passwordHash ? { passwordHash } : {}),
-        ...(resetTwoFactor ? { totpSecret: null, totpEnabledAt: null, totpLastStep: null, recoveryCodes: [] } : {}),
+        ...(resetTwoFactor ? { totpSecret: null, totpEnabledAt: null, totpLastStep: null, totpSkippedAt: null, recoveryCodes: [] } : {}),
       })
       .where(eq(users.id, existing.id))
       .returning()

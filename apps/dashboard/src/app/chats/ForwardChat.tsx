@@ -166,7 +166,7 @@ export function ForwardChat({
                             n.id === from ? 'border-brand/50 bg-brand/10 text-ink' : 'border-line text-ink-2 hover:border-line-strong',
                           )}
                         >
-                          <span className={cx('size-1.5 rounded-full', online ? 'bg-green-500' : 'bg-ink-3')} />
+                          <span className={cx('size-1.5 rounded-full', online ? 'bg-good' : 'bg-ink-3')} />
                           <span className="pii max-w-36 truncate">{n.name}</span>
                         </button>
                       );
@@ -186,7 +186,7 @@ export function ForwardChat({
                       className="h-10 w-full rounded-xl border border-line bg-transparent ps-9 pe-3 font-mono text-sm text-ink outline-none transition-[border-color,box-shadow] focus:border-ring focus:ring-[3px] focus:ring-ring/30"
                     />
                   </span>
-                  {to && !valid && <span className="block text-[11px] text-red-400">{x.invalid}</span>}
+                  {to && !valid && <span className="block text-[11px] text-critical">{x.invalid}</span>}
                 </label>
               </div>
 
@@ -247,7 +247,7 @@ export function ForwardChat({
                       <RefreshCw className="size-3" /> {x.rebuild}
                     </button>
                   )}
-                  <span className={cx('ms-auto text-[11px] tabular-nums', tooLong ? 'text-red-400' : 'text-faint')}>{x.chars(text.length)}</span>
+                  <span className={cx('ms-auto text-[11px] tabular-nums', tooLong ? 'text-critical' : 'text-faint')}>{x.chars(text.length)}</span>
                 </div>
                 <textarea
                   dir="auto"
@@ -256,7 +256,7 @@ export function ForwardChat({
                   rows={8}
                   className="pii w-full resize-y rounded-xl border border-line bg-surface px-3 py-2 text-[13px] leading-relaxed text-ink outline-none transition-[border-color,box-shadow] focus:border-ring focus:ring-[3px] focus:ring-ring/30"
                 />
-                {tooLong && <p className="text-xs text-red-400">{x.tooLong}</p>}
+                {tooLong && <p className="text-xs text-critical">{x.tooLong}</p>}
               </div>
               <ErrorNote>{send.isError ? errorMessage(send.error) : null}</ErrorNote>
             </div>

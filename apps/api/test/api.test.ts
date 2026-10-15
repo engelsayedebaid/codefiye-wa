@@ -731,9 +731,42 @@ describe.skipIf(!url)('api (integration)', () => {
       expect(enabled.json().data.recoveryCodes).toHaveLength(10);
       expect((await call('GET', '/api/api-keys', fresh.cookie)).statusCode).toBe(200);
       expect((await call('POST', '/api/account/2fa/setup', fresh.cookie)).json()).toMatchObject({ code: 'two_factor_on' });
+      expect((await call('POST', '/api/account/2fa/skip', fresh.cookie)).json()).toMatchObject({ code: 'two_factor_on' });
       // The secret is stored encrypted.
       const [stored] = await sql<{ totp_secret: string }[]>`select totp_secret from users where id = ${fresh.user.id}`;
       expect(stored!.totp_secret).not.toContain(setup.secret);
+    });
+
+    it('skips two-factor once for 48 hours, then requires it', async () => {
+      const fresh = await register(`skip2fa-${stamp}@test.local`, { twoFactor: false });
+      expect((await call('GET', '/api/me', fresh.cookie)).json().data.user).toMatchObject({
+        twoFactorEnabled: false,
+        twoFactorSkippable: true,
+        twoFactorGraceUntil: null,
+      });
+      expect((await call('GET', '/api/api-keys', fresh.cookie)).json()).toMatchObject({ code: 'two_factor_required' });
+
+      const skipped = await call('POST', '/api/account/2fa/skip', fresh.cookie);
+      expect(skipped.statusCode, skipped.body).toBe(200);
+      const graceUntil = skipped.json().data.user.twoFactorGraceUntil as string;
+      const left = new Date(graceUntil).getTime() - Date.now();
+      expect(left).toBeGreaterThan(47 * 3_600_000);
+      expect(left).toBeLessThan(49 * 3_600_000);
+      expect(skipped.json().data.user).toMatchObject({ twoFactorEnabled: false, twoFactorSkippable: false });
+      expect((await call('GET', '/api/api-keys', fresh.cookie)).statusCode).toBe(200);
+      // A second skip does not start the 48 hours over.
+      expect((await call('POST', '/api/account/2fa/skip', fresh.cookie)).json().data.user.twoFactorGraceUntil).toBe(graceUntil);
+
+      const late = await register(`skip2fa-late-${stamp}@test.local`, { twoFactor: false });
+      expect((await call('POST', '/api/account/2fa/skip', late.cookie)).statusCode).toBe(200);
+      await sql`update users set totp_skipped_at = now() - interval '49 hours' where id = ${late.user.id}`;
+      expect((await call('GET', '/api/api-keys', late.cookie)).json()).toMatchObject({ code: 'two_factor_required' });
+      expect((await call('GET', '/api/me', late.cookie)).json().data.user).toMatchObject({
+        twoFactorEnabled: false,
+        twoFactorSkippable: false,
+        twoFactorGraceUntil: null,
+      });
+      expect((await call('POST', '/api/account/2fa/skip', late.cookie)).json()).toMatchObject({ code: 'two_factor_required' });
     });
 
     it('logs in step by step: phone code, then authenticator — even while another session is open', async () => {
@@ -825,6 +858,15 @@ describe.skipIf(!url)('api (integration)', () => {
       expect(me.pendingRequest).toMatchObject({ note: 'ref 42', status: 'pending' });
       const history = (await call('GET', '/api/plan-requests', customer.cookie)).json().data;
       expect(history.length).toBeGreaterThanOrEqual(4);
+    });
+
+    it('returns payment details as stored (input transforms are not run on responses)', async () => {
+      const res = await call('POST', '/api/plan-requests', customer.cookie, { planId: 'basic', payment: { method: 'vodafone_cash', senderPhone: '+20 101-234-5678', amount: 825 } });
+      expect(res.statusCode).toBe(201);
+      expect(res.json().data.payment).toEqual({ method: 'vodafone_cash', senderPhone: '01012345678', amount: 825 });
+      const list = await call('GET', '/api/admin/plan-requests?status=pending', admin.pat);
+      expect(list.statusCode).toBe(200);
+      expect(list.json().data.some((r: { payment: { senderPhone?: string } | null }) => r.payment?.senderPhone === '01012345678')).toBe(true);
     });
 
     it('activates the plan when an admin approves', async () => {

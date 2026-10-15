@@ -335,7 +335,7 @@ export function RequestPlanModal({ plan, onClose, onSent, onNeedsPhone }: { plan
             <>
               <ReceivingAccount method={method} settings={settings.data} />
               {settings.data.instructions && (
-                <p className="flex items-start gap-2 rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-200 light:text-amber-800">
+                <p className="flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning">
                   <Info className="mt-px size-3.5 shrink-0" />
                   <bdi>{settings.data.instructions}</bdi>
                 </p>

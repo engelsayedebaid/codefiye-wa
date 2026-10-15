@@ -132,7 +132,7 @@ function IdentityCard({ account }: { account: Account }) {
               <Badge tone={planOk ? 'good' : 'critical'}>{planOk ? t.subscription.active : t.subscription.expired}</Badge>
             </div>
             <p className="text-lg leading-tight font-bold tracking-tight">{planName(account.plan)}</p>
-            <p className={cx('text-xs', planOk ? 'text-muted' : 'text-red-400')}>{planLine}</p>
+            <p className={cx('text-xs', planOk ? 'text-muted' : 'text-critical')}>{planLine}</p>
             <Link href="/subscription" className="group inline-flex items-center gap-1 pt-1 text-sm font-semibold text-brand hover:underline">
               {d.manageSubscription}
               <ArrowRight className={cx('size-4 transition-transform group-hover:translate-x-0.5 rtl:group-hover:-translate-x-0.5', flip)} />
@@ -151,7 +151,7 @@ function IdentityCard({ account }: { account: Account }) {
               {checks.map((c, i) => (
                 <li key={c.label} className="animate-fade-up flex items-center justify-between gap-3 text-sm" style={delay(280 + i * 50)}>
                   <span className="flex min-w-0 items-center gap-2.5 text-ink-2">
-                    <span className={cx('size-1.5 shrink-0 rounded-full', TONES[c.tone].dot, c.tone === 'good' && 'shadow-[0_0_0_3px] shadow-green-500/20')} />
+                    <span className={cx('size-1.5 shrink-0 rounded-full', TONES[c.tone].dot, c.tone === 'good' && 'shadow-[0_0_0_3px] shadow-good/25')} />
                     <span className="truncate">{c.label}</span>
                   </span>
                   <span className={cx('shrink-0 text-xs font-medium', TONES[c.tone].text)}>{c.status}</span>
@@ -212,13 +212,13 @@ function PersonalInfo({ account, saved, onSaved }: { account: Account; saved: bo
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
           <p className="min-h-5 text-sm" aria-live="polite">
             {saved && !dirty ? (
-              <span className="animate-fade-in flex items-center gap-1.5 font-medium text-green-500">
+              <span className="animate-fade-in flex items-center gap-1.5 font-medium text-good">
                 <Check className="size-4" />
                 {p.saved}
               </span>
             ) : dirty ? (
               <span className="animate-fade-in flex items-center gap-2 text-muted">
-                <span className="size-1.5 rounded-full bg-amber-500" aria-hidden />
+                <span className="size-1.5 rounded-full bg-warning" aria-hidden />
                 {p.unsaved}
               </span>
             ) : null}
@@ -294,8 +294,8 @@ function SecuritySection({ user, onPassword }: { user: User | null; onPassword: 
           </div>
           <Badge tone={on ? 'good' : 'warning'} className="gap-1.5">
             <span className="relative flex size-1.5">
-              {on && <span className="absolute inset-0 animate-ping rounded-full bg-green-500/60 motion-reduce:hidden" />}
-              <span className={cx('relative size-1.5 rounded-full', on ? 'bg-green-500' : 'bg-amber-500')} />
+              {on && <span className="absolute inset-0 animate-ping rounded-full bg-good/60 motion-reduce:hidden" />}
+              <span className={cx('relative size-1.5 rounded-full', on ? 'bg-good' : 'bg-warning')} />
             </span>
             {on ? sec.on : sec.twoFactorOff}
           </Badge>

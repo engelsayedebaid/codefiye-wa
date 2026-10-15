@@ -48,7 +48,7 @@ export class ApiRequestError extends Error {
   }
 }
 
-/** Called for responses that change who is signed in: 401 (session ended) and 403 `account_suspended`. */
+/** Called for responses that change who is signed in: 401, 403 `account_suspended`, and 403 `two_factor_required`. */
 type SessionListener = (error: ApiRequestError) => void;
 let sessionListener: SessionListener | null = null;
 export function onSessionProblem(listener: SessionListener) {
@@ -121,7 +121,7 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
     failure?.requestId ?? res.headers.get('x-request-id') ?? undefined,
   );
   // A bad credential typed into a form isn't a lost session.
-  if (!options.token && (error.status === 401 || error.code === 'account_suspended')) sessionListener?.(error);
+  if (!options.token && (error.status === 401 || error.code === 'account_suspended' || error.code === 'two_factor_required')) sessionListener?.(error);
   throw error;
 }
 

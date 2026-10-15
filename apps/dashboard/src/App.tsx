@@ -61,7 +61,7 @@ function OfflineBanner() {
   const online = useSyncExternalStore(subscribeOnline, () => navigator.onLine, () => true);
   if (online) return null;
   return (
-    <div role="status" className="animate-fade-in fixed inset-x-0 top-0 z-[60] flex items-center justify-center gap-2 bg-amber-500/95 px-4 py-2 text-sm font-medium text-black shadow">
+    <div role="status" className="animate-fade-in fixed inset-x-0 top-0 z-[60] flex items-center justify-center gap-2 bg-warning px-4 py-2 text-sm font-medium text-on-warning shadow">
       <CloudOff className="size-4 shrink-0" />
       {t.app.offline.banner}
     </div>
@@ -223,6 +223,15 @@ const loginRedirect = () => `/login?next=${encodeURIComponent(location.pathname 
 /** App pages need a session: the account decides between the dashboard, the login page, or a clear explanation. */
 function AuthGate({ path }: { path: string }) {
   const me = useQuery({ queryKey: qk.me, queryFn: ({ signal }) => api<Account>('/api/me', { signal }) });
+  const graceUntil = me.data?.user?.twoFactorGraceUntil ?? null;
+  // The skip lasts 48 hours. When that moment arrives, reload the account so the setup screen
+  // comes back on its own, even if nothing else is talking to the API.
+  useEffect(() => {
+    if (!graceUntil) return;
+    const left = new Date(graceUntil).getTime() - Date.now();
+    const id = setTimeout(() => void me.refetch(), Math.max(left, 0) + 1_000);
+    return () => clearTimeout(id);
+  }, [graceUntil, me.refetch]);
   // Kept here, not in the setup screen: once two-factor is on, the account reloads and the setup
   // screen goes away, but the recovery codes must stay until the user says they saved them.
   const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
@@ -231,7 +240,8 @@ function AuthGate({ path }: { path: string }) {
   if (error?.code === 'account_suspended') return <SuspendedScreen reason={typeof error.details?.reason === 'string' ? error.details.reason : null} />;
   if (!me.data) return me.isError ? <OfflineScreen error={me.error} onRetry={() => void me.refetch()} retrying={me.isFetching} /> : <PageLoading />;
   if (recoveryCodes) return <RecoveryCodes codes={recoveryCodes} onDone={() => setRecoveryCodes(null)} />;
-  if (me.data.user && !me.data.user.twoFactorEnabled) return <TwoFactorSetup onEnabled={setRecoveryCodes} />;
+  const user = me.data.user;
+  if (user && !user.twoFactorEnabled && !user.twoFactorGraceUntil) return <TwoFactorSetup canSkip={user.twoFactorSkippable} onEnabled={setRecoveryCodes} />;
   return (
     <AppShell account={me.data}>
       <Suspense fallback={<Loading className="py-24" />}>
@@ -245,11 +255,11 @@ export function App() {
   const path = usePath();
   const queryClient = useQueryClient();
 
-  // Any request can learn that the session ended (expired, revoked, logged out elsewhere) or that
-  // the account was suspended; react once, centrally.
+  // Any request can learn that the session ended (expired, revoked, logged out elsewhere), that
+  // the account was suspended, or that a two-factor skip has expired; react once, centrally.
   useEffect(() => {
     onSessionProblem((err) => {
-      if (err.code === 'account_suspended') {
+      if (err.code === 'account_suspended' || err.code === 'two_factor_required') {
         void queryClient.invalidateQueries({ queryKey: qk.me });
         return;
       }

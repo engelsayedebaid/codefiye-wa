@@ -41,7 +41,7 @@ import { setPrivacyMode, usePrivacyMode } from '../app/chats/privacy';
 import { type ChatInfo, type ChatNumber, type ChatSummary, isChat, placeholderChat, type PresenceState, type Profile } from '../app/chats/model';
 import { SyncButton, SyncCard, SyncModal } from '../app/chats/SyncPanel';
 import { FocusBar, FocusMenu, type FocusMode, useFocusMode } from '../app/chats/Focus';
-import { AiReport } from '../app/chats/AiReport';
+import { AI_REPORT_SOON, AiReport, AiReportSoon } from '../app/chats/AiReport';
 import { setCrossSend, useCrossSend } from '../app/chats/crossSend';
 import { GlobalSearch } from '../app/chats/GlobalSearch';
 import { NumberSwitcher } from '../app/chats/NumberSwitcher';
@@ -135,7 +135,7 @@ function NewChatDialog({ sessionId, onStart, onClose }: { sessionId: string; onS
           <p
             className={cx(
               'animate-fade-up flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm',
-              checked.exists ? 'bg-green-500/10 text-green-500 ring-1 ring-green-500/20' : 'bg-red-500/10 text-red-400 ring-1 ring-red-500/20',
+              checked.exists ? 'bg-good/12 text-good ring-1 ring-good/25' : 'bg-critical/10 text-critical ring-1 ring-critical/25',
             )}
           >
             {checked.exists ? <CircleCheck className="size-4 shrink-0" /> : <CircleX className="size-4 shrink-0" />}
@@ -854,7 +854,7 @@ export function ChatsPage() {
           {!connected && (
             <Link
               href={`/sessions/${current.id}`}
-              className="animate-fade-in flex items-start gap-2 rounded-xl bg-amber-500/10 px-3 py-2 text-xs text-amber-400 ring-1 ring-amber-500/20 transition-colors hover:bg-amber-500/15"
+              className="animate-fade-in flex items-start gap-2 rounded-xl bg-warning/10 px-3 py-2 text-xs text-warning ring-1 ring-warning/25 transition-colors hover:bg-warning/15"
             >
               <WifiOff className="mt-0.5 size-3.5 shrink-0" />
               <span className="min-w-0 flex-1">{c.offlineNumber}</span>
@@ -934,7 +934,7 @@ export function ChatsPage() {
               <div aria-hidden className="animate-float w-72 rounded-3xl border border-line bg-card/80 p-4 shadow-[0_30px_80px_-30px] shadow-black/80 light:shadow-black/15 backdrop-blur">
                 <div className="flex items-center gap-2.5 border-b border-line/70 pb-3">
                   <span className="relative size-8 rounded-full bg-gradient-to-br from-sky-500 to-indigo-600">
-                    <span className="absolute -end-0.5 -bottom-0.5 size-2.5 rounded-full bg-green-500 ring-2 ring-card" />
+                    <span className="absolute -end-0.5 -bottom-0.5 size-2.5 rounded-full bg-good ring-2 ring-card" />
                   </span>
                   <span className="space-y-1.5">
                     <span className="block h-2 w-20 rounded-full bg-ink/25" />
@@ -954,7 +954,7 @@ export function ChatsPage() {
                         <span className="block h-1.5 w-24 rounded-full bg-brand/40" />
                         <span className="block h-1.5 w-14 rounded-full bg-brand/40" />
                       </span>
-                      <CheckCheck className="-mb-0.5 size-3.5 text-sky-400" />
+                      <CheckCheck className="-mb-0.5 size-3.5 text-info" />
                     </span>
                   </div>
                   <div className="animate-fade-up flex" style={delay(750)}>
@@ -1071,7 +1071,9 @@ export function ChatsPage() {
         />
       )}
 
-      {aiOpen && (
+      {aiOpen && AI_REPORT_SOON && <AiReportSoon onClose={() => setAiOpen(false)} />}
+
+      {aiOpen && !AI_REPORT_SOON && (
         <AiReport
           numbers={list}
           onClose={() => setAiOpen(false)}
@@ -1094,7 +1096,7 @@ export function ChatsPage() {
           <span
             className={cx(
               'flex max-w-md items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm shadow-xl backdrop-blur',
-              toast?.tone === 'error' ? 'border-red-500/30 bg-red-500/15 text-red-300' : 'border-line bg-card/95 text-ink',
+              toast?.tone === 'error' ? 'border-critical/30 bg-critical/15 text-critical' : 'border-line bg-card/95 text-ink',
             )}
           >
             {sync ? <RefreshCw className="size-4 shrink-0 animate-spin text-brand" /> : toast?.tone === 'error' ? <AlertTriangle className="size-4 shrink-0" /> : <CircleCheck className="size-4 shrink-0 text-brand" />}

@@ -250,8 +250,8 @@ export function VoiceRecorder({ onSend, onClose, onRecording }: { onSend: (blob:
       className="animate-scale-in absolute inset-x-0 bottom-full z-30 mx-auto mb-2 w-full max-w-md origin-bottom overflow-hidden rounded-2xl border border-line bg-card shadow-2xl shadow-black/40 light:shadow-black/15"
     >
       <div className="flex items-center gap-2.5 border-b border-line/70 px-4 py-3">
-        <span className={cx('relative flex size-8 items-center justify-center rounded-full', recording ? 'bg-red-500/15 text-red-500' : 'bg-brand/12 text-brand')}>
-          {recording && <span className="absolute inset-0 animate-ping rounded-full bg-red-500/25 motion-reduce:hidden" />}
+        <span className={cx('relative flex size-8 items-center justify-center rounded-full', recording ? 'bg-critical/15 text-critical' : 'bg-brand/12 text-brand')}>
+          {recording && <span className="absolute inset-0 animate-ping rounded-full bg-critical/25 motion-reduce:hidden" />}
           <Mic className="relative size-4" />
         </span>
         <div className="min-w-0 flex-1">
@@ -268,7 +268,7 @@ export function VoiceRecorder({ onSend, onClose, onRecording }: { onSend: (blob:
       <div className="px-4 py-4">
         {phase.kind === 'error' ? (
           <div className="flex flex-col items-center gap-3 py-2 text-center">
-            <span className="flex size-11 items-center justify-center rounded-full bg-amber-500/12 text-amber-400">
+            <span className="flex size-11 items-center justify-center rounded-full bg-warning/12 text-warning">
               <AlertTriangle className="size-5" />
             </span>
             <p role="alert" className="max-w-xs text-sm text-ink-2">
@@ -346,8 +346,8 @@ export function VoiceRecorder({ onSend, onClose, onRecording }: { onSend: (blob:
               ))}
             </div>
             {recording && (
-              <span className="flex shrink-0 items-center gap-1.5 text-xs font-medium text-red-500">
-                <span className="size-2 animate-pulse rounded-full bg-red-500" /> REC
+              <span className="flex shrink-0 items-center gap-1.5 text-xs font-medium text-critical">
+                <span className="size-2 animate-pulse rounded-full bg-critical" /> REC
               </span>
             )}
           </div>
@@ -358,13 +358,13 @@ export function VoiceRecorder({ onSend, onClose, onRecording }: { onSend: (blob:
       <div className="flex items-center justify-between gap-2 border-t border-line/70 bg-raised/40 px-3 py-2.5">
         {recording ? (
           <>
-            <button type="button" onClick={discard} className="inline-flex h-10 items-center gap-2 rounded-xl px-3 text-sm font-medium text-red-500 transition-colors hover:bg-red-500/10">
+            <button type="button" onClick={discard} className="inline-flex h-10 items-center gap-2 rounded-xl px-3 text-sm font-medium text-critical transition-colors hover:bg-critical/10">
               <Trash2 className="size-4" /> {v.cancel}
             </button>
             <button
               type="button"
               onClick={stop}
-              className="inline-flex h-10 items-center gap-2 rounded-xl bg-red-500 px-4 text-sm font-semibold text-white shadow-sm transition-transform hover:scale-[1.02] active:scale-95"
+              className="inline-flex h-10 items-center gap-2 rounded-xl bg-critical px-4 text-sm font-semibold text-bg shadow-sm transition-transform hover:scale-[1.02] active:scale-95"
             >
               <Square className="size-3.5 fill-current" /> {v.stop}
             </button>
@@ -372,7 +372,7 @@ export function VoiceRecorder({ onSend, onClose, onRecording }: { onSend: (blob:
         ) : review ? (
           <>
             <div className="flex items-center gap-1">
-              <button type="button" onClick={discard} className="flex size-10 items-center justify-center rounded-xl text-muted transition-colors hover:bg-red-500/10 hover:text-red-500" aria-label={v.discard} title={v.discard}>
+              <button type="button" onClick={discard} className="flex size-10 items-center justify-center rounded-xl text-muted transition-colors hover:bg-critical/10 hover:text-critical" aria-label={v.discard} title={v.discard}>
                 <Trash2 className="size-4" />
               </button>
               <button type="button" onClick={() => void start()} className="flex size-10 items-center justify-center rounded-xl text-muted transition-colors hover:bg-raised hover:text-ink" aria-label={v.again} title={v.again}>
