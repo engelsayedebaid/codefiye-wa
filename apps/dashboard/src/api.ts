@@ -140,6 +140,8 @@ function friendly(err: ApiRequestError): string | null {
     case 'busy':
     case 'worker_unreachable':
       return e.unavailable;
+    case 'worker_outdated':
+      return e.workerOutdated;
     case 'session_expired':
       return e.sessionExpired;
     case 'csrf_blocked':

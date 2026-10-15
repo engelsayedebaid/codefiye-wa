@@ -42,6 +42,7 @@ export const en: Dict = {
     unavailable: 'The service is temporarily unavailable. Try again shortly.',
     server: (requestId) => (requestId ? `Something went wrong on our side. If it keeps happening, send this ID to support: ${requestId}` : 'Something went wrong on our side. Try again.'),
     sessionExpired: 'Your session has ended. Log in again.',
+    workerOutdated: 'The server running this number is on an older version that can’t do this yet. Deploy the latest worker, then try again.',
     csrf: 'The request was refused because it didn’t come from the dashboard.',
     loadFailed: 'Couldn’t load this data.',
   },

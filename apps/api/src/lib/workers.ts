@@ -87,6 +87,8 @@ function failure(status: number, message: string | undefined): ApiError {
   if (status === 409) return conflict(message ?? 'Session is not connected', 'session_not_connected');
   if (status === 422) return unprocessable(message ?? 'Invalid input');
   if (status === 504) return new ApiError(504, 'WhatsApp did not respond in time. Try again.', undefined, { code: 'whatsapp_timeout' });
+  // The owning worker doesn't know the action: it runs an older build than this API (deploy it too).
+  if (status === 404) return new ApiError(502, 'The session worker runs an older version without this action. Deploy the latest worker.', undefined, { code: 'worker_outdated' });
   return new ApiError(502, 'Session worker request failed', undefined, { code: 'worker_failed' });
 }
 
