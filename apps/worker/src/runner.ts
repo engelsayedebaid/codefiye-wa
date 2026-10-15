@@ -108,8 +108,13 @@ const WATCH_LEASE_MS = 75_000;
 const PRESENCE_RENEW_MS = 5 * 60_000;
 /** Number lookups: Baileys would wait 60s on a dead socket. */
 const LOOKUP_TIMEOUT_MS = 10_000;
-/** Sending: generous for media (uploads to WhatsApp's CDN), tight for everything else. */
-const SEND_TIMEOUT_MS = { media: 5 * 60_000, other: 45_000 };
+/**
+ * Sending: generous for media (uploads to WhatsApp's CDN) and for groups (the first message to a large
+ * group sets up encryption with every member's devices), tight for everything else.
+ */
+const SEND_TIMEOUT_MS = { media: 5 * 60_000, group: 3 * 60_000, other: 45_000 };
+/** Editing or deleting a message from the chats page (a group's goes to every member's devices). */
+const MESSAGE_ACTION_TIMEOUT_MS = 30_000;
 /** A send slower than this (claim → stored) is logged with its stage timings. */
 const SLOW_SEND_MS = 1_500;
 const MEDIA_TYPES = new Set(['image', 'video', 'audio', 'document', 'sticker']);
@@ -739,7 +744,7 @@ export class SessionRunner {
       const media = MEDIA_TYPES.has(job.content.type);
       const { waMessageId, raw } = await withTimeout(
         provider.send(jid, job.content),
-        media ? SEND_TIMEOUT_MS.media : SEND_TIMEOUT_MS.other,
+        media ? SEND_TIMEOUT_MS.media : isGroupJid(jid) ? SEND_TIMEOUT_MS.group : SEND_TIMEOUT_MS.other,
         'WhatsApp did not confirm this message in time. It may still be delivered — check before resending.',
       );
       accepted = true;
@@ -778,7 +783,8 @@ export class SessionRunner {
         await this.fail(job.id, err.message);
         if (job.pace) await this.onCampaignFailure();
         // A plain message that hangs means the socket is gone; reconnect instead of stalling the queue.
-        if (!MEDIA_TYPES.has(job.content.type)) await this.restartSocket('Send timed out; reconnecting');
+        // Not for a group: a slow one is still working, and a reconnect would undo its key setup.
+        if (!MEDIA_TYPES.has(job.content.type) && !isGroupJid(jid)) await this.restartSocket('Send timed out; reconnecting');
         return;
       }
       const message = err instanceof MediaError || err instanceof ProviderError ? err.message : `Send failed: ${(err as Error).message}`;
@@ -916,6 +922,19 @@ export class SessionRunner {
     return withTimeout(this.live().react(jid, target, emoji), LOOKUP_TIMEOUT_MS, 'reaction timed out');
   }
 
+  /** An edit or delete from the chats page; the API applies it to the stored message once this returns. */
+  async editMessage(jid: string, target: { id: string }, text: string) {
+    await withTimeout(this.live().edit(jid, target, text), MESSAGE_ACTION_TIMEOUT_MS, 'WhatsApp did not confirm the edit in time');
+  }
+
+  async revokeMessage(jid: string, target: { id: string; fromMe: boolean; participant?: string }) {
+    await withTimeout(this.live().revoke(jid, target), MESSAGE_ACTION_TIMEOUT_MS, 'WhatsApp did not confirm the delete in time');
+  }
+
+  async deleteForMe(jid: string, target: { id: string; fromMe: boolean; participant?: string }, timestamp: number) {
+    await withTimeout(this.live().deleteForMe(jid, target, timestamp), MESSAGE_ACTION_TIMEOUT_MS, 'WhatsApp did not confirm the delete in time');
+  }
+
   async chatState(jid: string, state: 'composing' | 'recording' | 'paused') {
     await withTimeout(this.live().sendChatState(jid, state), LOOKUP_TIMEOUT_MS, 'presence update timed out');
   }
@@ -1008,6 +1027,26 @@ export class SessionRunner {
   /** We no longer own the session (another worker took it over): stop without touching the row. */
   private halt() {
     return this.terminate(null);
+  }
+
+  /**
+   * This worker lost touch with the database, so another may take the session over: the socket closes
+   * first, at once. WhatsApp logs a linked device out when it sees it connected twice, so it must be
+   * closed before a takeover can open it elsewhere. Credentials are then saved if the database answers.
+   */
+  async fence() {
+    if (this.stopped) return;
+    this.stopped = true;
+    this.sync.stop();
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    if (this.onlineTimer) clearTimeout(this.onlineTimer);
+    this.onlineTimer = null;
+    const provider = this.provider;
+    this.provider = null;
+    await withTimeout(provider?.close() ?? Promise.resolve(), CLOSE_TIMEOUT_MS, 'socket close timed out').catch((err) => this.log.warn({ err }, 'socket did not close cleanly'));
+    await withTimeout(this.auth?.flush() ?? Promise.resolve(), FLUSH_TIMEOUT_MS, 'creds flush timed out').catch((err) => this.log.error({ err }, 'pending credentials were not saved'));
+    this.ctx.onStopped(this.sessionId);
   }
 
   /**

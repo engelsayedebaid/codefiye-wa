@@ -324,7 +324,7 @@ export function Field({
   error,
   aside,
   ...input
-}: InputHTMLAttributes<HTMLInputElement> & { label: string; hint?: string; error?: string[]; aside?: ReactNode }) {
+}: InputHTMLAttributes<HTMLInputElement> & { label: string; hint?: ReactNode; error?: string[]; aside?: ReactNode }) {
   const { t, lang } = useI18n();
   // Password fields get an eye button to show what was typed.
   const secret = input.type === 'password';

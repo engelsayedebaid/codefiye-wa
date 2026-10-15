@@ -1,3 +1,4 @@
+import { discountPercent } from '@wa/shared/plan-pricing';
 import { enabledPaymentMethods, PAYMENT_MONTHS, type PaymentDetails, type PaymentMethod, type PaymentMonths, type PaymentSettings, planPriceEgp } from '@wa/shared/payments';
 import { useMutation } from '@tanstack/react-query';
 import { ArrowLeft, Check, ImagePlus, Info, Loader2, Receipt } from 'lucide-react';
@@ -14,6 +15,7 @@ type Proof = { mimetype: 'image/jpeg'; data: string; previewUrl: string };
 function MonthsPicker({ plan, value, onChange }: { plan: PricedPlan; value: PaymentMonths; onChange: (m: PaymentMonths) => void }) {
   const { t } = useI18n();
   const p = t.subscription.payment;
+  const compare = discountPercent(plan.priceUsd, plan.compareAtUsd) !== null ? plan.compareAtUsd : null;
   return (
     <div role="radiogroup" aria-label={p.duration} className="grid grid-cols-4 gap-2">
       {PAYMENT_MONTHS.map((m) => {
@@ -31,7 +33,10 @@ function MonthsPicker({ plan, value, onChange }: { plan: PricedPlan; value: Paym
             )}
           >
             <span className={cx('text-sm font-semibold', active && 'text-brand')}>{p.months(m)}</span>
-            <span className="ltr text-[11px] text-muted tabular-nums">{p.usd(plan.priceUsd * m)}</span>
+            <span className="ltr flex flex-col text-[11px] text-muted tabular-nums">
+              {compare !== null && <span className="line-through opacity-70">{p.usd(compare * m)}</span>}
+              <span>{p.usd(plan.priceUsd * m)}</span>
+            </span>
           </button>
         );
       })}
@@ -206,8 +211,11 @@ export function RequestPlanModal({ plan, onClose, onSent, onNeedsPhone }: { plan
 
   const totalUsd = plan.priceUsd * months;
   const totalEgp = planPriceEgp(plan.priceUsd, months, egpPerUsd);
-  // No way to pay (nothing configured): the request goes without payment details, as before.
-  const payable = methods.length > 0;
+  const off = discountPercent(plan.priceUsd, plan.compareAtUsd);
+  const compare = off !== null ? plan.compareAtUsd : null;
+  // No transfer when nothing is configured, or the plan is free after a 100% discount.
+  const free = plan.priceUsd === 0;
+  const payable = methods.length > 0 && !free;
 
   const request = useMutation({
     mutationFn: (body: Record<string, unknown>) => api('/api/plan-requests', { method: 'POST', body, timeoutMs: 60_000 }),
@@ -280,8 +288,14 @@ export function RequestPlanModal({ plan, onClose, onSent, onNeedsPhone }: { plan
             {/* plan + total */}
             <div className="flex items-center justify-between gap-4 rounded-xl border border-line bg-gradient-to-br from-raised/40 to-transparent p-4">
               <div>
-                <p className="text-base font-semibold">{planName(plan)}</p>
-                <p className="ltr text-sm text-muted">{p.perMonth(p.usd(plan.priceUsd))}</p>
+                <p className="flex flex-wrap items-center gap-2 text-base font-semibold">
+                  {planName(plan)}
+                  {off !== null && <span className="rounded-full border border-warning/40 bg-warning/15 px-2 py-0.5 text-[11px] font-bold text-warning">{t.plans.off(off)}</span>}
+                </p>
+                <p className="ltr text-sm text-muted">
+                  {compare !== null && <span className="me-1.5 line-through opacity-70">{p.usd(compare)}</span>}
+                  {p.perMonth(p.usd(plan.priceUsd))}
+                </p>
               </div>
               <div className="text-end">
                 <p className="text-[11px] text-muted uppercase">{p.total}</p>
@@ -307,7 +321,7 @@ export function RequestPlanModal({ plan, onClose, onSent, onNeedsPhone }: { plan
             ) : (
               <div className="flex items-start gap-3 rounded-lg border border-line bg-raised/20 p-3 text-sm text-ink-2">
                 <Info className="mt-0.5 size-4 shrink-0 text-muted" />
-                {p.noMethods}
+                {free ? p.free : p.noMethods}
               </div>
             )}
 

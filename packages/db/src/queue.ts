@@ -112,9 +112,18 @@ export async function applyMessageRevoke(sql: Sql, sessionId: string, waMessageI
  * understood), keeping its chat's counters and last message right.
  */
 export async function dropStoredEnvelope(sql: Sql, id: number) {
-  await sql`
-    with gone as (delete from messages where id = ${id} returning session_id, remote_jid, direction, content)
-    update chats c set
+  await removeStoredMessage(sql, id);
+}
+
+/**
+ * Removes a stored message ("delete for me" on the chats page), keeping its chat's counters and last
+ * message right. Returns the row's chat, or null when it was already gone.
+ */
+export async function removeStoredMessage(sql: Sql, id: number) {
+  const [row] = await sql<{ remote_jid: string }[]>`
+    with gone as (delete from messages where id = ${id} returning session_id, remote_jid, direction, content),
+    counted as (
+      update chats c set
       inbound_count = greatest(0, c.inbound_count - (g.direction = 'in')::int),
       outbound_count = greatest(0, c.outbound_count - (g.direction = 'out')::int),
       unread_count = greatest(0, c.unread_count - (g.direction = 'in' and not coalesce((g.content->>'history')::boolean, false))::int),
@@ -123,8 +132,11 @@ export async function dropStoredEnvelope(sql: Sql, id: number) {
         where m.session_id = c.session_id and m.remote_jid in (c.jid, coalesce(c.alt_jid, c.jid)) and m.type <> 'reaction' and m.id <> ${id}
         order by m.created_at desc, m.id desc limit 1
       ) else c.last_message_id end
-    from gone g
-    where c.session_id = g.session_id and (c.jid = g.remote_jid or c.alt_jid = g.remote_jid)`;
+      from gone g
+      where c.session_id = g.session_id and (c.jid = g.remote_jid or c.alt_jid = g.remote_jid)
+    )
+    select remote_jid from gone`;
+  return row ?? null;
 }
 
 /** Records a voter's current choice on one of our polls (`content.votes[voter]`); returns the message id. */

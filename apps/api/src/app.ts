@@ -31,6 +31,7 @@ import { chatRoutes } from './routes/chats';
 import { eventRoutes } from './routes/events';
 import { keyRoutes } from './routes/keys';
 import { messageRoutes } from './routes/messages';
+import { planPricingRoutes } from './routes/plan-pricing';
 import { sessionRoutes } from './routes/sessions';
 import { templateRoutes } from './routes/templates';
 
@@ -233,6 +234,8 @@ export async function buildApp(deps: Deps, options: AppOptions) {
   await app.register(
     async (api) => {
       api.addHook('onRequest', async (req) => {
+        // Prices are shown on the public landing page, before anyone is signed in.
+        if (req.method === 'GET' && req.url.split('?')[0] === '/api/plan-pricing') return;
         await deps.auth.authenticate(req);
         // Two-factor is mandatory, with one 48-hour skip. After that a dashboard session can only set it up.
         const grace = twoFactorGraceUntil(req.auth.twoFactorSkippedAt);
@@ -245,8 +248,14 @@ export async function buildApp(deps: Deps, options: AppOptions) {
       await api.register(rateLimit, {
         hook: 'preHandler',
         keyGenerator: (req) =>
-          req.auth.keySessionId ? `s:${req.auth.keySessionId}` : req.auth.console ? `c:${req.auth.workspaceId}` : `w:${req.auth.workspaceId}`,
-        max: (req) => (req.auth.console ? Math.max(getPlan(req.auth.planId).rpm, CONSOLE_RPM) : getPlan(req.auth.planId).rpm),
+          req.auth
+            ? req.auth.keySessionId
+              ? `s:${req.auth.keySessionId}`
+              : req.auth.console
+                ? `c:${req.auth.workspaceId}`
+                : `w:${req.auth.workspaceId}`
+            : `open:${req.ip}`,
+        max: (req) => (req.auth ? (req.auth.console ? Math.max(getPlan(req.auth.planId).rpm, CONSOLE_RPM) : getPlan(req.auth.planId).rpm) : 120),
         timeWindow: '1 minute',
         errorResponseBuilder: (_req, ctx) => tooMany(`Rate limit exceeded. Retry in ${Math.ceil(ctx.ttl / 1000)}s.`, ctx.ttl / 1000),
       });
@@ -256,6 +265,7 @@ export async function buildApp(deps: Deps, options: AppOptions) {
       await api.register(templateRoutes(deps));
       await api.register(eventRoutes(deps));
       await api.register(accountRoutes(deps));
+      await api.register(planPricingRoutes(deps));
       await api.register(adminRoutes(deps), { prefix: '/admin' });
       await api.register(broadcastRoutes(deps), { prefix: '/broadcasts' });
       await api.register(chatRoutes(deps), { prefix: '/chats' });

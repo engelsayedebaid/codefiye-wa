@@ -5,6 +5,7 @@ import type { ChatMedia, MessageExtras, MessageType, OutboundContent, Presence }
 import { jidToPhone, PRESENCES, usableContactName } from '@wa/shared';
 import makeWASocket, {
   type AnyMessageContent,
+  areJidsSameUser,
   Browsers,
   BufferJSON,
   type CacheStore,
@@ -751,6 +752,39 @@ export class BaileysProvider implements Provider {
     const sent = await this.requireOpen().sendMessage(chatJid, { react: { text: emoji, key } });
     if (sent?.key.id && sent.message) this.recent.set(sent.key.id, sent.message);
     return sent?.key.id ?? null;
+  }
+
+  /**
+   * Edits one of our text messages (WhatsApp allows it for 15 minutes). The edit is kept in `recent`
+   * like any send, so it never comes back as an echo.
+   */
+  async edit(chatJid: string, target: { id: string }, text: string): Promise<void> {
+    const sent = await this.requireOpen().sendMessage(chatJid, { text, edit: { remoteJid: chatJid, id: target.id, fromMe: true } });
+    if (sent?.key.id && sent.message) this.recent.set(sent.key.id, sent.message);
+  }
+
+  /**
+   * Deletes a message for everyone. Ours always; someone else's only in a group where we are an admin
+   * (WhatsApp would silently ignore it otherwise, leaving it on everyone's phone).
+   */
+  async revoke(chatJid: string, target: { id: string; fromMe: boolean; participant?: string }): Promise<void> {
+    const sock = this.requireOpen();
+    if (!target.fromMe) {
+      if (!isJidGroup(chatJid) || !target.participant) throw new ProviderError('invalid_input', "Only your own messages can be deleted for everyone");
+      const me = sock.user;
+      const { participants } = await sock.groupMetadata(chatJid);
+      const mine = participants.find((p) => [p.id, p.phoneNumber, p.lid].some((j) => j && (areJidsSameUser(j, me?.id) || (me?.lid && areJidsSameUser(j, me.lid)))));
+      if (!mine?.admin) throw new ProviderError('invalid_input', "Only a group admin can delete other members' messages");
+    }
+    const key = { remoteJid: chatJid, id: target.id, fromMe: target.fromMe, ...(target.participant ? { participant: target.participant } : {}) };
+    const sent = await sock.sendMessage(chatJid, { delete: key });
+    if (sent?.key.id && sent.message) this.recent.set(sent.key.id, sent.message);
+  }
+
+  /** Deletes a message on this account only; WhatsApp syncs it to the phone and other linked devices. */
+  async deleteForMe(chatJid: string, target: { id: string; fromMe: boolean; participant?: string }, timestamp: number): Promise<void> {
+    const key = { remoteJid: chatJid, id: target.id, fromMe: target.fromMe, ...(target.participant ? { participant: target.participant } : {}) };
+    await this.requireOpen().chatModify({ deleteForMe: { deleteMedia: false, key, timestamp } }, chatJid);
   }
 
   /** Profile picture (a temporary URL) and "about" text, as far as the contact's privacy allows. */

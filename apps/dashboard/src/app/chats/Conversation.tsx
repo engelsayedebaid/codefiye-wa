@@ -37,6 +37,7 @@ import { Composer } from './Composer';
 import { useAccount } from '../account';
 import { useCrossSend } from './crossSend';
 import { ForwardChat } from './ForwardChat';
+import { DeleteMessageDialog, EditMessageDialog } from './MessageActions';
 import { type ChatMessage, type ChatNumber, type ChatSummary, chatTitle, isChat, jidPhone, livePresence, mediaUrl, type MessagesPage, type Person, type PresenceState, type Sender, textOf } from './model';
 import { type Draft, discard, enqueue, type Pending, resolveRef, retry, settle, usePending } from './outbox';
 import { CHAT_WALLS, setChatWall, useChatWalls, WALL_SCOPES, type WallScope, wallsFor, wallStyle } from './walls';
@@ -448,6 +449,15 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
       }),
     [sessionId, c.reactFailed],
   );
+  // Edit / delete open a dialog; the bubble changes when the server says so (message.changed).
+  const [editing, setEditing] = useState<ChatMessage | null>(null);
+  const [deleting, setDeleting] = useState<ChatMessage | null>(null);
+  const closeEdit = useCallback(() => setEditing(null), []);
+  const closeDelete = useCallback(() => setDeleting(null), []);
+  const notice = useCallback((text: string) => {
+    setReactError(text);
+    setTimeout(() => setReactError(null), 4_000);
+  }, []);
   const shownIds = useMemo(() => new Set(list.map((m) => m.id)), [list]);
   // Once the list holds the real message, its "sending" stand-in goes.
   useEffect(() => settle(sessionId, chat.jid, (id) => shownIds.has(id)), [shownIds, pending, sessionId, chat.jid]);
@@ -627,6 +637,8 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
                             reactions={item.m.waMessageId ? reactions.get(item.m.waMessageId) : undefined}
                             myReaction={item.m.waMessageId ? mine.get(item.m.waMessageId) : undefined}
                             onReact={connected ? react : undefined}
+                            onEdit={connected ? setEditing : undefined}
+                            onDelete={setDeleting}
                             highlight={q || undefined}
                             quotedAuthor={quotedAuthor}
                             onReply={setReply}
@@ -742,6 +754,11 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
       )}
 
       {lightbox !== null && lightbox >= 0 && <Lightbox items={images} index={lightbox} onIndex={setLightbox} onClose={() => setLightbox(null)} />}
+
+      {editing && <EditMessageDialog sessionId={sessionId} message={editing} onClose={closeEdit} />}
+      {deleting && (
+        <DeleteMessageDialog sessionId={sessionId} message={deleting} isGroup={chat.isGroup} connected={connected} onClose={closeDelete} onNotice={notice} />
+      )}
 
       {wallOpen && (
         <Modal title={c.wall.title} description={c.wall.text} onClose={() => setWallOpen(false)}>

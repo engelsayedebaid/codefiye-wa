@@ -1,9 +1,11 @@
+import { DEFAULT_PLAN_PRICING, listedPriceUsd } from '@wa/shared/plan-pricing';
 import { DEFAULT_PAYMENT_SETTINGS, enabledPaymentMethods, PAYMENT_METHODS, type PaymentMethod, type PaymentSettings, planPriceEgp } from '@wa/shared/payments';
 import { getPlan, PLANS } from '@wa/shared/plans';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Activity,
   AlertTriangle,
+  BadgePercent,
   Ban,
   CircleDollarSign,
   CreditCard,
@@ -22,9 +24,11 @@ import {
 import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { api, errorMessage } from '../api';
 import { type PlanRequest, useAccount } from '../app/account';
+import { usePlanPricing } from '../app/plan-pricing';
 import { METHOD_LOOK, MethodChip, MethodGlyph, PaymentDetailsRows, usePaymentSettings } from '../app/payments/methods';
 import { useI18n } from '../i18n';
 import { qk } from '../queries';
+import { PlanPricingSettings } from './AdminPricing';
 import { TemplatePreview } from './Templates';
 import { Badge, Button, Card, cx, delay, EmptyState, ErrorNote, Field, inputClass, Loading, LoadError, Modal, PageHeader, Pagination, Select, SuccessNote, TextArea, usePlanName } from '../ui';
 
@@ -80,11 +84,12 @@ const DURATIONS = [1, 3, 6, 12, null] as const;
 type Duration = (typeof DURATIONS)[number];
 const PAGE_SIZE = 25;
 
-type Tab = 'overview' | 'users' | 'payments' | 'messages' | 'audit';
+type Tab = 'overview' | 'users' | 'payments' | 'pricing' | 'messages' | 'audit';
 const TABS: { id: Tab; icon: typeof Users }[] = [
   { id: 'overview', icon: LayoutGrid },
   { id: 'users', icon: Users },
   { id: 'payments', icon: CreditCard },
+  { id: 'pricing', icon: BadgePercent },
   { id: 'messages', icon: MessageSquareText },
   { id: 'audit', icon: History },
 ];
@@ -231,13 +236,14 @@ function RequestCard({ req, index, egpPerUsd, onProof, onReject }: { req: AdminR
   const p = t.subscription.payment;
   const planName = usePlanName();
   const refresh = useRefreshAdmin();
+  const pricing = usePlanPricing();
   const [months, setMonths] = useState<Duration>((DURATIONS as readonly (number | null)[]).includes(req.months) ? (req.months as Duration) : 1);
   const approve = useMutation({
     mutationFn: () => api(`/api/admin/plan-requests/${req.id}/approve`, { method: 'POST', body: { months } }),
     onSettled: refresh,
   });
   const plan = getPlan(req.planId);
-  const expected = planPriceEgp(plan.priceUsd, req.months, egpPerUsd);
+  const expected = planPriceEgp(listedPriceUsd(req.planId, pricing.data ?? DEFAULT_PLAN_PRICING), req.months, egpPerUsd);
   const pending = req.status === 'pending';
   const look = req.payment ? METHOD_LOOK[req.payment.method] : null;
 
@@ -485,6 +491,7 @@ function ChangePlan({ user, onClose }: { user: AdminUser & { workspace: NonNulla
   const m = t.admin.planModal;
   const planName = usePlanName();
   const refresh = useRefreshAdmin();
+  const pricing = usePlanPricing();
   const [planId, setPlanId] = useState(user.workspace.planId);
   const [months, setMonths] = useState<Duration>(planId === 'unlimited' ? null : 1);
   const save = useMutation({
@@ -508,15 +515,18 @@ function ChangePlan({ user, onClose }: { user: AdminUser & { workspace: NonNulla
             setPlanId(next);
             if (next === 'unlimited') setMonths(null);
           }}
-          options={Object.values(PLANS).map((p) => ({
-            value: p.id,
-            label: (
-              <span className="flex items-center gap-2">
-                {planName(p)}
-                {p.priceUsd ? <span className="ltr text-muted">${p.priceUsd}</span> : null}
-              </span>
-            ),
-          }))}
+          options={Object.values(PLANS).map((p) => {
+            const price = listedPriceUsd(p.id, pricing.data ?? DEFAULT_PLAN_PRICING);
+            return {
+              value: p.id,
+              label: (
+                <span className="flex items-center gap-2">
+                  {planName(p)}
+                  {price ? <span className="ltr text-muted">${price}</span> : null}
+                </span>
+              ),
+            };
+          })}
         />
         {planId === 'trial' ? (
           <p className="text-sm text-muted">{m.trialNote}</p>
@@ -994,6 +1004,7 @@ export function AdminPage() {
         {tab === 'overview' && <Requests />}
         {tab === 'users' && <UsersTable selfId={account?.user?.id ?? null} />}
         {tab === 'payments' && <PaymentMethodsSettings />}
+        {tab === 'pricing' && <PlanPricingSettings />}
         {tab === 'messages' && <OtpText />}
         {tab === 'audit' && <AuditLog />}
       </div>

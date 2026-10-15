@@ -1,4 +1,4 @@
-import { PLANS, type Plan } from '@wa/shared/plans';
+import type { OfferedPlan } from '@wa/shared/plan-pricing';
 import {
   ArrowLeftRight,
   BarChart3,
@@ -48,9 +48,7 @@ export const RECIPIENTS = [
 
 export const USE_CASE_ICONS = [MessageSquare, Bell, Bot, Users, ShoppingCart, Send];
 
-export type PricedPlan = Plan & { priceUsd: number; popular?: boolean };
-
-export const PRICED_PLANS: PricedPlan[] = [PLANS.basic, { ...PLANS.pro, popular: true }, PLANS.plus, PLANS.business];
+export type PricedPlan = OfferedPlan;
 
 // Terms of service and privacy policy pages still need writing (README §10) — add them here once they exist.
 export const FOOTER_HREFS = [

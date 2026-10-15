@@ -1,5 +1,5 @@
 import { and, eq, notify, planRequests, type Sql, type SqlFragment, sqlExpr, type TxSql, type UserRole, type UserStatus, workspaces, type Db } from '@wa/db';
-import { CHANNELS, enabledPaymentMethods, ok, paymentSettingsSchema, PLANS, successSchema, TRIAL_DAYS } from '@wa/shared';
+import { CHANNELS, enabledPaymentMethods, offerProblem, ok, paymentSettingsSchema, planPricingSchema, PLANS, preparePlanPricing, successSchema, TRIAL_DAYS } from '@wa/shared';
 import type { FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -11,6 +11,7 @@ import { getFeatures, type RuntimeFeature, setFeature } from '../lib/features';
 import { OTP_DEFAULT_TEXTS } from '../lib/otp';
 import { getOtpTexts, setOtpTexts } from '../lib/otp-text';
 import { getPaymentSettings, setPaymentSettings } from '../lib/payments';
+import { setPlanPricing } from '../lib/plan-pricing';
 import { planRequestDto, type PlanRequestRow, planRequestRowDto, toPlanRequestDto, toWorkspaceDto } from './account';
 
 // Operator endpoints: not part of the public API, so hidden from /docs.
@@ -631,6 +632,36 @@ export function adminRoutes({ sql, db, auth, workers }: Deps): FastifyPluginAsyn
       async (req) => {
         const saved = await setPaymentSettings(sql, req.body);
         await audit(sql, req, { action: 'payment_methods.update', targetType: 'feature', targetId: 'payment_methods', details: { enabled: enabledPaymentMethods(saved) } });
+        return ok(saved);
+      },
+    );
+
+    app.put(
+      '/plan-pricing',
+      {
+        schema: {
+          ...schemaBase,
+          summary: 'Set the prices and discounts customers see on the plan cards',
+          body: planPricingSchema,
+          response: { 200: successSchema(planPricingSchema) },
+        },
+      },
+      async (req) => {
+        const pricing = preparePlanPricing(req.body);
+        const errors: Record<string, string[]> = {};
+        for (const [id, offer] of Object.entries(pricing.plans)) {
+          const problem = offerProblem(offer);
+          if (problem === 'price') errors[`plans.${id}.priceUsd`] = ['Enter a price of zero or more'];
+          if (problem === 'compare') errors[`plans.${id}.compareAtUsd`] = ['Must be higher than the sale price'];
+        }
+        if (Object.keys(errors).length > 0) throw unprocessable('Check the plan prices', errors);
+        const saved = await setPlanPricing(sql, pricing);
+        await audit(sql, req, {
+          action: 'plan_pricing.update',
+          targetType: 'feature',
+          targetId: 'plan_pricing',
+          details: { highlight: saved.highlight, plans: saved.plans },
+        });
         return ok(saved);
       },
     );

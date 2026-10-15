@@ -20,8 +20,8 @@ export type WaEvent =
   | Base<'messages.created', { id: number; chatJid: string; direction: MessageDirection; type: MessageType; /** The Idempotency-Key it was sent with, if any. */ ref?: string | null }>
   /** A recipient answered a poll we sent; `selected` is their current choice (empty = withdrawn). */
   | Base<'poll.vote', { id: number; voter: string; selected: string[] }>
-  /** A stored message changed in place: its sender edited it, or deleted it for everyone. */
-  | Base<'message.changed', { id: number; chatJid: string; change: 'edited' | 'revoked' }>
+  /** A stored message changed in place: its sender edited it or deleted it for everyone, or we deleted it for us (`removed`). */
+  | Base<'message.changed', { id: number; chatJid: string; change: 'edited' | 'revoked' | 'removed' }>
   /** What a contact is doing (online, typing…), for chats someone is watching. `lastSeen` in epoch seconds when shared. */
   | Base<'presence.update', { chatJid: string; jid: string; presence: Presence; lastSeen: number | null }>
   /** A chat was read: on the phone, or from another dashboard tab. */

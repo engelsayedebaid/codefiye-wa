@@ -2,6 +2,7 @@ import { pgError, PG_ERRORS, type Sql, type TxSql, type UserRole, type UserStatu
 import {
   enabledPaymentMethods,
   getPlan,
+  listedPriceUsd,
   normalizePhone,
   ok,
   type PaymentDetails,
@@ -27,6 +28,7 @@ import { ApiError, badRequest, conflict, forbidden, notFound, tooMany, unprocess
 import { getFeatures } from '../lib/features';
 import { generateKey, hashKey } from '../lib/keys';
 import { getPaymentSettings } from '../lib/payments';
+import { getPlanPricing } from '../lib/plan-pricing';
 import { hashPassword, needsRehash, passwordProblems, verifyPassword } from '../lib/passwords';
 import { generateRecoveryCodes, generateTotpSecret, hashRecoveryCode, looksLikeRecoveryCode, matchTotp, otpauthUrl, totpCipher, twoFactorGraceUntil, type TotpCipher } from '../lib/totp';
 import { createVerifications, type Lang, normalizeCode, type VerificationTicket } from '../lib/verification';
@@ -234,6 +236,27 @@ function parsePhone(value: string) {
   return phone;
 }
 
+/** Email or international phone, as stored. Neither shape → null (the caller answers 422). */
+type LoginIdentity = { kind: 'email'; key: string; email: string } | { kind: 'phone'; key: string; phone: string };
+
+function loginIdentity(raw: string): LoginIdentity | null {
+  const value = raw.trim();
+  if (!value || value.length > 254) return null;
+  if (value.includes('@')) {
+    const email = value.toLowerCase();
+    if (!z.email().safeParse(email).success) return null;
+    return { kind: 'email', key: `e:${email}`, email };
+  }
+  const phone = normalizePhone(value);
+  if (!phone) return null;
+  return { kind: 'phone', key: `p:${phone}`, phone };
+}
+
+const INVALID_LOGIN = () =>
+  unprocessable('Invalid email, phone number, or password', { identifier: ['Invalid email, phone number, or password'] }, { code: 'invalid_credentials' });
+
+const IDENTIFIER_HINT = 'Enter an email address, or a phone number with its country code';
+
 /** A unique violation while creating or updating a user, as the field the client should fix. */
 function takenError(err: unknown) {
   const pg = pgError(err);
@@ -324,6 +347,17 @@ export function publicAccountRoutes(deps: Deps): FastifyPluginAsyncZod {
   const { sql, throttle, auth } = deps;
   const verifications = createVerifications(deps);
   const cipher = totpCipher(deps.otp.key);
+
+  /** The account a login or password reset is aimed at. A phone must already be verified. */
+  async function findLoginUser(identity: LoginIdentity) {
+    if (identity.kind === 'email') {
+      const [user] = await sql<UserRow[]>`select ${USER_COLUMNS(sql)} from users where email = ${identity.email}`;
+      return user;
+    }
+    const [user] = await sql<UserRow[]>`
+      select ${USER_COLUMNS(sql)} from users where phone = ${identity.phone} and phone_verified_at is not null`;
+    return user;
+  }
 
   const loadUser = async (id: string) => {
     const [user] = await sql<FactorUser[]>`select ${USER_COLUMNS(sql)}, totp_secret, totp_last_step from users where id = ${id}`;
@@ -504,29 +538,42 @@ export function publicAccountRoutes(deps: Deps): FastifyPluginAsyncZod {
           tags,
           summary: 'Log in',
           description:
-            'Checks the password and starts a login. Next steps, as `step` says: `phone` (a code was sent to the account\'s number → ' +
+            'Checks the password for an email address or a phone number (international format) and starts a login. Next steps, as `step` says: `phone` (a code was sent to the account\'s number → ' +
             '`/api/auth/login/phone`), `totp` (authenticator code → `/api/auth/login/totp`), `done` (the dashboard session cookie is set). ' +
-            'For API access, create a workspace token (`wap_…`) instead.',
+            'Send the account as `identifier` (`email` is the same field). For API access, create a workspace token (`wap_…`) instead.',
           security: [],
-          body: z.object({ email: z.string().trim().min(3).max(254), password: z.string().min(1).max(200), remember: z.boolean().default(true), lang }),
+          body: z.object({
+            identifier: z.string().trim().min(3).max(254).optional().describe('Email address, or a phone number with its country code'),
+            email: z.string().trim().min(3).max(254).optional().describe('Alias of `identifier`'),
+            password: z.string().min(1).max(200),
+            remember: z.boolean().default(true),
+            lang,
+          }),
           response: { 200: successSchema(loginResponse) },
         },
       },
       async (req, reply) => {
-        const email = req.body.email.toLowerCase();
+        const identity = loginIdentity(req.body.identifier ?? req.body.email ?? '');
+        if (!identity) {
+          await throttle.consume([{ key: `login:ip:${req.ip}`, limit: 20, windowSec: 900 }], 'Too many failed login attempts. Try again later.');
+          throw unprocessable('Validation failed', { identifier: [IDENTIFIER_HINT] });
+        }
+        const user = await findLoginUser(identity);
+        // Email and phone share one lockout once the account is known; unknown addresses keep their own.
+        const submittedKey = identity.kind === 'email' ? `login:email:${identity.email}` : `login:phone:${identity.phone}`;
         const rules = [
           { key: `login:ip:${req.ip}`, limit: 20, windowSec: 900 },
-          { key: `login:email:${email}`, limit: 10, windowSec: 900 },
+          { key: submittedKey, limit: 10, windowSec: 900 },
+          ...(user ? [{ key: `login:user:${user.id}`, limit: 10, windowSec: 900 }] : []),
         ];
         await throttle.check(rules, 'Too many failed login attempts. Try again later.');
-        const [user] = await sql<UserRow[]>`select ${USER_COLUMNS(sql)} from users where email = ${email}`;
         // verifyPassword spends the same time when there's no user, so timing doesn't reveal accounts.
         const valid = await verifyPassword(req.body.password, user?.password_hash ?? null);
         if (!user || !valid) {
           await throttle.consume(rules, 'Too many failed login attempts. Try again later.');
-          throw unprocessable('Invalid email or password', { email: ['Invalid email or password'] }, { code: 'invalid_credentials' });
+          throw INVALID_LOGIN();
         }
-        await throttle.reset([`login:email:${email}`]);
+        await throttle.reset(user ? [submittedKey, `login:user:${user.id}`] : [submittedKey]);
         // Only someone who knows the password learns that the account is suspended.
         if (user.status === 'suspended') throw suspendedError(user.suspended_reason);
         if (needsRehash(user.password_hash)) await sql`update users set password_hash = ${await hashPassword(req.body.password)} where id = ${user.id}`;
@@ -649,6 +696,99 @@ export function publicAccountRoutes(deps: Deps): FastifyPluginAsyncZod {
           update login_attempts set expires_at = now()
           where id = ${req.body.loginId} and token_hash = ${hashKey(req.body.loginToken)} and completed_at is null`;
         return ok({ cancelled: true as const });
+      },
+    );
+
+    // No email channel: the code always goes to the account's verified phone. An unknown address and
+    // an account with no verified phone get the same answer.
+    app.post(
+      '/forgot',
+      {
+        schema: {
+          tags,
+          summary: 'Forgot password: send a code',
+          description:
+            'Sends a reset code to the verified phone on the account named by `identifier` (email or international phone number). ' +
+            'Confirm it with `/api/auth/forgot/confirm`.',
+          security: [],
+          body: z.object({ identifier: z.string().trim().min(3).max(254), lang }),
+          response: { 202: successSchema(ticketDto) },
+        },
+      },
+      async (req, reply) => {
+        const identity = loginIdentity(req.body.identifier);
+        await throttle.consume(
+          [
+            { key: `forgot:ip:${req.ip}`, limit: 8, windowSec: 3600 },
+            { key: `forgot:id:${identity?.key ?? req.body.identifier.toLowerCase().slice(0, 200)}`, limit: 5, windowSec: 3600 },
+          ],
+          'Too many reset attempts. Try again later.',
+        );
+        if (!identity) throw unprocessable('Validation failed', { identifier: [IDENTIFIER_HINT] });
+        const user = await findLoginUser(identity);
+        if (!user?.phone || !user.phone_verified_at) {
+          throw unprocessable("We couldn't send a reset code for this account", { identifier: ['Check the email or phone number'] }, { code: 'reset_unavailable' });
+        }
+        const ticket = await verifications.start({ purpose: 'reset', phone: user.phone, lang: req.body.lang, ip: req.ip, userId: user.id });
+        reply.code(202);
+        return ok(ticket);
+      },
+    );
+
+    app.post(
+      '/forgot/resend',
+      {
+        schema: {
+          tags,
+          summary: 'Forgot password: send a new code',
+          security: [],
+          body: z.object({ verificationId: z.uuid() }),
+          response: { 200: successSchema(ticketDto) },
+        },
+      },
+      async (req) => ok(await verifications.resend(req.body.verificationId, req.ip, { purpose: 'reset' })),
+    );
+
+    app.post(
+      '/forgot/confirm',
+      {
+        schema: {
+          tags,
+          summary: 'Forgot password: set a new password',
+          description: 'Checks the phone code, replaces the password, and ends every dashboard session of the account.',
+          security: [],
+          body: z.object({ verificationId: z.uuid(), code: codeInput, password: z.string().min(8).max(200) }),
+          response: { 200: successSchema(z.object({ reset: z.literal(true) })) },
+        },
+      },
+      async (req) => {
+        // Reject a weak password before the code is spent, so a typo in the new password can be fixed.
+        const [pending] = await sql<{ user_id: string; email: string; phone: string | null }[]>`
+          select v.user_id, u.email, u.phone
+          from phone_verifications v
+          join users u on u.id = v.user_id
+          where v.id = ${req.body.verificationId} and v.purpose = 'reset' and v.consumed_at is null`;
+        if (pending) {
+          const problems = passwordProblems(req.body.password, pending.email);
+          if (problems) throw unprocessable('Validation failed', { password: problems });
+        }
+        const passwordHash = pending ? await hashPassword(req.body.password) : null;
+        const ended = await verifications.confirm(req.body.verificationId, req.body.code, req.ip, { purpose: 'reset' }, async (row, tx) => {
+          if (!row.user_id || !passwordHash) throw notFound('This verification has expired or was already used. Start again.', 'verification_not_found');
+          await tx`update users set password_hash = ${passwordHash} where id = ${row.user_id}`;
+          const keys = await tx<{ id: string }[]>`
+            update api_keys set revoked_at = now()
+            where workspace_id in (select id from workspaces where owner_id = ${row.user_id})
+              and 'console' = any(scopes) and revoked_at is null
+            returning id`;
+          return { userId: row.user_id, keys };
+        });
+        if (ended.keys.length) await auth.revoke({ keyIds: ended.keys.map((k) => k.id) });
+        const cleared = [`login:user:${ended.userId}`];
+        if (pending?.email) cleared.push(`login:email:${pending.email}`);
+        if (pending?.phone) cleared.push(`login:phone:${pending.phone}`);
+        await throttle.reset(cleared);
+        return ok({ reset: true as const });
       },
     );
 
@@ -1124,10 +1264,11 @@ export function accountRoutes(deps: Deps): FastifyPluginAsyncZod {
           throw forbidden('Verify your phone number before requesting a plan', 'phone_unverified');
         }
         const { planId, months, payment, note } = req.body;
-        const settings = await getPaymentSettings(sql);
+        const [settings, pricing] = await Promise.all([getPaymentSettings(sql), getPlanPricing(sql)]);
         const accepted = enabledPaymentMethods(settings);
-        // Payment is expected when the plan has a price and there is a way to pay; custom-priced plans are arranged by hand.
-        if (getPlan(planId).priceUsd !== null && accepted.length > 0) {
+        const price = listedPriceUsd(planId, pricing);
+        // Payment is expected when the plan costs money and there is a way to pay. A 100% discount and custom-priced plans need no transfer.
+        if (price !== null && price > 0 && accepted.length > 0) {
           if (!payment) throw unprocessable('Choose how you paid', { payment: ['Pick a payment method'] });
           if (!accepted.includes(payment.method)) throw unprocessable('This payment method is not accepted', { payment: ['Pick an accepted payment method'] });
           if (!req.body.proof) throw unprocessable('Attach a screenshot of the transfer', { proof: ['Attach a screenshot'] });

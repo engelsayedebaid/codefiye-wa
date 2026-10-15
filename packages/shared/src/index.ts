@@ -10,5 +10,7 @@ export * from './payments';
 export * from './payments-schema';
 export * from './phone';
 export * from './plans';
+export * from './plan-pricing';
+export * from './plan-pricing-schema';
 export * from './templates';
 export * from './sync';

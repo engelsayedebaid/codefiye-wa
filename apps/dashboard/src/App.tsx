@@ -31,6 +31,7 @@ const Landing = lazy(() => loadChunk(() => import('./site/Landing')).then((m) =>
 const GuidePage = lazy(() => loadChunk(() => import('./site/Guide')).then((m) => ({ default: m.GuidePage })));
 const LoginPage = lazy(() => loadChunk(() => import('./auth/AuthPages')).then((m) => ({ default: m.LoginPage })));
 const RegisterPage = lazy(() => loadChunk(() => import('./auth/AuthPages')).then((m) => ({ default: m.RegisterPage })));
+const ForgotPasswordPage = lazy(() => loadChunk(() => import('./auth/AuthPages')).then((m) => ({ default: m.ForgotPasswordPage })));
 const TwoFactorSetup = lazy(() => loadChunk(() => import('./auth/TwoFactor')).then((m) => ({ default: m.TwoFactorSetup })));
 const RecoveryCodes = lazy(() => loadChunk(() => import('./auth/TwoFactor')).then((m) => ({ default: m.RecoveryCodes })));
 const AppShell = lazy(() => loadChunk(() => import('./app/AppShell')).then((m) => ({ default: m.AppShell })));
@@ -296,6 +297,12 @@ export function App() {
     page = (
       <GuestOnly>
         <RegisterPage onAuthed={onAuthed} />
+      </GuestOnly>
+    );
+  else if (path === '/forgot')
+    page = (
+      <GuestOnly>
+        <ForgotPasswordPage />
       </GuestOnly>
     );
   else if (isAppPath(path)) page = <AuthGate path={path} />;

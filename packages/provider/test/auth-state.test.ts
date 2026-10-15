@@ -70,6 +70,34 @@ describe('useEncryptedAuthState', () => {
     await expect(useEncryptedAuthState(store, 's2', key)).rejects.toThrow();
   });
 
+  it('reads a group send’s per-device keys from the store once, misses included', async () => {
+    const inner = memoryAuthStore();
+    const seed = await useEncryptedAuthState(inner, 's1', key);
+    await seed.state.keys.set({ session: { 'a.0': new Uint8Array([1]) } });
+
+    const calls = { get: 0, scan: 0 };
+    const store = {
+      ...inner,
+      get: (type: string, ids: string[]) => (calls.get++, inner.get(type, ids)),
+      scan: (type: string, suffix: string) => (calls.scan++, inner.scan!(type, suffix)),
+    };
+    const auth = await useEncryptedAuthState(store, 's1', key);
+    calls.get = 0;
+    for (const id of ['a.0', 'b.0', 'c.0', 'a.0']) await auth.state.keys.get('session', [id]);
+    expect(calls).toEqual({ get: 0, scan: 1 });
+    expect(Buffer.from((await auth.state.keys.get('session', ['a.0']))['a.0']!)).toEqual(Buffer.from([1]));
+    expect(await auth.state.keys.get('session', ['b.0'])).toEqual({});
+
+    // Writes land in the store and in memory; deletes too.
+    await auth.state.keys.set({ session: { 'b.0': new Uint8Array([2]), 'a.0': null } });
+    expect(Buffer.from((await auth.state.keys.get('session', ['b.0']))['b.0']!)).toEqual(Buffer.from([2]));
+    expect(await auth.state.keys.get('session', ['a.0'])).toEqual({});
+    expect([...(await inner.get('session', ['a.0', 'b.0'])).keys()]).toEqual(['b.0']);
+    // Other types still read the store directly.
+    await auth.state.keys.get('pre-key', ['1']);
+    expect(calls).toEqual({ get: 1, scan: 1 });
+  });
+
   it('clear wipes everything', async () => {
     const store = memoryAuthStore();
     const auth = await useEncryptedAuthState(store, 's1', key);

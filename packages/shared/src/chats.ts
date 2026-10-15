@@ -59,6 +59,10 @@ export type ChatFilter = (typeof CHAT_FILTERS)[number];
 export const UPLOAD_SCHEME = 'upload:';
 export const UPLOAD_MAX_BYTES = 16 * 1024 * 1024;
 
+/** How long WhatsApp lets a sent message be edited, and deleted for everyone. */
+export const EDIT_WINDOW_MS = 15 * 60_000;
+export const REVOKE_WINDOW_MS = 2 * 24 * 60 * 60_000;
+
 /**
  * A contact name worth keeping: not blank, not a masked number (`+20∙∙∙∙16`, which some history syncs
  * give for LID chats), not just a phone number. Mirrors `usable_contact_name` (migration 0015).

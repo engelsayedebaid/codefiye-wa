@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { asciiDigits, maskPhoneNumber, normalizePhone } from '../src';
+import { asciiDigits, maskPhoneNumber, normalizePhone, phoneWithCountry } from '../src';
 
 describe('normalizePhone', () => {
   it.each([
@@ -16,6 +16,19 @@ describe('normalizePhone', () => {
   it.each(['', '01012345678', '+0123456789', '12345', '+1234567890123456', 'phone', '+20 10 abc 5678'])('rejects %j', (input) =>
     expect(normalizePhone(input)).toBeNull(),
   );
+});
+
+describe('phoneWithCountry', () => {
+  it.each([
+    ['01012345678', '+20', '+201012345678'],
+    ['1012345678', '+20', '+201012345678'],
+    ['201012345678', '+20', '+201012345678'],
+    ['+966512345678', '+20', '+966512345678'],
+    ['0512345678', '+966', '+966512345678'],
+    ['٠١٠١٢٣٤٥٦٧٨', '+20', '+201012345678'],
+  ])('%s with %s → %s', (input, dial, phone) => expect(phoneWithCountry(input, dial)).toBe(phone));
+
+  it.each(['', '12', 'phone'])('rejects %j', (input) => expect(phoneWithCountry(input, '+20')).toBeNull());
 });
 
 describe('maskPhoneNumber', () => {

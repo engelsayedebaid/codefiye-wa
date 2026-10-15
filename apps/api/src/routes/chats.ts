@@ -1,7 +1,8 @@
-import { loadUpload, markChatRead, notify, setChatName, type SqlFragment } from '@wa/db';
+import { applyMessageEdit, applyMessageRevoke, loadUpload, markChatRead, notify, removeStoredMessage, setChatName, type SqlFragment } from '@wa/db';
 import {
   CHANNELS,
   CHAT_FILTERS,
+  EDIT_WINDOW_MS,
   isTimeZone,
   jidToPhone,
   MESSAGE_DIRECTIONS,
@@ -13,6 +14,7 @@ import {
   ok,
   type OutboundContent,
   planHasFeature,
+  REVOKE_WINDOW_MS,
   successSchema,
   UPLOAD_MAX_BYTES,
   UPLOAD_SCHEME,
@@ -844,6 +846,114 @@ export function chatRoutes(deps: Deps): FastifyPluginAsyncZod {
           });
         }
         return ok({ id: row?.id ?? 0 });
+      },
+    );
+
+    /** A stored message an edit or delete acts on, with the key WhatsApp names it by. */
+    const actionTarget = async (sessionId: string, messageId: number) => {
+      const [target] = await sql<
+        { id: number; remote_jid: string; direction: MessageDirection; type: string; wa_message_id: string | null; participant: string | null; from: string | null; revoked: boolean; at: Date }[]
+      >`
+        select id, remote_jid, direction, type, wa_message_id, raw->'key'->>'participant' as participant, content->>'from' as "from",
+          coalesce((content->>'revoked')::boolean, false) as revoked,
+          coalesce(to_timestamp((content->>'timestamp')::float8), sent_at, created_at) as at
+        from messages where id = ${messageId} and session_id = ${sessionId} and type <> 'reaction'`;
+      if (!target) throw notFound('Message not found');
+      const fromMe = target.direction === 'out';
+      // In a group, someone else's message is named by who sent it.
+      const participant = target.remote_jid.endsWith('@g.us') && !fromMe ? (target.participant ?? target.from ?? undefined) : undefined;
+      const key = target.wa_message_id ? { id: target.wa_message_id, fromMe, ...(participant ? { participant } : {}) } : null;
+      return { ...target, fromMe, key, age: Date.now() - new Date(target.at).getTime() };
+    };
+
+    app.post(
+      '/:sessionId/messages/:messageId/edit',
+      {
+        schema: {
+          ...schemaBase,
+          summary: 'Edit one of our text messages (WhatsApp allows it for 15 minutes)',
+          params: sessionParams.extend({ messageId: z.coerce.number().int().positive() }),
+          body: z.object({ text: z.string().trim().min(1).max(4_096) }),
+          response: { 200: successSchema(z.object({ id: z.number() })) },
+        },
+      },
+      async (req) => {
+        const session = await ownedSession(sql, req, req.params.sessionId);
+        assertActive(req.auth);
+        if (session.status !== 'connected') throw conflict(`Session is not connected (status: ${session.status})`, 'session_not_connected');
+        const target = await actionTarget(session.id, req.params.messageId);
+        if (!target.fromMe || target.type !== 'text') throw conflict('Only your own text messages can be edited', 'not_editable');
+        if (target.revoked) throw conflict('This message was deleted', 'not_editable');
+        if (!target.key) throw conflict('This message has no WhatsApp id yet', 'not_sent');
+        if (target.age > EDIT_WINDOW_MS) throw conflict('WhatsApp only allows editing a message for 15 minutes', 'edit_window_passed');
+        await workers.call(session.id, 'edit-message', { jid: target.remote_jid, target: { id: target.key.id }, text: req.body.text }, { timeoutMs: 35_000 });
+        const row = await applyMessageEdit(sql, session.id, target.key.id, req.body.text, Date.now() / 1000);
+        if (row) {
+          await publish({ type: 'message.changed', workspaceId: req.auth.workspaceId, sessionId: session.id, data: { id: row.id, chatJid: row.remote_jid, change: 'edited' } });
+        }
+        return ok({ id: target.id });
+      },
+    );
+
+    app.post(
+      '/:sessionId/messages/:messageId/delete',
+      {
+        schema: {
+          ...schemaBase,
+          summary: 'Delete a message for everyone, or only for us',
+          description:
+            '`everyone`: our own messages, or another member\'s in a group where we are an admin, within 2 days; it shows as deleted. ' +
+            '`me`: removed here, and from the phone too when the number is connected (`synced`).',
+          params: sessionParams.extend({ messageId: z.coerce.number().int().positive() }),
+          body: z.object({ scope: z.enum(['everyone', 'me']) }),
+          response: { 200: successSchema(z.object({ id: z.number(), synced: z.boolean() })) },
+        },
+      },
+      async (req) => {
+        const session = await ownedSession(sql, req, req.params.sessionId);
+        const target = await actionTarget(session.id, req.params.messageId);
+        const publishChange = (chatJid: string, change: 'revoked' | 'removed') =>
+          publish({ type: 'message.changed', workspaceId: req.auth.workspaceId, sessionId: session.id, data: { id: target.id, chatJid, change } });
+
+        if (req.body.scope === 'everyone') {
+          // It goes out on WhatsApp like a message.
+          assertActive(req.auth);
+          if (session.status !== 'connected') throw conflict(`Session is not connected (status: ${session.status})`, 'session_not_connected');
+          if (target.revoked) throw conflict('This message was already deleted', 'already_deleted');
+          if (!target.key) throw conflict('This message has no WhatsApp id yet', 'not_sent');
+          if (!target.fromMe && !target.key.participant) throw conflict('Only your own messages can be deleted for everyone', 'not_deletable');
+          if (target.age > REVOKE_WINDOW_MS) throw conflict('WhatsApp only allows deleting a message for everyone for 2 days', 'delete_window_passed');
+          await workers.call(
+            session.id,
+            'delete-message',
+            { jid: target.remote_jid, target: target.key, scope: 'everyone', timestamp: Math.floor(new Date(target.at).getTime() / 1000) },
+            { timeoutMs: 35_000 },
+          );
+          const row = await applyMessageRevoke(sql, session.id, target.key.id);
+          if (row) await publishChange(row.remote_jid, 'revoked');
+          return ok({ id: target.id, synced: true });
+        }
+
+        // For us: the phone forgets it too when it can be told (WhatsApp syncs it to linked devices);
+        // either way it leaves this page, so a failure there never blocks it.
+        let synced = false;
+        if (target.key && session.status === 'connected') {
+          synced = await workers
+            .call(
+              session.id,
+              'delete-message',
+              { jid: target.remote_jid, target: target.key, scope: 'me', timestamp: Math.max(1, Math.floor(new Date(target.at).getTime() / 1000)) },
+              { timeoutMs: 35_000 },
+            )
+            .then(() => true)
+            .catch((err: unknown) => {
+              req.log.warn({ err, messageId: target.id }, 'delete for me was not synced to the phone');
+              return false;
+            });
+        }
+        const gone = await removeStoredMessage(sql, target.id);
+        if (gone) await publishChange(gone.remote_jid, 'removed');
+        return ok({ id: target.id, synced });
       },
     );
 

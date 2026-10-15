@@ -1,0 +1,2 @@
+ALTER TABLE "phone_verifications" DROP CONSTRAINT "phone_verifications_purpose_check";--> statement-breakpoint
+ALTER TABLE "phone_verifications" ADD CONSTRAINT "phone_verifications_purpose_check" CHECK ("phone_verifications"."purpose" in ('register', 'phone', 'login', 'reset'));

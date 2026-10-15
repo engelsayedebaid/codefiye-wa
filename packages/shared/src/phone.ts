@@ -18,6 +18,22 @@ export function normalizePhone(input: string): string | null {
   return /^\+[1-9]\d{7,14}$/.test(value) ? value : null;
 }
 
+/**
+ * A national number plus the calling code the person picked (`+20`). A value that already starts
+ * with `+` or `00` is an international number and the picked code is ignored. One leading `0` is
+ * the trunk prefix and is dropped. Digits that already begin with that calling code are kept.
+ */
+export function phoneWithCountry(input: string, dial: string): string | null {
+  const compact = asciiDigits(input.trim()).replace(/[\s().-]/g, '');
+  if (!compact) return null;
+  if (compact.startsWith('+') || compact.startsWith('00')) return normalizePhone(compact);
+  const code = dial.replace(/^\+/, '');
+  if (!/^[1-9]\d{0,3}$/.test(code)) return null;
+  if (compact.startsWith('0')) return normalizePhone(`+${code}${compact.slice(1)}`);
+  if (compact.startsWith(code) && compact.length - code.length >= 6) return normalizePhone(`+${compact}`);
+  return normalizePhone(`+${code}${compact}`);
+}
+
 /** For showing which number a code went to: `+20•••••••678`. */
 export function maskPhoneNumber(phone: string): string {
   const digits = phone.replace(/^\+/, '');

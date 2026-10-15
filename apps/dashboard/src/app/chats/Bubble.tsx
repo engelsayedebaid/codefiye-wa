@@ -17,14 +17,17 @@ import {
   Mic,
   Music,
   Pause,
+  Pencil,
   Play,
   Reply,
   RotateCw,
   Smartphone,
   SmilePlus,
+  Trash2,
   User,
   Users,
 } from 'lucide-react';
+import { EDIT_WINDOW_MS } from '@wa/shared/chats';
 import { memo, type ReactNode, useEffect, useRef, useState } from 'react';
 import { useI18n } from '../../i18n';
 import { cx, flip } from '../../ui';
@@ -468,6 +471,10 @@ type BubbleProps = {
   onReact?: (m: ChatMessage, emoji: string) => void;
   /** Our own reaction on this message, if any. */
   myReaction?: string;
+  /** Edit one of our text messages (offered while WhatsApp allows it); without it, no edit button. */
+  onEdit?: (m: ChatMessage) => void;
+  /** Delete for everyone or for us; without it, no delete button. */
+  onDelete?: (m: ChatMessage) => void;
   onOpenMedia: (m: ChatMessage) => void;
   onJump?: (waMessageId: string) => void;
   onOpenChat?: (phone: string) => void;
@@ -562,7 +569,24 @@ function ReactButton({ mine, onPick }: { mine?: string; onPick: (emoji: string) 
   );
 }
 
-export const Bubble = memo(function Bubble({ m, sender, first, reactions, myReaction, highlight, quotedAuthor, onReply, onReact, onOpenMedia, onJump, onOpenChat, localSrc, pending }: BubbleProps) {
+export const Bubble = memo(function Bubble({
+  m,
+  sender,
+  first,
+  reactions,
+  myReaction,
+  highlight,
+  quotedAuthor,
+  onReply,
+  onReact,
+  onEdit,
+  onDelete,
+  onOpenMedia,
+  onJump,
+  onOpenChat,
+  localSrc,
+  pending,
+}: BubbleProps) {
   const { t, fmt } = useI18n();
   const c = t.chats;
   const out = m.direction === 'out';
@@ -603,6 +627,8 @@ export const Bubble = memo(function Bubble({ m, sender, first, reactions, myReac
   else if (m.type === 'poll') body = out ? <PollResults content={m.content as Record<string, unknown>} /> : <InboundPoll m={m} />;
   else if (m.type === 'unknown') body = <p className="py-0.5 text-sm text-ink/60 italic">{c.unsupported}</p>;
 
+  // Checked when drawn: a bubble left open past the window offers it until the next render (the API refuses then).
+  const editable = out && m.type === 'text' && !revoked && Boolean(m.waMessageId) && Date.now() - at.getTime() < EDIT_WINDOW_MS;
   const caption = revoked ? null : m.type === 'poll' ? (out ? text : null) : m.type === 'text' || isMedia ? text : null;
   // A picture or video edge to edge, the time laid over it (as WhatsApp does).
   const framed = (m.type === 'image' || m.type === 'video') && !revoked && !m.content.viewOnce;
@@ -720,6 +746,22 @@ export const Bubble = memo(function Bubble({ m, sender, first, reactions, myReac
               title={copied ? c.copied : c.copy}
             >
               {copied ? <Check className="size-4 text-brand" /> : <Copy className="size-4" />}
+            </button>
+          )}
+          {editable && onEdit && (
+            <button type="button" onClick={() => onEdit(m)} className="rounded-full p-1.5 text-muted transition-colors hover:bg-raised hover:text-ink" aria-label={c.manage.edit} title={c.manage.edit}>
+              <Pencil className="size-4" />
+            </button>
+          )}
+          {onDelete && m.id > 0 && (
+            <button
+              type="button"
+              onClick={() => onDelete(m)}
+              className="rounded-full p-1.5 text-muted transition-colors hover:bg-critical/10 hover:text-critical"
+              aria-label={c.manage.delete}
+              title={c.manage.delete}
+            >
+              <Trash2 className="size-4" />
             </button>
           )}
         </div>

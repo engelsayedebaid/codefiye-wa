@@ -9,7 +9,7 @@ const UNREACHABLE_FOR_MS = 60_000;
 /** Connection-level failures: the worker's address can't be reached from here (DNS, routing, refused). */
 const UNREACHABLE_CODES = new Set(['ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH', 'ETIMEDOUT', 'UND_ERR_CONNECT_TIMEOUT']);
 
-export type WorkerAction = 'on-whatsapp' | 'pairing-code' | 'logout' | 'send-text' | 'watch-chat' | 'chat-state' | 'react' | 'read' | 'profile' | 'group-members' | 'reupload-media' | 'fetch-history' | 'pictures';
+export type WorkerAction = 'on-whatsapp' | 'pairing-code' | 'logout' | 'send-text' | 'watch-chat' | 'chat-state' | 'react' | 'edit-message' | 'delete-message' | 'read' | 'profile' | 'group-members' | 'reupload-media' | 'fetch-history' | 'pictures';
 
 /** Where relayed answers arrive (the EventBus listens on `wa_rpc`). */
 export type RpcRelay = { waitRpc(requestId: string, timeoutMs: number): Promise<RpcResult | null> };

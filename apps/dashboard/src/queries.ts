@@ -14,6 +14,8 @@ export const qk = {
   planRequests: ['plan-requests'] as const,
   /** Accepted payment methods and receiving accounts (what the admin set). */
   paymentMethods: ['payment-methods'] as const,
+  /** Customer-facing plan prices and discounts (what the admin set). */
+  planPricing: ['plan-pricing'] as const,
   chats: {
     all: ['chats'] as const,
     numbers: ['chats', 'numbers'] as const,

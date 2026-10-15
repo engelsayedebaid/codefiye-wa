@@ -101,13 +101,13 @@ export const workspaces = pgTable(
   (t) => [index().on(t.ownerId)],
 );
 
-export type VerificationPurpose = 'register' | 'phone' | 'login';
+export type VerificationPurpose = 'register' | 'phone' | 'login' | 'reset';
 
 /**
  * Pending phone verifications. `register` holds a signup until its code is confirmed (the user,
  * workspace and trial are created only then); `phone` adds or changes the number of an existing
- * user; `login` is the phone step of a login (`login_attempts`). Only an HMAC of the code is
- * stored (apps/api/src/lib/otp.ts).
+ * user; `login` is the phone step of a login (`login_attempts`); `reset` proves the phone before a
+ * forgotten password is replaced. Only an HMAC of the code is stored (apps/api/src/lib/otp.ts).
  */
 export const phoneVerifications = pgTable(
   'phone_verifications',
@@ -131,7 +131,7 @@ export const phoneVerifications = pgTable(
     createdAt: createdAt(),
   },
   (t) => [
-    check('phone_verifications_purpose_check', sql`${t.purpose} in ('register', 'phone', 'login')`),
+    check('phone_verifications_purpose_check', sql`${t.purpose} in ('register', 'phone', 'login', 'reset')`),
     index().on(t.expiresAt),
     index().on(t.userId),
   ],

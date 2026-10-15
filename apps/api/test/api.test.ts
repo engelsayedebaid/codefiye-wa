@@ -96,10 +96,11 @@ describe.skipIf(!url)('api (integration)', () => {
   }
 
   /** Logs in through every step: password, the code sent to the phone, the authenticator code. `res` is the last response. */
-  const login = async (email: string, password: string, ip = nextIp()) => {
+  const login = async (email: string, password: string, ip = nextIp(), identifier?: string) => {
     // Tests log the same account in many times; the per-number code budget isn't what they check.
     await sql`delete from throttles where key like 'otp:%'`;
-    let res = await call('POST', '/api/auth/login', undefined, { email, password }, {}, ip);
+    const body = identifier ? { identifier, password } : { email, password };
+    let res = await call('POST', '/api/auth/login', undefined, body, {}, ip);
     const ref = res.statusCode === 200 ? { loginId: res.json().data.loginId, loginToken: res.json().data.loginToken } : null;
     for (let i = 0; ref && res.statusCode === 200 && i < 5; i++) {
       const { step } = res.json().data;
@@ -610,6 +611,42 @@ describe.skipIf(!url)('api (integration)', () => {
       expect(good.res.statusCode).toBe(200);
       expect(good.res.json().data).toMatchObject({ step: 'done', session: { workspace: { id: account.workspace.id } } });
       expect(good.cookie).toBeDefined();
+    });
+
+    it('logs in with the verified phone number', async () => {
+      const byPhone = await login(email, account.password, nextIp(), account.phone);
+      expect(byPhone.res.statusCode, byPhone.res.body).toBe(200);
+      expect(byPhone.res.json().data.step).toBe('done');
+      const neither = await call('POST', '/api/auth/login', undefined, { identifier: 'not-a-phone', password: 'whatever' }, {}, nextIp());
+      expect(neither.statusCode).toBe(422);
+      expect(neither.json().code).not.toBe('invalid_credentials');
+      expect(neither.json().errors.identifier).toBeDefined();
+    });
+
+    it('resets the password with a code sent to the phone', async () => {
+      const addr = `reset-${stamp}@test.local`;
+      const created = await register(addr);
+      const ip = nextIp();
+      const before = outbox.length;
+      const missing = await call('POST', '/api/auth/forgot', undefined, { identifier: `nobody-${stamp}@test.local` }, {}, nextIp());
+      expect(missing.statusCode).toBe(422);
+      expect(missing.json().code).toBe('reset_unavailable');
+      expect(outbox.length).toBe(before);
+
+      const start = await call('POST', '/api/auth/forgot', undefined, { identifier: created.phone, lang: 'en' }, {}, ip);
+      expect(start.statusCode, start.body).toBe(202);
+      const confirm = await call(
+        'POST',
+        '/api/auth/forgot/confirm',
+        undefined,
+        { verificationId: start.json().data.verificationId, code: codeFor(created.phone), password: 'brand new passphrase' },
+        {},
+        ip,
+      );
+      expect(confirm.statusCode, confirm.body).toBe(200);
+      expect((await call('GET', '/api/me', created.cookie)).statusCode).toBe(401);
+      expect((await login(addr, created.password)).res.statusCode).toBe(422);
+      expect((await login(addr, 'brand new passphrase', nextIp(), created.phone)).res.statusCode).toBe(200);
     });
 
     it('locks an account after repeated failures, from any address', async () => {

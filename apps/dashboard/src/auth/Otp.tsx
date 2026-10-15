@@ -1,12 +1,14 @@
-import { asciiDigits, normalizePhone } from '@wa/shared/phone';
+import { asciiDigits, phoneWithCountry } from '@wa/shared/phone';
 import { useQueryClient } from '@tanstack/react-query';
 import { MessageSquareText, RotateCw } from 'lucide-react';
-import { type FormEvent, useEffect, useState } from 'react';
+import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { api, ApiRequestError, errorMessage } from '../api';
 import { useI18n } from '../i18n';
 import type { Dict } from '../i18n/ar';
 import { qk } from '../queries';
 import { Button, ErrorNote, Field, Modal, SuccessNote } from '../ui';
+import { countryByIso } from './countries';
+import { DialField } from './DialField';
 
 /** What the API returns after sending a code. */
 export type Ticket = { verificationId: string; phone: string; channel: string; expiresAt: string; resendAfter: number };
@@ -60,6 +62,8 @@ export function CodeStep({
   onVerify,
   onResend,
   onRestart,
+  prepare,
+  children,
 }: {
   ticket: Ticket;
   submitLabel: string;
@@ -68,6 +72,10 @@ export function CodeStep({
   onResend: (verificationId: string) => Promise<Ticket>;
   /** Back to the first step (edit details), e.g. after the verification expired. */
   onRestart: (message?: string) => void;
+  /** Runs before the code is sent. A returned string is shown and the code stays typed. */
+  prepare?: () => string | null;
+  /** Extra fields in the same form (a new password, on the reset page). */
+  children?: ReactNode;
 }) {
   const { t } = useI18n();
   const v = t.auth.verify;
@@ -95,13 +103,21 @@ export function CodeStep({
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (code.length !== 6 || verifying) return;
+    const local = prepare?.() ?? null;
+    if (local) {
+      setError(local);
+      setNotice(null);
+      return;
+    }
     setVerifying(true);
     setError(null);
     setNotice(null);
     try {
       await onVerify(ticket.verificationId, code);
     } catch (err) {
-      setCode('');
+      // A wrong code is cleared; a problem with the other fields (a weak password) keeps it.
+      const codeProblem = err instanceof ApiRequestError && (err.code === 'code_invalid' || err.code === 'code_expired' || err.code === 'too_many_attempts');
+      if (codeProblem) setCode('');
       fail(err);
     } finally {
       setVerifying(false);
@@ -152,6 +168,7 @@ export function CodeStep({
         autoFocus
         required
       />
+      {children}
       <ErrorNote>{error}</ErrorNote>
       <SuccessNote>{notice}</SuccessNote>
       <Button type="submit" loading={verifying} disabled={code.length !== 6} className="w-full">
@@ -175,6 +192,7 @@ export function PhoneVerifyModal({ onClose }: { onClose: () => void }) {
   const p = t.app.phone;
   const queryClient = useQueryClient();
   const [phone, setPhone] = useState('');
+  const [country, setCountry] = useState('EG');
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fieldError, setFieldError] = useState<string[] | undefined>();
@@ -185,7 +203,7 @@ export function PhoneVerifyModal({ onClose }: { onClose: () => void }) {
     e.preventDefault();
     setError(null);
     setFieldError(undefined);
-    const normalized = normalizePhone(phone);
+    const normalized = phoneWithCountry(phone, countryByIso(country).dial);
     if (!normalized) return setFieldError([t.auth.errors.phoneInvalid]);
     setSending(true);
     try {
@@ -225,14 +243,13 @@ export function PhoneVerifyModal({ onClose }: { onClose: () => void }) {
         />
       ) : (
         <form onSubmit={send} className="grid gap-4">
-          <Field
+          <DialField
             label={t.auth.register.phone}
             value={phone}
-            onChange={(e) => setPhone(e.target.value)}
+            onChange={setPhone}
+            country={country}
+            onCountry={setCountry}
             placeholder={t.auth.register.phonePlaceholder}
-            type="tel"
-            autoComplete="tel"
-            dir="ltr"
             required
             autoFocus
             hint={t.auth.register.phoneHint}

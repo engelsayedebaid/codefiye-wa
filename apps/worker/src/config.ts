@@ -26,17 +26,27 @@ const schema = z.object({
   MEDIA_MAX_BYTES: z.coerce.number().int().positive().default(64 * 1024 * 1024),
   LOG_LEVEL: z.string().default('info'),
   BAILEYS_LOG_LEVEL: z.string().default('warn'),
+  /**
+   * Whether this worker takes sessions to run. On by default where it's deployed (NODE_ENV=production,
+   * or Railway); off on a dev machine, whose worker would otherwise compete with the deployed one for
+   * the same sessions (see `claim` in supervisor.ts). Set `true` to run sessions locally on purpose.
+   */
+  WORKER_CLAIM: z.enum(['true', 'false']).optional(),
+  NODE_ENV: z.string().optional(),
+  RAILWAY_ENVIRONMENT: z.string().optional(),
   RAILWAY_PRIVATE_DOMAIN: z.string().optional(),
 });
 
-export type Config = z.infer<typeof schema> & { WORKER_HOST: string; workerUrl: string };
+export type Config = z.infer<typeof schema> & { WORKER_HOST: string; workerUrl: string; claim: boolean };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const parsed = schema.parse(env);
   const railway = parsed.RAILWAY_PRIVATE_DOMAIN;
+  const deployed = parsed.NODE_ENV === 'production' || Boolean(parsed.RAILWAY_ENVIRONMENT || railway);
   return {
     ...parsed,
     WORKER_HOST: parsed.WORKER_HOST ?? (railway ? '::' : '127.0.0.1'),
     workerUrl: parsed.WORKER_URL ?? `http://${railway ?? '127.0.0.1'}:${parsed.WORKER_PORT}`,
+    claim: parsed.WORKER_CLAIM ? parsed.WORKER_CLAIM === 'true' : deployed,
   };
 }

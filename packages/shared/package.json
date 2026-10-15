@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./plans": "./src/plans.ts",
+    "./plan-pricing": "./src/plan-pricing.ts",
     "./broadcasts": "./src/broadcasts.ts",
     "./constants": "./src/constants.ts",
     "./name-suggestions": "./src/name-suggestions.ts",

@@ -1,15 +1,57 @@
-import { asciiDigits, normalizePhone } from '@wa/shared/phone';
-import { Check, Code2, LayoutDashboard, LifeBuoy, Wallet } from 'lucide-react';
+import { asciiDigits, phoneWithCountry } from '@wa/shared/phone';
+import { Check, Code2, LayoutDashboard, LifeBuoy, Mail, Smartphone, Wallet } from 'lucide-react';
 import { type FormEvent, type ReactNode, useState } from 'react';
 import { api, ApiRequestError, errorMessage } from '../api';
 import { BRAND } from '../brand';
 import { useI18n } from '../i18n';
 import type { Dict } from '../i18n/ar';
 import { Link } from '../router';
-import { Button, Checkbox, cx, delay, ErrorNote, Field, LangSwitch, LogoMark, ThemeSwitch } from '../ui';
+import { Button, buttonClass, Checkbox, cx, delay, ErrorNote, Field, LangSwitch, LogoMark, ThemeSwitch } from '../ui';
+import { countryByIso } from './countries';
+import { DialField } from './DialField';
 import { CodeStep, codeError, SEND_CODE_TIMEOUT_MS, type Ticket } from './Otp';
 
 const linkClass = 'text-ink underline decoration-neutral-500 underline-offset-4 transition-colors hover:decoration-current';
+
+type SignInMethod = 'phone' | 'email';
+
+/** What the login and reset APIs store: an email, or a phone with the chosen calling code. */
+function accountIdentity(method: SignInMethod, value: string, iso: string): string | null {
+  const trimmed = value.trim();
+  if (method === 'email') return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed) ? trimmed : null;
+  return phoneWithCountry(trimmed, countryByIso(iso).dial);
+}
+
+/** Phone or email, chosen before the field. The selected one is filled; the other stays quiet. */
+function MethodSwitch({ value, onChange }: { value: SignInMethod; onChange: (method: SignInMethod) => void }) {
+  const { t } = useI18n();
+  const m = t.auth.method;
+  const options = [
+    { id: 'phone' as const, label: m.phone, icon: Smartphone },
+    { id: 'email' as const, label: m.email, icon: Mail },
+  ];
+  return (
+    <div role="tablist" aria-label={m.label} className="grid grid-cols-2 gap-1 rounded-lg bg-raised p-1">
+      {options.map((option) => {
+        const on = value === option.id;
+        const Icon = option.icon;
+        return (
+          <button
+            key={option.id}
+            type="button"
+            role="tab"
+            aria-selected={on}
+            onClick={() => onChange(option.id)}
+            className={cx('flex h-9 items-center justify-center gap-2 rounded-md text-sm font-medium transition-colors', on ? 'bg-card text-ink shadow-xs' : 'text-muted hover:text-ink')}
+          >
+            <Icon className="size-4" />
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 /** `wide`: a two-column screen (two-factor setup) that should fit without scrolling. */
 export function AuthLayout({ title, subtitle, children, footer, wide }: { title: string; subtitle: ReactNode; children: ReactNode; footer: ReactNode; wide?: boolean }) {
@@ -63,7 +105,10 @@ function authError(err: unknown, flow: 'login' | 'register', t: Dict): { message
         return { message: e.otpUnavailable, fields: {} };
       case 'rate_limited':
         return { message: t.errors.rateLimited(Number(err.details?.retryAfter ?? 0) || null), fields: {} };
+      case 'reset_unavailable':
+        return { message: e.resetUnavailable, fields: {} };
     }
+    if (err.status === 422 && err.errors?.identifier) return { message: null, fields: { identifier: [e.identifierInvalid] } };
     if (flow === 'register' && err.status === 422 && err.errors) {
       const fields: Record<string, string[]> = {};
       if (err.errors.password) fields.password = [e.weakPassword];
@@ -171,7 +216,9 @@ function TotpStep({ login, onNext, onRestart }: { login: LoginRef; onNext: (res:
 export function LoginPage({ onAuthed }: { onAuthed: () => void }) {
   const { t, lang } = useI18n();
   const l = t.auth.login;
-  const [email, setEmail] = useState('');
+  const [method, setMethod] = useState<SignInMethod>('phone');
+  const [country, setCountry] = useState('EG');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -197,16 +244,21 @@ export function LoginPage({ onAuthed }: { onAuthed: () => void }) {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError(null);
     setErrors({});
+    const identity = accountIdentity(method, identifier, country);
+    if (!identity) {
+      setErrors({ [method]: [method === 'email' ? t.auth.errors.emailInvalid : t.auth.errors.phoneInvalid] });
+      return;
+    }
+    setLoading(true);
     try {
-      const res = await api<LoginResponse>('/api/auth/login', { method: 'POST', body: { email, password, remember, lang }, timeoutMs: SEND_CODE_TIMEOUT_MS });
+      const res = await api<LoginResponse>('/api/auth/login', { method: 'POST', body: { identifier: identity, password, remember, lang }, timeoutMs: SEND_CODE_TIMEOUT_MS });
       proceed(res, { loginId: res.loginId, loginToken: res.loginToken ?? '' });
     } catch (err) {
       const { message, fields } = authError(err, 'login', t);
       setError(message);
-      setErrors(fields);
+      setErrors(fields.identifier ? { [method]: fields.identifier } : fields);
     } finally {
       setLoading(false);
     }
@@ -253,18 +305,42 @@ export function LoginPage({ onAuthed }: { onAuthed: () => void }) {
       }
     >
       <form onSubmit={submit} className="grid gap-5">
-        <Field
-          label={l.email}
-          type="email"
-          autoComplete="email"
-          placeholder="email@example.com"
-          dir="ltr"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          autoFocus
-          error={errors.email}
+        <MethodSwitch
+          value={method}
+          onChange={(next) => {
+            setMethod(next);
+            setIdentifier('');
+            setErrors({});
+            setError(null);
+          }}
         />
+        {method === 'phone' ? (
+          <DialField
+            name={t.auth.method.phone}
+            value={identifier}
+            onChange={setIdentifier}
+            country={country}
+            onCountry={setCountry}
+            placeholder={t.auth.register.phonePlaceholder}
+            autoFocus
+            required
+            error={errors.phone}
+          />
+        ) : (
+          <Field
+            label={l.email}
+            type="email"
+            autoComplete="email"
+            placeholder={l.emailPlaceholder}
+            dir="ltr"
+            className="ltr"
+            value={identifier}
+            onChange={(e) => setIdentifier(e.target.value)}
+            required
+            autoFocus
+            error={errors.email}
+          />
+        )}
         <Field
           label={l.password}
           type="password"
@@ -275,7 +351,12 @@ export function LoginPage({ onAuthed }: { onAuthed: () => void }) {
           required
           error={errors.password}
         />
-        <Checkbox label={l.remember} checked={remember} onChange={setRemember} />
+        <div className="flex items-center justify-between gap-3">
+          <Checkbox label={l.remember} checked={remember} onChange={setRemember} />
+          <Link href="/forgot" className="text-sm text-muted underline-offset-4 transition-colors hover:text-ink hover:underline">
+            {l.forgot}
+          </Link>
+        </div>
         <ErrorNote>{error}</ErrorNote>
         <Button type="submit" loading={loading} size="lg" className="mt-2 w-full">
           {l.submit}
@@ -440,6 +521,7 @@ export function RegisterPage({ onAuthed }: { onAuthed: () => void }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [country, setCountry] = useState('EG');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [ticket, setTicket] = useState<Ticket | null>(null);
@@ -451,7 +533,7 @@ export function RegisterPage({ onAuthed }: { onAuthed: () => void }) {
     e.preventDefault();
     setError(null);
     setErrors({});
-    const normalized = normalizePhone(phone);
+    const normalized = phoneWithCountry(phone, countryByIso(country).dial);
     if (!normalized) return setErrors({ phone: [t.auth.errors.phoneInvalid] });
     if (password !== confirm) return setErrors({ confirm: [r.mismatch] });
     setLoading(true);
@@ -514,14 +596,13 @@ export function RegisterPage({ onAuthed }: { onAuthed: () => void }) {
             error={errors.email}
           />
         </div>
-        <Field
+        <DialField
           label={r.phone}
-          type="tel"
-          autoComplete="tel"
-          placeholder={r.phonePlaceholder}
-          dir="ltr"
           value={phone}
-          onChange={(e) => setPhone(e.target.value)}
+          onChange={setPhone}
+          country={country}
+          onCountry={setCountry}
+          placeholder={r.phonePlaceholder}
           required
           hint={r.phoneHint}
           error={errors.phone}
@@ -558,6 +639,147 @@ export function RegisterPage({ onAuthed }: { onAuthed: () => void }) {
           {r.next}
         </Button>
         <p className="text-center text-xs text-faint">{r.agree}</p>
+      </form>
+    </SplitAuthLayout>
+  );
+}
+
+/**
+ * Replace a forgotten password: name the account, then the code sent to its verified phone plus a
+ * new password. The session is not opened here — logging in still asks for the authenticator.
+ */
+export function ForgotPasswordPage() {
+  const { t, lang } = useI18n();
+  const f = t.auth.forgot;
+  const r = t.auth.register;
+  const [country, setCountry] = useState('EG');
+  const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [ticket, setTicket] = useState<Ticket | null>(null);
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [errors, setErrors] = useState<Record<string, string[]>>({});
+  const [loading, setLoading] = useState(false);
+
+  const steps = {
+    items: [
+      { id: 'account', label: f.steps.account },
+      { id: 'password', label: f.steps.password },
+    ],
+    current: ticket || done ? 'password' : 'account',
+  };
+  const footer = (
+    <Link href="/login" className={linkClass}>
+      {f.back}
+    </Link>
+  );
+
+  const send = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setErrors({});
+    const identity = phoneWithCountry(phone, countryByIso(country).dial);
+    if (!identity) {
+      setErrors({ phone: [t.auth.errors.phoneInvalid] });
+      return;
+    }
+    setLoading(true);
+    try {
+      setTicket(await api<Ticket>('/api/auth/forgot', { method: 'POST', body: { identifier: identity, lang }, timeoutMs: SEND_CODE_TIMEOUT_MS }));
+    } catch (err) {
+      if (err instanceof ApiRequestError && err.code === 'phone_unreachable') {
+        setError(t.auth.errors.phoneUnreachable);
+      } else {
+        const mapped = authError(err, 'login', t);
+        setError(mapped.message);
+        setErrors(mapped.fields.identifier ? { phone: mapped.fields.identifier } : mapped.fields);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (done) {
+    return (
+      <SplitAuthLayout panel={f.panel} steps={steps} title={f.doneTitle} subtitle={f.done} footer={footer}>
+        <Link href="/login" className={buttonClass('brand', 'lg', 'w-full')}>
+          {f.login}
+        </Link>
+      </SplitAuthLayout>
+    );
+  }
+
+  if (ticket) {
+    return (
+      <SplitAuthLayout panel={f.panel} steps={steps} title={f.codeTitle} subtitle={f.codeSubtitle} footer={footer}>
+        <CodeStep
+          ticket={ticket}
+          submitLabel={f.save}
+          prepare={() => (password !== confirm ? r.mismatch : password.length < 8 ? t.auth.errors.weakPassword : null)}
+          onVerify={async (verificationId, code) => {
+            try {
+              await api('/api/auth/forgot/confirm', { method: 'POST', body: { verificationId, code, password } });
+            } catch (err) {
+              if (err instanceof ApiRequestError && err.errors?.password) throw new Error(t.auth.errors.weakPassword);
+              throw err;
+            }
+            setDone(true);
+          }}
+          onResend={(verificationId) => api<Ticket>('/api/auth/forgot/resend', { method: 'POST', body: { verificationId }, timeoutMs: SEND_CODE_TIMEOUT_MS })}
+          onRestart={(message) => {
+            setTicket(null);
+            setPassword('');
+            setConfirm('');
+            setError(message ?? null);
+          }}
+        >
+          <Field
+            label={f.password}
+            type="password"
+            autoComplete="new-password"
+            placeholder={r.passwordPlaceholder}
+            minLength={8}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+          <div className="grid gap-2">
+            <Field
+              label={f.confirm}
+              type="password"
+              autoComplete="new-password"
+              placeholder={r.confirmPlaceholder}
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              required
+              aside={confirm && password === confirm ? <Check className="size-3.5 text-brand" aria-hidden /> : undefined}
+            />
+            <StrengthMeter password={password} />
+          </div>
+        </CodeStep>
+      </SplitAuthLayout>
+    );
+  }
+
+  return (
+    <SplitAuthLayout panel={f.panel} steps={steps} title={f.title} subtitle={f.subtitle} footer={footer}>
+      <form onSubmit={send} className="grid gap-5">
+        <DialField
+          label={r.phone}
+          value={phone}
+          onChange={setPhone}
+          country={country}
+          onCountry={setCountry}
+          placeholder={r.phonePlaceholder}
+          autoFocus
+          required
+          error={errors.phone}
+        />
+        <ErrorNote>{error}</ErrorNote>
+        <Button type="submit" loading={loading} size="lg" className="mt-2 w-full">
+          {f.submit}
+        </Button>
       </form>
     </SplitAuthLayout>
   );

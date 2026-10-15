@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  applyQuickDiscount,
+  discountPercent,
   getPlan,
   jidToPhone,
   maskPhone,
+  normalizePlanPricing,
   renderTemplate,
   renderTemplateParts,
   sendMessageBody,
@@ -61,6 +64,52 @@ describe('sendMessageBody', () => {
 
 describe('getPlan', () => {
   it('falls back to trial for unknown ids', () => expect(getPlan('nope').id).toBe('trial'));
+});
+
+describe('plan pricing', () => {
+  it('starts from the catalog with Pro highlighted', () => {
+    const pricing = normalizePlanPricing(undefined);
+    expect(pricing.highlight).toBe('pro');
+    expect(pricing.plans.basic).toEqual({ priceUsd: 6, compareAtUsd: null });
+    expect(pricing.plans.business.priceUsd).toBe(45);
+  });
+
+  it('keeps a real discount and drops a compare-at that is not higher', () => {
+    const pricing = normalizePlanPricing({
+      highlight: 'plus',
+      plans: {
+        pro: { priceUsd: 12, compareAtUsd: 15 },
+        basic: { priceUsd: 9, compareAtUsd: 8 },
+        business: { priceUsd: 40.004, compareAtUsd: 50 },
+      },
+    });
+    expect(pricing.highlight).toBe('plus');
+    expect(pricing.plans.pro).toEqual({ priceUsd: 12, compareAtUsd: 15 });
+    expect(pricing.plans.basic).toEqual({ priceUsd: 9, compareAtUsd: null });
+    expect(pricing.plans.business).toEqual({ priceUsd: 40, compareAtUsd: 50 });
+    expect(pricing.plans.plus.priceUsd).toBe(30);
+    expect(discountPercent(12, 15)).toBe(20);
+    expect(discountPercent(15, 15)).toBeNull();
+    expect(discountPercent(15, null)).toBeNull();
+  });
+
+  it('ignores an unknown highlight and a non-numeric price', () => {
+    const pricing = normalizePlanPricing({ highlight: 'enterprise', plans: { business: { priceUsd: 'nope', compareAtUsd: 60 } } });
+    expect(pricing.highlight).toBe('pro');
+    expect(pricing.plans.business).toEqual({ priceUsd: 45, compareAtUsd: 60 });
+  });
+
+  it('treats an explicit empty highlight as no popular card', () => {
+    expect(normalizePlanPricing({ highlight: null }).highlight).toBeNull();
+  });
+
+  it('applies a quick discount once to the list price, including 100%', () => {
+    const once = applyQuickDiscount({ priceUsd: 15, compareAtUsd: null }, 20, 15);
+    expect(once).toEqual({ priceUsd: 12, compareAtUsd: 15 });
+    expect(applyQuickDiscount(once, 30, 15)).toEqual({ priceUsd: 10.5, compareAtUsd: 15 });
+    expect(applyQuickDiscount(once, 100, 15)).toEqual({ priceUsd: 0, compareAtUsd: 15 });
+    expect(normalizePlanPricing({ plans: { pro: { priceUsd: 0, compareAtUsd: 15 } } }).plans.pro).toEqual({ priceUsd: 0, compareAtUsd: 15 });
+  });
 });
 
 describe('suggestNames', () => {

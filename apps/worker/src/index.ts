@@ -26,6 +26,7 @@ const supervisor = new Supervisor({
   workerId: config.WORKER_ID,
   url: config.workerUrl,
   capacity: config.WORKER_CAPACITY,
+  claim: config.claim,
   encryptionKey: parseKey(config.AUTH_ENCRYPTION_KEY),
   logger,
   baileysLogger: logger.child({ module: 'baileys' }, { level: config.BAILEYS_LOG_LEVEL }),
@@ -38,7 +39,7 @@ const supervisor = new Supervisor({
 const rpc = buildRpcServer(supervisor, config.WORKER_SECRET, logger);
 await rpc.listen({ host: config.WORKER_HOST, port: config.WORKER_PORT });
 await supervisor.start();
-logger.info({ url: config.workerUrl, capacity: config.WORKER_CAPACITY }, 'worker started');
+logger.info({ url: config.workerUrl, capacity: config.WORKER_CAPACITY, claim: config.claim }, 'worker started');
 
 let shuttingDown = false;
 async function shutdown(signal: string, code = 0) {

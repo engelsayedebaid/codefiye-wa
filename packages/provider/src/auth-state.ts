@@ -65,6 +65,15 @@ export type AuthStateOptions = {
 export const isFenceError = (err: unknown) => (err as Error | undefined)?.name === 'AuthFenceError';
 
 const CREDS = { type: 'creds', id: 'creds' } as const;
+
+/**
+ * Key types Baileys reads one device at a time while sending to a group (every member's session and
+ * identity, each phone number's LID): one query per device turns a large group into thousands of
+ * sequential round trips, and misses (members we never messaged) were never cached. These are read
+ * from the store once, then served and kept current in memory. Safe because one process owns a
+ * session's keys at a time (writes are fenced) and every write goes through `keys.set` below.
+ */
+const MIRRORED = new Set<string>(['session', 'identity-key', 'lid-mapping', 'device-list', 'sender-key-memory', 'tctoken']);
 /** Retry delays for a failed creds write (transient database trouble). */
 const SAVE_RETRY_MS = [500, 1_000, 2_000, 4_000, 8_000];
 
@@ -123,12 +132,37 @@ export async function useEncryptedAuthState(
     return pending;
   };
 
+  // Sealed blobs of each mirrored type, loaded on first use (an empty suffix scans the whole type).
+  // A failed load is forgotten so the next read retries it, and fails like any read meanwhile.
+  const mirrors = new Map<string, Promise<Map<string, Buffer>>>();
+  const mirror = (type: string): Promise<Map<string, Buffer>> | null => {
+    if (!store.scan || !MIRRORED.has(type)) return null;
+    let loading = mirrors.get(type);
+    if (!loading) {
+      loading = store.scan(type, '');
+      mirrors.set(type, loading);
+      loading.catch(() => mirrors.delete(type));
+    }
+    return loading;
+  };
+  const read = async (type: string, ids: string[]): Promise<Map<string, Buffer>> => {
+    const loading = mirror(type);
+    if (!loading) return store.get(type, ids);
+    const all = await loading;
+    const rows = new Map<string, Buffer>();
+    for (const id of ids) {
+      const blob = all.get(id);
+      if (blob) rows.set(id, blob);
+    }
+    return rows;
+  };
+
   return {
     state: {
       creds,
       keys: {
         async get<T extends keyof SignalDataTypeMap>(type: T, ids: string[]) {
-          const rows = await store.get(type, ids);
+          const rows = await read(type, ids);
           const result: { [id: string]: SignalDataTypeMap[T] } = {};
           for (const [id, blob] of rows) {
             let value = open(type, id, blob);
@@ -145,6 +179,16 @@ export async function useEncryptedAuthState(
             }
           }
           if (entries.length > 0) await store.set(entries);
+          // Only once stored: a failed write leaves the mirror matching the database. A mirror still
+          // loading may have read before this write, so it's applied once that load lands.
+          for (const e of entries) {
+            const loading = mirrors.get(e.type);
+            if (!loading) continue;
+            const all = await loading.catch(() => null);
+            if (!all) continue;
+            if (e.value) all.set(e.id, e.value);
+            else all.delete(e.id);
+          }
           const mappings = data['lid-mapping'];
           if (mappings && options.onLidMappings) {
             const pairs = lidPairs(Object.entries(mappings));

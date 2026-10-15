@@ -53,6 +53,24 @@ export async function dispatch(supervisor: Supervisor, sessionId: string, action
         .parse(body);
       return { id: await runner.react(parsed.jid, parsed.target, parsed.emoji) };
     }
+    case 'edit-message': {
+      const parsed = z.object({ jid, target: z.object({ id: z.string().min(1).max(128) }), text: z.string().min(1).max(4_096) }).parse(body);
+      await runner.editMessage(parsed.jid, parsed.target, parsed.text);
+      return { ok: true };
+    }
+    case 'delete-message': {
+      const parsed = z
+        .object({
+          jid,
+          target: z.object({ id: z.string().min(1).max(128), fromMe: z.boolean(), participant: z.string().max(128).optional() }),
+          scope: z.enum(['everyone', 'me']),
+          timestamp: z.number().int().positive(),
+        })
+        .parse(body);
+      if (parsed.scope === 'everyone') await runner.revokeMessage(parsed.jid, parsed.target);
+      else await runner.deleteForMe(parsed.jid, parsed.target, parsed.timestamp);
+      return { ok: true };
+    }
     case 'chat-state': {
       const parsed = z.object({ jid, state: z.enum(['composing', 'recording', 'paused']) }).parse(body);
       await runner.chatState(parsed.jid, parsed.state);
