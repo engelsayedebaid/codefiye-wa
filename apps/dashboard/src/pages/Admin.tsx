@@ -730,7 +730,9 @@ function UsersTable({ selfId }: { selfId: string | null }) {
                         {row.role === 'admin' && <Badge tone="good">{t.app.admin}</Badge>}
                         {isSelf && <Badge tone="neutral">{u.you}</Badge>}
                       </p>
-                      <p className="ltr text-xs text-muted">{row.email}</p>
+                      <p className="text-xs text-muted">
+                        <span className="ltr">{row.email}</span>
+                      </p>
                       <p className="mt-0.5 flex items-center gap-1 text-xs">
                         <Smartphone className="size-3 text-muted" />
                         {row.phone && row.phoneVerified ? <span className="ltr text-muted">{row.phone}</span> : <span className="text-warning">{u.phoneUnverified}</span>}
