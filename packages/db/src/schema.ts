@@ -5,6 +5,7 @@ import type {
   MessageStatus,
   MessageType,
   OutboundContent,
+  PaymentDetails,
   SendingWindow,
   SessionStatus,
   SyncChatStatus,
@@ -131,13 +132,10 @@ export const phoneVerifications = pgTable(
   ],
 );
 
-export type LoginApproval = 'pending' | 'approved' | 'denied';
-
 /**
  * A dashboard login in progress (apps/api/src/routes/account.ts): password checked, then the code
- * sent to the phone, then the authenticator code, then — when the account is already signed in on
- * another device — that device's approval. The session cookie is issued only at the end. The client
- * holds the attempt by a secret token (only its SHA-256 is stored).
+ * sent to the phone, then the authenticator code. The session cookie is issued only at the end. The
+ * client holds the attempt by a secret token (only its SHA-256 is stored).
  */
 export const loginAttempts = pgTable(
   'login_attempts',
@@ -158,20 +156,11 @@ export const loginAttempts = pgTable(
     phoneVerifiedAt: timestamp({ withTimezone: true }),
     totpVerifiedAt: timestamp({ withTimezone: true }),
     totpAttempts: integer().notNull().default(0),
-    /** Null until the factors pass; then `pending` while another signed-in device decides (or `approved` straight away when there is none). */
-    approval: text().$type<LoginApproval>(),
-    /** The dashboard session (api_keys row) that approved or denied; null for a recovery code. */
-    decidedBy: uuid(),
-    decidedAt: timestamp({ withTimezone: true }),
     completedAt: timestamp({ withTimezone: true }),
     expiresAt: timestamp({ withTimezone: true }).notNull(),
     createdAt: createdAt(),
   },
-  (t) => [
-    check('login_attempts_approval_check', sql`${t.approval} in ('pending', 'approved', 'denied')`),
-    index().on(t.userId, t.approval),
-    index().on(t.expiresAt),
-  ],
+  (t) => [index().on(t.userId), index().on(t.expiresAt)],
 );
 
 /** Fixed-window counters for brute-force and abuse limits (login, signup, OTP), shared by every API instance. */
@@ -219,6 +208,13 @@ export const planRequests = pgTable(
       .references(() => workspaces.id, { onDelete: 'cascade' }),
     planId: text().notNull(),
     status: text().$type<PlanRequestStatus>().notNull().default('pending'),
+    /** How long the customer is paying for; the admin's approval defaults to it. */
+    months: integer().notNull().default(1),
+    /** How the customer paid (method + sender details); null for requests made before payments existed. */
+    payment: jsonb().$type<PaymentDetails>(),
+    /** Screenshot of the transfer, as uploaded (shrunk by the dashboard). */
+    proofMimetype: text(),
+    proof: bytea(),
     /** From the customer, e.g. a payment reference. */
     note: text(),
     /** From the admin, e.g. why a request was rejected. */

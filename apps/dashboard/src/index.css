@@ -155,12 +155,77 @@ body {
 
 /* Section eyebrow pill: "Simple Integration · Powerful API". */
 .eyebrow {
-  @apply inline-flex items-center gap-2 rounded-full border border-line-strong bg-ink/[0.03] px-4 py-1.5 text-sm font-medium text-ink-2;
+  @apply inline-flex items-center gap-2 rounded-full border border-brand/25 bg-brand/[0.07] px-4 py-1.5 text-xs font-semibold tracking-wide text-brand shadow-[inset_0_1px_0_rgb(255_255_255/0.12)] backdrop-blur-sm;
 }
 
 /* Soft dark → navy wash used behind most marketing sections. */
 .section-wash {
-  background: linear-gradient(180deg, var(--color-bg) 0%, var(--color-bg) 50%, var(--color-navy) 100%);
+  position: relative;
+  background: linear-gradient(180deg, var(--color-bg) 0%, var(--color-bg) 55%, color-mix(in oklab, var(--color-navy) 65%, var(--color-bg)) 100%);
+}
+
+/* Architectural radial-masked grid for hero and showcase sections. */
+.hero-grid {
+  background-image:
+    linear-gradient(to right, color-mix(in oklab, var(--color-ink) 5.5%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklab, var(--color-ink) 5.5%, transparent) 1px, transparent 1px);
+  background-size: 44px 44px;
+  -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 35%, #000 35%, transparent 100%);
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 35%, #000 35%, transparent 100%);
+}
+
+/* Top specular highlight on elevated premium cards. */
+.card-luxury {
+  position: relative;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--color-card) 92%, var(--color-raised)) 0%, var(--color-card) 100%);
+  box-shadow:
+    inset 0 1px 0 0 rgb(255 255 255 / 0.07),
+    0 12px 32px -16px rgb(0 0 0 / 0.45);
+}
+[data-theme='light'] .card-luxury {
+  background: linear-gradient(180deg, #ffffff 0%, #f9fbfa 100%);
+  box-shadow:
+    inset 0 1px 0 0 rgb(255 255 255 / 0.9),
+    0 14px 34px -18px rgb(17 23 20 / 0.1);
+}
+
+/*
+ * Hero card on the dashboard: a hairline border that fades from the brand colour at the start
+ * corner to the plain line colour, drawn with two backgrounds (padding-box + border-box).
+ */
+.card-premium {
+  position: relative;
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--color-card), var(--color-card)) padding-box,
+    linear-gradient(135deg, color-mix(in oklab, var(--color-brand) 55%, transparent), var(--color-line) 45%, var(--color-line)) border-box;
+  box-shadow:
+    inset 0 1px 0 0 rgb(255 255 255 / 0.06),
+    0 24px 60px -30px rgb(0 0 0 / 0.6);
+}
+[dir='rtl'] .card-premium {
+  background:
+    linear-gradient(var(--color-card), var(--color-card)) padding-box,
+    linear-gradient(225deg, color-mix(in oklab, var(--color-brand) 55%, transparent), var(--color-line) 45%, var(--color-line)) border-box;
+}
+[data-theme='light'] .card-premium {
+  box-shadow:
+    inset 0 1px 0 0 rgb(255 255 255 / 0.9),
+    0 24px 50px -30px rgb(17 23 20 / 0.18);
+}
+
+/* Soft radial glow behind the hero's start corner. */
+.hero-glow::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: -8rem;
+  top: -8rem;
+  width: 22rem;
+  height: 22rem;
+  border-radius: 9999px;
+  background: color-mix(in oklab, var(--color-brand) 14%, transparent);
+  filter: blur(70px);
+  pointer-events: none;
 }
 
 /* Auth and marketing backdrop in the light theme: a faint dot grid under a soft mint glow from the start corner. */

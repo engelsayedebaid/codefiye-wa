@@ -95,11 +95,7 @@ describe.skipIf(!url)('api (integration)', () => {
     return { cookie, user, workspace, phone, password, recoveryCodes };
   }
 
-  /**
-   * Logs in through every step: password, the code sent to the phone, the authenticator code, and —
-   * when another session is open — an approval (granted here directly in the database; the approval
-   * flow itself has its own test). `res` is the last response.
-   */
+  /** Logs in through every step: password, the code sent to the phone, the authenticator code. `res` is the last response. */
   const login = async (email: string, password: string, ip = nextIp()) => {
     // Tests log the same account in many times; the per-number code budget isn't what they check.
     await sql`delete from throttles where key like 'otp:%'`;
@@ -110,10 +106,7 @@ describe.skipIf(!url)('api (integration)', () => {
       if (step === 'done') break;
       if (step === 'phone') res = await call('POST', '/api/auth/login/phone', undefined, { ...ref, code: codeFor(await phoneOf(email)) }, {}, ip);
       else if (step === 'totp') res = await call('POST', '/api/auth/login/totp', undefined, { ...ref, code: await totpCode(email) }, {}, ip);
-      else {
-        await sql`update login_attempts set approval = 'approved' where id = ${ref.loginId} and approval = 'pending'`;
-        res = await call('POST', '/api/auth/login/status', undefined, ref, {}, ip);
-      }
+      else throw new Error(`unexpected login step ${step}`);
     }
     return { res, cookie: sessionCookie(res)?.value ? { cookie: sessionCookie(res)!.value } : undefined };
   };
@@ -743,7 +736,7 @@ describe.skipIf(!url)('api (integration)', () => {
       expect(stored!.totp_secret).not.toContain(setup.secret);
     });
 
-    it('logs in step by step: phone code, authenticator, then the signed-in device approves', async () => {
+    it('logs in step by step: phone code, then authenticator — even while another session is open', async () => {
       const owner = await register(`steps-${stamp}@test.local`);
       const ownerEmail = owner.user.email;
       const ip = nextIp();
@@ -754,42 +747,27 @@ describe.skipIf(!url)('api (integration)', () => {
         expect(sessionCookie(res)).toBeUndefined();
         return { loginId: res.json().data.loginId as string, loginToken: res.json().data.loginToken as string };
       };
-      const toApproval = async (ref: { loginId: string; loginToken: string }) => {
-        const phoneStep = await call('POST', '/api/auth/login/phone', undefined, { ...ref, code: codeFor(owner.phone) }, {}, ip);
-        expect(phoneStep.json().data.step).toBe('totp');
-        const totpStep = await call('POST', '/api/auth/login/totp', undefined, { ...ref, code: await totpCode(ownerEmail) }, {}, ip);
-        expect(totpStep.json().data.step).toBe('approval');
-      };
 
-      // Approved from the open session.
+      // The owner's session is open; the new login still needs only the phone code and the authenticator.
       const ref = await start();
       expect((await call('POST', '/api/auth/login/totp', undefined, { ...ref, code: '123456' }, {}, ip)).json()).toMatchObject({ code: 'step_order' });
-      expect((await call('POST', '/api/auth/login/status', undefined, { ...ref, loginToken: 'x'.repeat(32) }, {}, ip)).json()).toMatchObject({ code: 'login_expired' });
+      expect((await call('POST', '/api/auth/login/phone', undefined, { ...ref, loginToken: 'x'.repeat(32), code: codeFor(owner.phone) }, {}, ip)).json()).toMatchObject({ code: 'login_expired' });
       const phoneStep = await call('POST', '/api/auth/login/phone', undefined, { ...ref, code: codeFor(owner.phone) }, {}, ip);
       expect(phoneStep.json().data.step).toBe('totp');
+      expect(sessionCookie(phoneStep)).toBeUndefined();
       const badTotp = await call('POST', '/api/auth/login/totp', undefined, { ...ref, code: totpAt(totpSecrets.get(ownerEmail)!, currentStep() + 5) }, {}, ip);
       expect(badTotp.json()).toMatchObject({ code: 'code_invalid', details: { attemptsLeft: 4 } });
-      expect((await call('POST', '/api/auth/login/totp', undefined, { ...ref, code: await totpCode(ownerEmail) }, {}, ip)).json().data.step).toBe('approval');
-      const pending = (await call('GET', '/api/account/login-requests', owner.cookie)).json().data;
-      expect(pending).toEqual([expect.objectContaining({ id: ref.loginId })]);
-      expect((await call('POST', '/api/auth/login/status', undefined, ref, {}, ip)).json().data.step).toBe('approval');
-      expect((await call('POST', `/api/account/login-requests/${ref.loginId}/approve`, owner.cookie)).json().data).toEqual({ approval: 'approved' });
-      const done = await call('POST', '/api/auth/login/status', undefined, ref, {}, ip);
+      const done = await call('POST', '/api/auth/login/totp', undefined, { ...ref, code: await totpCode(ownerEmail) }, {}, ip);
       expect(done.json().data).toMatchObject({ step: 'done', session: { user: { email: ownerEmail, twoFactorEnabled: true } } });
       const second = { cookie: sessionCookie(done)!.value };
       expect((await call('GET', '/api/api-keys', second)).statusCode).toBe(200);
-      // Finished logins can't be replayed.
-      expect((await call('POST', '/api/auth/login/status', undefined, ref, {}, ip)).json()).toMatchObject({ code: 'login_expired' });
+      // Both sessions stay valid; finished logins can't be replayed.
+      expect((await call('GET', '/api/me', owner.cookie)).statusCode).toBe(200);
+      expect((await call('POST', '/api/auth/login/totp', undefined, { ...ref, code: await totpCode(ownerEmail) }, {}, ip)).json()).toMatchObject({ code: 'login_expired' });
 
-      // Declined.
-      const denied = await start();
-      await toApproval(denied);
-      expect((await call('POST', `/api/account/login-requests/${denied.loginId}/deny`, second)).statusCode).toBe(200);
-      expect((await call('POST', '/api/auth/login/status', undefined, denied, {}, ip)).json()).toMatchObject({ code: 'login_denied' });
-
-      // Other device out of reach: a recovery code finishes the login and signs every other session out.
+      // Lost authenticator: a recovery code finishes the login and signs every other session out.
       const lost = await start();
-      await toApproval(lost);
+      expect((await call('POST', '/api/auth/login/phone', undefined, { ...lost, code: codeFor(owner.phone) }, {}, ip)).json().data.step).toBe('totp');
       const recovered = await call('POST', '/api/auth/login/recovery', undefined, { ...lost, code: owner.recoveryCodes[0] }, {}, ip);
       expect(recovered.json().data.step).toBe('done');
       expect((await call('GET', '/api/me', owner.cookie)).statusCode).toBe(401);

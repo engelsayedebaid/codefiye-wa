@@ -1,12 +1,13 @@
 import { asciiDigits, normalizePhone } from '@wa/shared/phone';
-import { KeyRound, LifeBuoy, Loader2, MonitorSmartphone } from 'lucide-react';
-import { type FormEvent, type ReactNode, useEffect, useEffectEvent, useState } from 'react';
+import { Check, Code2, LayoutDashboard, LifeBuoy, Wallet } from 'lucide-react';
+import { type FormEvent, type ReactNode, useState } from 'react';
 import { api, ApiRequestError, errorMessage } from '../api';
-import { getDict, useI18n } from '../i18n';
+import { BRAND } from '../brand';
+import { useI18n } from '../i18n';
 import type { Dict } from '../i18n/ar';
 import { Link } from '../router';
 import { Button, Checkbox, cx, delay, ErrorNote, Field, LangSwitch, LogoMark, ThemeSwitch } from '../ui';
-import { CodeStep, codeError, type Ticket } from './Otp';
+import { CodeStep, codeError, SEND_CODE_TIMEOUT_MS, type Ticket } from './Otp';
 
 const linkClass = 'text-ink underline decoration-neutral-500 underline-offset-4 transition-colors hover:decoration-current';
 
@@ -79,25 +80,15 @@ function authError(err: unknown, flow: 'login' | 'register', t: Dict): { message
 
 /** A login in progress (see `/api/auth/login`): the client holds it by id + secret token. */
 type LoginRef = { loginId: string; loginToken: string };
-type LoginStep = 'phone' | 'totp' | 'approval' | 'done';
+type LoginStep = 'phone' | 'totp' | 'done';
 type LoginResponse = { step: LoginStep; loginId: string; loginToken?: string; expiresAt: string; ticket: Ticket | null };
-type Stage = { kind: 'credentials' } | { kind: 'phone'; ticket: Ticket } | { kind: 'totp'; recovery: boolean } | { kind: 'approval' };
+type Stage = { kind: 'credentials' } | { kind: 'phone'; ticket: Ticket } | { kind: 'totp' };
 
-/** The authenticator step; `recoveryOnly` when coming from the approval wait ("can't reach the other device"). */
-function TotpStep({
-  login,
-  recoveryOnly,
-  onNext,
-  onRestart,
-}: {
-  login: LoginRef;
-  recoveryOnly: boolean;
-  onNext: (res: LoginResponse) => void;
-  onRestart: (message?: string) => void;
-}) {
+/** The authenticator step; a recovery code can stand in for the app. */
+function TotpStep({ login, onNext, onRestart }: { login: LoginRef; onNext: (res: LoginResponse) => void; onRestart: (message?: string) => void }) {
   const { t } = useI18n();
   const s = t.auth.totp;
-  const [recovery, setRecovery] = useState(recoveryOnly);
+  const [recovery, setRecovery] = useState(false);
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -159,80 +150,20 @@ function TotpStep({
         <button type="button" onClick={() => onRestart()} className="text-muted underline-offset-4 transition-colors hover:text-ink hover:underline">
           {t.auth.loginPhone.back}
         </button>
-        {!recoveryOnly && (
-          <button
-            type="button"
-            onClick={() => {
-              setRecovery((r) => !r);
-              setCode('');
-              setError(null);
-            }}
-            className="flex items-center gap-1.5 text-muted transition-colors hover:text-ink"
-          >
-            <LifeBuoy className="size-3.5" />
-            {recovery ? s.useApp : s.useRecovery}
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => {
+            setRecovery((r) => !r);
+            setCode('');
+            setError(null);
+          }}
+          className="flex items-center gap-1.5 text-muted transition-colors hover:text-ink"
+        >
+          <LifeBuoy className="size-3.5" />
+          {recovery ? s.useApp : s.useRecovery}
+        </button>
       </div>
     </form>
-  );
-}
-
-/** Polls the login while the signed-in device decides. */
-function ApprovalStep({ login, onNext, onRestart, onRecovery }: { login: LoginRef; onNext: (res: LoginResponse) => void; onRestart: (message?: string) => void; onRecovery: () => void }) {
-  const { t } = useI18n();
-  const a = t.auth.approval;
-  const next = useEffectEvent(onNext);
-  const restart = useEffectEvent((err: unknown) => onRestart(codeError(err, getDict()).message));
-
-  useEffect(() => {
-    let stopped = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const poll = async () => {
-      try {
-        const res = await api<LoginResponse>('/api/auth/login/status', { method: 'POST', body: login, timeoutMs: 10_000 });
-        if (stopped) return;
-        if (res.step !== 'approval') return next(res);
-      } catch (err) {
-        if (stopped) return;
-        // Network blips and rate limits just wait for the next round; an ended login goes back to the start.
-        if (err instanceof ApiRequestError && (err.status === 403 || err.status === 404)) return restart(err);
-      }
-      timer = setTimeout(() => void poll(), 3_000);
-    };
-    timer = setTimeout(() => void poll(), 3_000);
-    return () => {
-      stopped = true;
-      clearTimeout(timer);
-    };
-  }, [login]);
-
-  const cancel = () => {
-    void api('/api/auth/login/cancel', { method: 'POST', body: login }).catch(() => {});
-    onRestart();
-  };
-
-  return (
-    <div className="grid gap-5">
-      <div className="flex flex-col items-center gap-4 rounded-lg border border-line bg-raised/30 p-5 text-center">
-        <span className="relative flex size-14 items-center justify-center rounded-full bg-brand/15 text-brand">
-          <span aria-hidden className="absolute inset-0 animate-ping rounded-full bg-brand/20 motion-reduce:animate-none" />
-          <MonitorSmartphone className="size-7" />
-        </span>
-        <p className="text-sm text-ink-2">{a.text}</p>
-        <p className="flex items-center gap-2 text-sm text-muted">
-          <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
-          {a.waiting}
-        </p>
-      </div>
-      <button type="button" onClick={onRecovery} className="mx-auto flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-ink">
-        <LifeBuoy className="size-3.5" />
-        {a.lost}
-      </button>
-      <Button variant="outline" className="w-full" onClick={cancel}>
-        {a.cancel}
-      </Button>
-    </div>
   );
 }
 
@@ -240,10 +171,8 @@ function ApprovalStep({ login, onNext, onRestart, onRecovery }: { login: LoginRe
 export function LoginPage({ onAuthed }: { onAuthed: () => void }) {
   const { t, lang } = useI18n();
   const l = t.auth.login;
-  const [mode, setMode] = useState<'password' | 'token'>('password');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [token, setToken] = useState('');
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string[]>>({});
@@ -256,8 +185,7 @@ export function LoginPage({ onAuthed }: { onAuthed: () => void }) {
     if (res.step === 'done') return onAuthed();
     setLogin(ref);
     if (res.step === 'phone' && res.ticket) setStage({ kind: 'phone', ticket: res.ticket });
-    else if (res.step === 'totp') setStage({ kind: 'totp', recovery: false });
-    else if (res.step === 'approval') setStage({ kind: 'approval' });
+    else if (res.step === 'totp') setStage({ kind: 'totp' });
   };
 
   const restart = (message?: string) => {
@@ -273,16 +201,8 @@ export function LoginPage({ onAuthed }: { onAuthed: () => void }) {
     setError(null);
     setErrors({});
     try {
-      if (mode === 'password') {
-        const res = await api<LoginResponse>('/api/auth/login', { method: 'POST', body: { email, password, remember, lang } });
-        return proceed(res, { loginId: res.loginId, loginToken: res.loginToken ?? '' });
-      } else {
-        const value = token.trim();
-        if (!value.startsWith('wap_')) throw new Error(l.tokenPrefixError);
-        // The token itself is never stored: it's exchanged for the HttpOnly session cookie.
-        await api('/api/auth/session', { method: 'POST', token: value, body: { remember } });
-      }
-      onAuthed();
+      const res = await api<LoginResponse>('/api/auth/login', { method: 'POST', body: { email, password, remember, lang }, timeoutMs: SEND_CODE_TIMEOUT_MS });
+      proceed(res, { loginId: res.loginId, loginToken: res.loginToken ?? '' });
     } catch (err) {
       const { message, fields } = authError(err, 'login', t);
       setError(message);
@@ -292,36 +212,37 @@ export function LoginPage({ onAuthed }: { onAuthed: () => void }) {
     }
   };
 
+  const ls = t.auth.register.loginSteps;
+  // The phone step is skipped by the server when it can't send a code, so it only shows once reached.
+  const stepItems = [{ id: 'credentials', label: ls.credentials }, ...(stage.kind === 'phone' ? [{ id: 'phone', label: ls.phone }] : []), { id: 'totp', label: ls.totp }];
+  const steps = { items: stepItems, current: stage.kind };
+  const panel = t.auth.register.loginPanel;
+
   if (login && stage.kind !== 'credentials') {
-    const step =
-      stage.kind === 'phone'
-        ? { title: t.auth.loginPhone.title, subtitle: t.auth.loginPhone.subtitle }
-        : stage.kind === 'totp'
-          ? { title: t.auth.totp.title, subtitle: stage.recovery ? t.auth.totp.recoveryHint : t.auth.totp.subtitle }
-          : { title: t.auth.approval.title, subtitle: email };
+    const step = stage.kind === 'phone' ? { title: t.auth.loginPhone.title, subtitle: t.auth.loginPhone.subtitle } : { title: t.auth.totp.title, subtitle: t.auth.totp.subtitle };
     return (
-      <AuthLayout title={step.title} subtitle={step.subtitle} footer={null}>
+      <SplitAuthLayout panel={panel} steps={steps} title={step.title} subtitle={step.subtitle} footer={null}>
         {stage.kind === 'phone' ? (
           <CodeStep
             ticket={stage.ticket}
             submitLabel={t.auth.loginPhone.submit}
             onVerify={async (_verificationId, code) => proceed(await api<LoginResponse>('/api/auth/login/phone', { method: 'POST', body: { ...login, code } }), login)}
-            onResend={() => api<Ticket>('/api/auth/login/phone/resend', { method: 'POST', body: login })}
+            onResend={() => api<Ticket>('/api/auth/login/phone/resend', { method: 'POST', body: login, timeoutMs: SEND_CODE_TIMEOUT_MS })}
             onRestart={restart}
           />
-        ) : stage.kind === 'totp' ? (
-          <TotpStep key={String(stage.recovery)} login={login} recoveryOnly={stage.recovery} onNext={(res) => proceed(res, login)} onRestart={restart} />
         ) : (
-          <ApprovalStep login={login} onNext={(res) => proceed(res, login)} onRestart={restart} onRecovery={() => setStage({ kind: 'totp', recovery: true })} />
+          <TotpStep login={login} onNext={(res) => proceed(res, login)} onRestart={restart} />
         )}
-      </AuthLayout>
+      </SplitAuthLayout>
     );
   }
 
   return (
-    <AuthLayout
+    <SplitAuthLayout
+      panel={panel}
+      steps={steps}
       title={l.title}
-      subtitle={mode === 'password' ? l.subtitlePassword : l.subtitleToken}
+      subtitle={l.subtitle}
       footer={
         <>
           {l.noAccount}{' '}
@@ -331,67 +252,181 @@ export function LoginPage({ onAuthed }: { onAuthed: () => void }) {
         </>
       }
     >
-      <form onSubmit={submit} className="grid gap-6">
-        {mode === 'password' ? (
-          <div key="password" className="animate-fade-in grid gap-6">
-            <Field
-              label={l.email}
-              type="email"
-              autoComplete="email"
-              placeholder="email@example.com"
-              dir="ltr"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              autoFocus
-              error={errors.email}
-            />
-            <Field
-              label={l.password}
-              type="password"
-              autoComplete="current-password"
-              placeholder={l.passwordPlaceholder}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              error={errors.password}
-            />
-          </div>
-        ) : (
-          <div key="token" className="animate-fade-in">
-            <Field
-              label={l.token}
-              placeholder="wap_…"
-              dir="ltr"
-              className="font-mono"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              required
-              autoFocus
-              autoComplete="off"
-              hint={l.tokenHint}
-            />
-          </div>
-        )}
+      <form onSubmit={submit} className="grid gap-5">
+        <Field
+          label={l.email}
+          type="email"
+          autoComplete="email"
+          placeholder="email@example.com"
+          dir="ltr"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+          autoFocus
+          error={errors.email}
+        />
+        <Field
+          label={l.password}
+          type="password"
+          autoComplete="current-password"
+          placeholder={l.passwordPlaceholder}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+          error={errors.password}
+        />
         <Checkbox label={l.remember} checked={remember} onChange={setRemember} />
         <ErrorNote>{error}</ErrorNote>
-        <Button type="submit" loading={loading} className="mt-4 w-full">
+        <Button type="submit" loading={loading} size="lg" className="mt-2 w-full">
           {l.submit}
         </Button>
-        <button
-          type="button"
-          onClick={() => {
-            setMode((m) => (m === 'password' ? 'token' : 'password'));
-            setError(null);
-            setErrors({});
-          }}
-          className="mx-auto flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-ink"
-        >
-          <KeyRound className="size-3.5" />
-          {mode === 'password' ? l.toToken : l.toPassword}
-        </button>
       </form>
-    </AuthLayout>
+    </SplitAuthLayout>
+  );
+}
+
+/** Rough strength from length and variety — a hint, not the server's rule (which is length + a blocklist). */
+function passwordStrength(password: string): 0 | 1 | 2 | 3 {
+  if (!password) return 0;
+  let score = 0;
+  if (password.length >= 8) score++;
+  if (password.length >= 12) score++;
+  if (/[^a-z0-9]/i.test(password) || (/[a-z]/.test(password) && /[A-Z]/.test(password)) || (/\d/.test(password) && /[a-z]/i.test(password))) score++;
+  if (/^(.)\1+$/.test(password) || /^(1234|abcd|qwer|pass)/i.test(password)) score = Math.min(score, 1);
+  return Math.min(3, Math.max(1, score)) as 1 | 2 | 3;
+}
+
+function StrengthMeter({ password }: { password: string }) {
+  const { t } = useI18n();
+  const s = t.auth.register.strength;
+  const level = passwordStrength(password);
+  if (!password) return null;
+  const label = level <= 1 ? s.weak : level === 2 ? s.fair : s.strong;
+  const color = level <= 1 ? 'bg-red-500' : level === 2 ? 'bg-amber-500' : 'bg-brand';
+  return (
+    <div className="animate-fade-in flex items-center gap-2" aria-live="polite">
+      <span className="flex flex-1 gap-1">
+        {[1, 2, 3].map((i) => (
+          <span key={i} className={cx('h-1 flex-1 rounded-full transition-colors duration-300', i <= level ? color : 'bg-line')} />
+        ))}
+      </span>
+      <span className="text-[11px] text-muted">
+        {s.label}: <span className="font-medium text-ink-2">{label}</span>
+      </span>
+    </div>
+  );
+}
+
+/** Where we are in a multi-step flow: done steps ticked, the current one highlighted. */
+function Steps({ items, current }: { items: { id: string; label: string }[]; current: string }) {
+  const at = items.findIndex((s) => s.id === current);
+  return (
+    <ol className="flex flex-wrap items-center gap-2 text-xs">
+      {items.map((s, i) => {
+        const done = i < at;
+        const active = i === at;
+        return (
+          <li key={s.id} className="flex items-center gap-2">
+            {i > 0 && <span className={cx('h-px w-6 transition-colors sm:w-8', done || active ? 'bg-brand' : 'bg-line')} />}
+            <span className={cx('flex size-5 items-center justify-center rounded-full text-[11px] font-semibold transition-colors', active || done ? 'bg-brand text-on-brand' : 'bg-raised text-muted')}>
+              {done ? <Check className="size-3" /> : i + 1}
+            </span>
+            <span className={cx('font-medium', active ? 'text-ink' : 'text-muted')}>{s.label}</span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+/**
+ * Two columns: what the product offers on the start side (the brand gradient), the form on the end
+ * side; on small screens only the form shows. `steps` draws the progress of a multi-step flow.
+ */
+function SplitAuthLayout({
+  panel,
+  steps,
+  title,
+  subtitle,
+  children,
+  footer,
+}: {
+  panel: { eyebrow: string; heading: string };
+  steps?: { items: { id: string; label: string }[]; current: string };
+  title: string;
+  subtitle: ReactNode;
+  children: ReactNode;
+  footer: ReactNode;
+}) {
+  const { t } = useI18n();
+  const r = t.auth.register;
+  const icons = [Wallet, Code2, LayoutDashboard];
+  return (
+    <main className="relative flex min-h-svh bg-bg">
+      {/* brand panel */}
+      <aside className="relative hidden w-[46%] max-w-xl shrink-0 overflow-hidden bg-gradient-to-br from-grad-from to-grad-to text-on-brand lg:sticky lg:top-0 lg:flex lg:h-svh lg:flex-col lg:justify-between lg:p-10 xl:p-12">
+        <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[0.12] [background-image:radial-gradient(currentColor_1px,transparent_1px)] [background-size:22px_22px]" />
+        <div aria-hidden className="animate-glow pointer-events-none absolute -bottom-32 -start-24 size-[420px] rounded-full bg-white/15 blur-[100px]" />
+        <Link href="/" aria-label={t.common.home} className="animate-fade-up relative inline-flex w-fit items-center gap-2.5">
+          <LogoMark className="size-9" />
+          <span dir="ltr" className="text-lg font-bold tracking-tight">
+            {BRAND.name}
+          </span>
+        </Link>
+        <div className="relative space-y-6 py-6">
+          <div className="animate-fade-up space-y-2" style={delay(80)}>
+            <p className="text-xs font-semibold tracking-[0.2em] uppercase opacity-70">{panel.eyebrow}</p>
+            <h2 className="text-2xl leading-tight font-bold xl:text-3xl">{panel.heading}</h2>
+          </div>
+          <ul className="space-y-4">
+            {r.panel.points.map((p, i) => {
+              const Icon = icons[i] ?? Check;
+              return (
+                <li key={p.title} className="animate-fade-up flex items-start gap-4" style={delay(160 + i * 80)}>
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/20 backdrop-blur">
+                    <Icon className="size-5" />
+                  </span>
+                  <span>
+                    <span className="block font-semibold">{p.title}</span>
+                    <span className="block text-sm opacity-80">{p.text}</span>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+        <div className="animate-fade-in relative flex flex-wrap gap-2 text-xs font-medium" style={delay(450)}>
+          <span className="rounded-full bg-white/15 px-3 py-1.5 ring-1 ring-white/20">{r.panel.trial}</span>
+          <span className="rounded-full bg-white/15 px-3 py-1.5 ring-1 ring-white/20">{r.panel.noCard}</span>
+        </div>
+      </aside>
+
+      {/* form */}
+      <section className="page-wash relative flex min-w-0 flex-1 flex-col items-center justify-center px-6 py-14 md:px-10 lg:py-8">
+        <div className="absolute top-3 end-3 flex items-center gap-1">
+          <ThemeSwitch />
+          <LangSwitch />
+        </div>
+        <Link href="/" aria-label={t.common.home} className="absolute top-4 start-5 lg:hidden">
+          <LogoMark className="size-9" />
+        </Link>
+        <div className="relative w-full max-w-md space-y-6">
+          <div className="animate-fade-up space-y-4">
+            {steps && <Steps items={steps.items} current={steps.current} />}
+            <div className="space-y-1.5">
+              <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+              <p className="text-sm text-muted">{subtitle}</p>
+            </div>
+          </div>
+          <div className="animate-fade-up" style={delay(120)}>
+            {children}
+          </div>
+          <p className="animate-fade-in text-center text-sm text-muted" style={delay(300)}>
+            {footer}
+          </p>
+        </div>
+      </section>
+    </main>
   );
 }
 
@@ -421,7 +456,7 @@ export function RegisterPage({ onAuthed }: { onAuthed: () => void }) {
     if (password !== confirm) return setErrors({ confirm: [r.mismatch] });
     setLoading(true);
     try {
-      setTicket(await api<Ticket>('/api/auth/register', { method: 'POST', body: { name, email, phone: normalized, password, lang } }));
+      setTicket(await api<Ticket>('/api/auth/register', { method: 'POST', body: { name, email, phone: normalized, password, lang }, timeoutMs: SEND_CODE_TIMEOUT_MS }));
     } catch (err) {
       const { message, fields } = authError(err, 'register', t);
       setError(message);
@@ -440,9 +475,11 @@ export function RegisterPage({ onAuthed }: { onAuthed: () => void }) {
     </>
   );
 
+  const steps = (current: 'details' | 'verify') => ({ items: [{ id: 'details', label: r.steps.details }, { id: 'verify', label: r.steps.verify }], current });
+
   if (ticket) {
     return (
-      <AuthLayout title={t.auth.verify.title} subtitle={r.subtitle} footer={footer}>
+      <SplitAuthLayout panel={r.panel} steps={steps('verify')} title={t.auth.verify.title} subtitle={r.subtitle} footer={footer}>
         <CodeStep
           ticket={ticket}
           submitLabel={t.auth.verify.submit}
@@ -450,31 +487,33 @@ export function RegisterPage({ onAuthed }: { onAuthed: () => void }) {
             await api('/api/auth/register/verify', { method: 'POST', body: { verificationId, code, remember: true } });
             onAuthed();
           }}
-          onResend={(verificationId) => api<Ticket>('/api/auth/register/resend', { method: 'POST', body: { verificationId } })}
+          onResend={(verificationId) => api<Ticket>('/api/auth/register/resend', { method: 'POST', body: { verificationId }, timeoutMs: SEND_CODE_TIMEOUT_MS })}
           onRestart={(message) => {
             setTicket(null);
             setError(message ?? null);
           }}
         />
-      </AuthLayout>
+      </SplitAuthLayout>
     );
   }
 
   return (
-    <AuthLayout title={r.title} subtitle={r.subtitle} footer={footer}>
-      <form onSubmit={submit} className="grid gap-6">
-        <Field label={r.name} autoComplete="name" placeholder={r.namePlaceholder} value={name} onChange={(e) => setName(e.target.value)} required autoFocus error={errors.name} />
-        <Field
-          label={t.auth.login.email}
-          type="email"
-          autoComplete="email"
-          placeholder="email@example.com"
-          dir="ltr"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          error={errors.email}
-        />
+    <SplitAuthLayout panel={r.panel} steps={steps('details')} title={r.title} subtitle={r.subtitle} footer={footer}>
+      <form onSubmit={submit} className="grid gap-4">
+        <div className="grid gap-4 sm:grid-cols-2 sm:items-start">
+          <Field label={r.name} autoComplete="name" placeholder={r.namePlaceholder} value={name} onChange={(e) => setName(e.target.value)} required autoFocus error={errors.name} />
+          <Field
+            label={t.auth.login.email}
+            type="email"
+            autoComplete="email"
+            placeholder="email@example.com"
+            dir="ltr"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            error={errors.email}
+          />
+        </div>
         <Field
           label={r.phone}
           type="tel"
@@ -487,33 +526,40 @@ export function RegisterPage({ onAuthed }: { onAuthed: () => void }) {
           hint={r.phoneHint}
           error={errors.phone}
         />
-        <Field
-          label={r.password}
-          type="password"
-          autoComplete="new-password"
-          placeholder={r.passwordPlaceholder}
-          minLength={8}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          error={errors.password}
-        />
-        <Field
-          label={r.confirm}
-          type="password"
-          autoComplete="new-password"
-          placeholder={r.confirmPlaceholder}
-          value={confirm}
-          onChange={(e) => setConfirm(e.target.value)}
-          required
-          error={errors.confirm}
-        />
+        <div className="grid gap-2">
+          <div className="grid gap-4 sm:grid-cols-2 sm:items-start">
+            <Field
+              label={r.password}
+              type="password"
+              autoComplete="new-password"
+              placeholder={r.passwordPlaceholder}
+              minLength={8}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              error={errors.password}
+            />
+            <Field
+              label={r.confirm}
+              type="password"
+              autoComplete="new-password"
+              placeholder={r.confirmPlaceholder}
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              required
+              error={errors.confirm}
+              aside={confirm && password === confirm ? <Check className="size-3.5 text-brand" aria-hidden /> : undefined}
+            />
+          </div>
+          <StrengthMeter password={password} />
+        </div>
         <ErrorNote>{error}</ErrorNote>
-        <Button type="submit" loading={loading} className="mt-4 w-full">
+        <Button type="submit" loading={loading} size="lg" className="mt-1 w-full">
           {r.next}
         </Button>
+        <p className="text-center text-xs text-faint">{r.agree}</p>
       </form>
-    </AuthLayout>
+    </SplitAuthLayout>
   );
 }
 

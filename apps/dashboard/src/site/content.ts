@@ -26,15 +26,15 @@ import {
  * arrays), so both languages share one layout.
  */
 
-export const NAV_HREFS = ['#features', '#how', '#pricing', '/docs', '#faq'];
+export const NAV_HREFS = ['#features', '#how', '#pricing', '/guide', '#faq'];
 
 export const LANGUAGES = ['Node.js', 'Python', 'PHP', 'Laravel', 'Go', 'Java', 'C#', 'Ruby', 'n8n', 'Make'];
 
 export const RESOURCES = [
-  { icon: BookOpen, tint: 'text-sky-400', href: '/docs' },
-  { icon: KeyRound, tint: 'text-amber-400', href: '/register' },
-  { icon: ShieldCheck, tint: 'text-brand', href: '/docs' },
-  { icon: ArrowLeftRight, tint: 'text-rose-400', href: '/docs' },
+  { icon: BookOpen, tint: 'text-sky-400', href: '/guide' },
+  { icon: KeyRound, tint: 'text-amber-400', href: '/guide#get-key' },
+  { icon: ShieldCheck, tint: 'text-brand', href: '/guide#playground' },
+  { icon: ArrowLeftRight, tint: 'text-rose-400', href: '/guide#code' },
 ];
 
 export const STEP_ICONS = [QrCode, MessageSquare, BarChart3];
@@ -55,6 +55,6 @@ export const PRICED_PLANS: PricedPlan[] = [PLANS.basic, { ...PLANS.pro, popular:
 // Terms of service and privacy policy pages still need writing (README §10) — add them here once they exist.
 export const FOOTER_HREFS = [
   ['/#features', '/#how', '/#pricing'],
-  ['/docs', '/docs/openapi.json', '/dashboard'],
+  ['/guide', '/docs', '/dashboard'],
   ['/#faq', '/register', '/login'],
 ];

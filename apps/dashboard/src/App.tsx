@@ -7,6 +7,7 @@ import { BRAND } from './brand';
 import { stopLiveEvents } from './events';
 import { signOut } from './session';
 import { getDict, useI18n } from './i18n';
+import { pageChunks } from './prefetch';
 import { qk } from './queries';
 import { afterLoginPath, isAppPath, Link, navigate, usePath } from './router';
 import { Button, buttonClass, LangSwitch, Loading, Logo, ThemeSwitch } from './ui';
@@ -27,20 +28,23 @@ function loadChunk<T>(load: () => Promise<T>, attempts = 3): Promise<T> {
 
 // Each area loads on demand: the landing page doesn't download the dashboard, and the reverse.
 const Landing = lazy(() => loadChunk(() => import('./site/Landing')).then((m) => ({ default: m.Landing })));
+const GuidePage = lazy(() => loadChunk(() => import('./site/Guide')).then((m) => ({ default: m.GuidePage })));
 const LoginPage = lazy(() => loadChunk(() => import('./auth/AuthPages')).then((m) => ({ default: m.LoginPage })));
 const RegisterPage = lazy(() => loadChunk(() => import('./auth/AuthPages')).then((m) => ({ default: m.RegisterPage })));
 const TwoFactorSetup = lazy(() => loadChunk(() => import('./auth/TwoFactor')).then((m) => ({ default: m.TwoFactorSetup })));
 const RecoveryCodes = lazy(() => loadChunk(() => import('./auth/TwoFactor')).then((m) => ({ default: m.RecoveryCodes })));
 const AppShell = lazy(() => loadChunk(() => import('./app/AppShell')).then((m) => ({ default: m.AppShell })));
-const DashboardPage = lazy(() => loadChunk(() => import('./pages/Dashboard')).then((m) => ({ default: m.DashboardPage })));
-const SessionsPage = lazy(() => loadChunk(() => import('./pages/Sessions')).then((m) => ({ default: m.SessionsPage })));
+
+const DashboardPage = lazy(() => loadChunk(pageChunks['/dashboard']).then((m) => ({ default: m.DashboardPage })));
+const SessionsPage = lazy(() => loadChunk(pageChunks['/sessions']).then((m) => ({ default: m.SessionsPage })));
 const SessionDetailPage = lazy(() => loadChunk(() => import('./pages/SessionDetail')).then((m) => ({ default: m.SessionDetailPage })));
-const TemplatesPage = lazy(() => loadChunk(() => import('./pages/Templates')).then((m) => ({ default: m.TemplatesPage })));
-const KeysPage = lazy(() => loadChunk(() => import('./pages/Keys')).then((m) => ({ default: m.KeysPage })));
-const SubscriptionPage = lazy(() => loadChunk(() => import('./pages/Subscription')).then((m) => ({ default: m.SubscriptionPage })));
-const AdminPage = lazy(() => loadChunk(() => import('./pages/Admin')).then((m) => ({ default: m.AdminPage })));
-const AdsPage = lazy(() => loadChunk(() => import('./pages/Ads')).then((m) => ({ default: m.AdsPage })));
-const ChatsPage = lazy(() => loadChunk(() => import('./pages/Chats')).then((m) => ({ default: m.ChatsPage })));
+const TemplatesPage = lazy(() => loadChunk(pageChunks['/templates']).then((m) => ({ default: m.TemplatesPage })));
+const KeysPage = lazy(() => loadChunk(pageChunks['/keys']).then((m) => ({ default: m.KeysPage })));
+const SubscriptionPage = lazy(() => loadChunk(pageChunks['/subscription']).then((m) => ({ default: m.SubscriptionPage })));
+const AdminPage = lazy(() => loadChunk(pageChunks['/admin']).then((m) => ({ default: m.AdminPage })));
+const AdsPage = lazy(() => loadChunk(pageChunks['/ads']).then((m) => ({ default: m.AdsPage })));
+const ChatsPage = lazy(() => loadChunk(pageChunks['/chats']).then((m) => ({ default: m.ChatsPage })));
+const ProfilePage = lazy(() => loadChunk(pageChunks['/profile']).then((m) => ({ default: m.ProfilePage })));
 
 const subscribeOnline = (notify: () => void) => {
   window.addEventListener('online', notify);
@@ -196,6 +200,8 @@ function AppPage({ path }: { path: string }) {
       return <AdsPage />;
     case '/chats':
       return <ChatsPage />;
+    case '/profile':
+      return <ProfilePage />;
     default:
       return <Redirect to="/dashboard" />;
   }
@@ -269,6 +275,7 @@ export function App() {
 
   let page: ReactNode;
   if (path === '/') page = <Landing />;
+  else if (path === '/guide') page = <GuidePage />;
   else if (path === '/login')
     page = (
       <GuestOnly>

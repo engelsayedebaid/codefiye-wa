@@ -1,4 +1,23 @@
-import { ArrowRight, ArrowUpRight, Check, ChevronDown, CircleHelp, Clock, CreditCard, Menu, Sparkles, Users, X, Zap } from 'lucide-react';
+import {
+  Activity,
+  ArrowRight,
+  ArrowUpRight,
+  Check,
+  CheckCheck,
+  ChevronDown,
+  CircleHelp,
+  Clock,
+  Code2,
+  CreditCard,
+  Menu,
+  Shield,
+  Sparkles,
+  Terminal,
+  Users,
+  Webhook,
+  X,
+  Zap,
+} from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { sessionHint } from '../api';
 import { BRAND } from '../brand';
@@ -49,7 +68,7 @@ function Spotlight() {
 
 function Heading({ top, accent, accentFirst, className }: { top: ReactNode; accent: ReactNode; accentFirst?: boolean; className?: string }) {
   return (
-    <h2 className={cx('text-4xl leading-[1.15] font-bold tracking-tight text-balance sm:text-6xl', className)}>
+    <h2 className={cx('text-4xl leading-[1.12] font-bold tracking-tight text-balance sm:text-5xl lg:text-6xl', className)}>
       {accentFirst ? (
         <>
           <span className="text-shimmer">{accent}</span> {top}
@@ -68,9 +87,12 @@ function Heading({ top, accent, accentFirst, className }: { top: ReactNode; acce
 function SectionIntro({ eyebrow, top, accent, text, accentFirst }: { eyebrow: ReactNode; top: ReactNode; accent: ReactNode; text: ReactNode; accentFirst?: boolean }) {
   return (
     <Reveal className="mx-auto max-w-3xl text-center">
-      <span className="eyebrow">{eyebrow}</span>
-      <Heading top={top} accent={accent} accentFirst={accentFirst} className="mt-7" />
-      <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-ink-2 sm:text-xl">{text}</p>
+      <span className="eyebrow">
+        <span className="size-1.5 rounded-full bg-brand" />
+        {eyebrow}
+      </span>
+      <Heading top={top} accent={accent} accentFirst={accentFirst} className="mt-6" />
+      <p className="mx-auto mt-5 max-w-2xl text-lg leading-relaxed text-ink-2 sm:text-xl">{text}</p>
     </Reveal>
   );
 }
@@ -82,126 +104,254 @@ function Header() {
   const signedIn = sessionHint.get();
 
   return (
-    <header className="animate-fade-in relative z-20 bg-bg">
-      <div className="relative mx-auto flex max-w-7xl items-center justify-between gap-6 px-6 py-5">
-        <Link href="/" aria-label={BRAND.name}>
-          <Logo />
-        </Link>
-        <nav className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-8 lg:flex">
-          {t.landing.nav.map((label, i) => (
-            <a
-              key={label}
-              href={NAV_HREFS[i]}
-              className="relative text-sm font-medium whitespace-nowrap text-ink-2 transition-colors after:absolute after:inset-x-0 after:-bottom-1.5 after:h-px after:origin-center after:scale-x-0 after:bg-brand after:transition-transform after:duration-300 hover:text-ink hover:after:scale-x-100"
-            >
-              {label}
-            </a>
-          ))}
-        </nav>
-        <div className="hidden min-w-[200px] items-center justify-end gap-2 lg:flex">
-          <ThemeSwitch />
-          <LangSwitch />
-          {signedIn ? (
-            <Link href="/dashboard" className={buttonClass('white', 'md')}>
-              {t.landing.dashboard} <Arrow />
-            </Link>
-          ) : (
-            <>
-              <Link href="/login" className={buttonClass('ghost', 'md', 'text-ink-2 hover:bg-ink/[0.06] hover:text-ink')}>
-                {t.landing.login}
-              </Link>
-              <Link href="/register" className={buttonClass('white', 'md')}>
-                {t.landing.getStarted} <Arrow />
-              </Link>
-            </>
-          )}
-        </div>
-        <div className="flex items-center gap-1 lg:hidden">
-          <ThemeSwitch />
-          <LangSwitch />
-          <button className="rounded-md p-2 text-ink-2" onClick={() => setOpen((o) => !o)} aria-label={t.common.menu} aria-expanded={open}>
-            {open ? <X className="size-5" /> : <Menu className="size-5" />}
-          </button>
-        </div>
-      </div>
-      {open && (
-        <div className="animate-fade-up border-t border-line px-4 pb-5 lg:hidden">
-          <nav className="flex flex-col py-2">
+    <header className="animate-fade-in sticky top-0 z-40 px-3 pt-3 sm:px-6">
+      <div className="mx-auto max-w-7xl rounded-2xl border border-line/80 bg-card/80 px-4 py-3 shadow-[0_12px_40px_-16px_rgba(0,0,0,0.35)] backdrop-blur-xl sm:px-6">
+        <div className="relative flex items-center justify-between gap-6">
+          <Link href="/" aria-label={BRAND.name}>
+            <Logo />
+          </Link>
+          <nav className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-1 rounded-full border border-line/70 bg-ink/[0.03] p-1 lg:flex">
             {t.landing.nav.map((label, i) => (
-              <a key={label} href={NAV_HREFS[i]} onClick={() => setOpen(false)} className="rounded-md px-2 py-3 text-ink-2 hover:text-ink">
+              <Link
+                key={label}
+                href={NAV_HREFS[i]!}
+                className="rounded-full px-4 py-1.5 text-sm font-medium whitespace-nowrap text-ink-2 transition-all duration-200 hover:bg-raised/80 hover:text-ink"
+              >
                 {label}
-              </a>
+              </Link>
             ))}
           </nav>
-          <div className="grid grid-cols-2 gap-3">
-            <Link href={signedIn ? '/dashboard' : '/login'} className={buttonClass('outline', 'md')}>
-              {signedIn ? t.landing.dashboard : t.landing.login}
-            </Link>
-            <Link href="/register" className={buttonClass('white', 'md')}>
-              {t.landing.getStarted}
-            </Link>
+          <div className="hidden min-w-[200px] items-center justify-end gap-2 lg:flex">
+            <ThemeSwitch />
+            <LangSwitch />
+            {signedIn ? (
+              <Link href="/dashboard" className={buttonClass('brand', 'md', 'shine rounded-xl bg-gradient-to-r from-brand to-teal text-on-brand')}>
+                {t.landing.dashboard} <Arrow />
+              </Link>
+            ) : (
+              <>
+                <Link href="/login" className={buttonClass('ghost', 'md', 'rounded-xl text-ink-2 hover:bg-ink/[0.06] hover:text-ink')}>
+                  {t.landing.login}
+                </Link>
+                <Link href="/register" className={buttonClass('brand', 'md', 'shine rounded-xl bg-gradient-to-r from-brand to-teal text-on-brand')}>
+                  {t.landing.getStarted} <Arrow />
+                </Link>
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-1 lg:hidden">
+            <ThemeSwitch />
+            <LangSwitch />
+            <button className="rounded-lg p-2 text-ink-2 hover:bg-raised" onClick={() => setOpen((o) => !o)} aria-label={t.common.menu} aria-expanded={open}>
+              {open ? <X className="size-5" /> : <Menu className="size-5" />}
+            </button>
           </div>
         </div>
-      )}
+        {open && (
+          <div className="animate-fade-up mt-3 border-t border-line pt-3 pb-2 lg:hidden">
+            <nav className="flex flex-col py-1">
+              {t.landing.nav.map((label, i) => (
+                <Link key={label} href={NAV_HREFS[i]!} onClick={() => setOpen(false)} className="rounded-lg px-3 py-2.5 text-ink-2 hover:bg-raised hover:text-ink">
+                  {label}
+                </Link>
+              ))}
+            </nav>
+            <div className="mt-2 grid grid-cols-2 gap-3">
+              <Link href={signedIn ? '/dashboard' : '/login'} className={buttonClass('outline', 'md', 'rounded-xl')}>
+                {signedIn ? t.landing.dashboard : t.landing.login}
+              </Link>
+              <Link href="/register" className={buttonClass('brand', 'md', 'rounded-xl bg-gradient-to-r from-brand to-teal text-on-brand')}>
+                {t.landing.getStarted}
+              </Link>
+            </div>
+          </div>
+        )}
+      </div>
     </header>
+  );
+}
+
+function HeroShowcase() {
+  const { t } = useI18n();
+  const h = t.landing.hero;
+  const p = t.landing.phone;
+  return (
+    <div className="animate-fade-up relative z-[2] mt-14 w-full max-w-6xl" style={delay(650)}>
+      <div className="card-luxury relative overflow-hidden rounded-3xl border border-line-strong/80 p-3 sm:p-5">
+        <div aria-hidden className="pointer-events-none absolute -top-32 left-1/2 h-64 w-3/4 -translate-x-1/2 rounded-full bg-brand/15 blur-3xl" />
+
+        {/* Architectural Console Top Bar */}
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-surface/70 px-4 py-2.5 text-xs">
+          <div className="flex items-center gap-2.5">
+            <span className="relative flex size-2.5">
+              <span className="absolute inset-0 animate-ping rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative size-2.5 rounded-full bg-emerald-500" />
+            </span>
+            <span className="font-semibold text-ink">{h.preview.liveStatus}</span>
+          </div>
+          <div className="flex items-center gap-3 font-mono text-[11px] text-muted" dir="ltr">
+            <span className="rounded-md border border-line bg-card px-2 py-0.5">TLS 1.3 · AES-256-GCM</span>
+            <span className="hidden rounded-md border border-brand/30 bg-brand/10 px-2 py-0.5 text-brand sm:inline">v1 REST + Webhooks</span>
+          </div>
+        </div>
+
+        {/* 2-Column Live Request → WhatsApp Delivery & Webhook */}
+        <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]" dir="ltr">
+          {/* Request Terminal */}
+          <div className="flex flex-col justify-between rounded-2xl border border-white/10 bg-[#0b0f0e] p-5 text-start font-mono text-xs text-white/85 shadow-xl">
+            <div>
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                <span className="inline-flex items-center gap-2 text-white/70">
+                  <Terminal className="size-3.5 text-brand" />
+                  <span>{h.preview.requestLabel}</span>
+                </span>
+                <span className="rounded-md bg-emerald-500/15 px-2 py-0.5 text-[11px] font-bold text-emerald-400">POST /api/send-message</span>
+              </div>
+              <pre className="mt-4 overflow-x-auto leading-6 text-[#d4d4d4]">
+                <code>
+                  <span className="text-[#569cd6]">await</span> <span className="text-[#dcdcaa]">fetch</span>(
+                  <span className="text-[#ce9178]">'/api/send-message'</span>, {'{\n'}
+                  {'  '}headers: {'{ '}Authorization: <span className="text-[#ce9178]">'Bearer was_live_9f8a…'</span>
+                  {' },\n'}
+                  {'  '}body: JSON.<span className="text-[#dcdcaa]">stringify</span>({'{'}
+                  {'\n'}
+                  {'    '}to: <span className="text-[#ce9178]">'+201012345678'</span>,{'\n'}
+                  {'    '}text: <span className="text-[#ce9178]">'Your OTP code is 482910 🔐'</span>
+                  {'\n'}
+                  {'  }'}){'\n'}
+                  {'}'});
+                </code>
+              </pre>
+            </div>
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/[0.07] px-3.5 py-2.5 text-[11px]">
+              <span className="text-emerald-300">HTTP/1.1 200 OK · msgId: "3EB08F19A2"</span>
+              <span className="font-semibold text-emerald-400">38 ms</span>
+            </div>
+          </div>
+
+          {/* Instant WhatsApp + Webhook Output */}
+          <div className="flex flex-col gap-3">
+            {/* Simulated WhatsApp Message Card */}
+            <div className="rounded-2xl border border-line bg-[#efeae2] p-4 text-start shadow-md dark:bg-[#111715]">
+              <div className="mb-2.5 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="flex size-7 items-center justify-center rounded-full bg-[#008069] text-xs font-bold text-white">{p.initial}</span>
+                  <span className="text-xs font-semibold text-[#111b21] dark:text-white">{p.contact}</span>
+                </div>
+                <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
+                  {h.preview.deliveredBadge}
+                </span>
+              </div>
+              <div className="ms-auto max-w-[92%] rounded-xl rounded-se-xs bg-[#d9fdd3] px-3.5 py-2.5 text-[13px] text-[#111b21] shadow-xs dark:bg-[#10402d] dark:text-white">
+                <p className="font-mono text-xs sm:text-[13px]">Your OTP code is 482910 🔐</p>
+                <div className="mt-1 flex items-center justify-end gap-1 text-[10px] opacity-70">
+                  <span>10:42</span>
+                  <CheckCheck className="size-3.5 text-[#53bdeb]" />
+                </div>
+              </div>
+            </div>
+
+            {/* Webhook Event Stream Card */}
+            <div className="flex-1 rounded-2xl border border-line bg-surface/90 p-4 text-start font-mono text-xs">
+              <div className="flex items-center justify-between text-[11px] text-muted">
+                <span className="inline-flex items-center gap-1.5 font-sans font-semibold text-ink-2">
+                  <Webhook className="size-3.5 text-brand" />
+                  {h.preview.webhookLabel}
+                </span>
+                <span className="text-brand">event: messages.update</span>
+              </div>
+              <pre className="mt-2.5 overflow-x-auto rounded-lg border border-line bg-card/90 p-3 text-[11px] leading-5 text-ink-2">
+                <code>{`{ "msgId": "3EB08F19A2", "status": "delivered", "to": "+201012345678" }`}</code>
+              </pre>
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom Telemetry Metrics Strip */}
+        <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+          {h.metrics.map((m) => (
+            <div key={m.label} className="rounded-2xl border border-line bg-surface/60 px-4 py-3 text-center transition-colors hover:border-brand/40">
+              <p className="ltr font-mono text-xl font-bold tracking-tight text-ink sm:text-2xl">{m.value}</p>
+              <p className="mt-0.5 text-xs font-medium text-muted">{m.label}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 
 function Hero() {
   const { t } = useI18n();
   const h = t.landing.hero;
-  const icons = [CreditCard, Clock, X];
+  const icons = [CreditCard, Clock, Shield];
   return (
-    <section className="relative grid min-h-svh place-content-center overflow-hidden">
+    <section className="relative overflow-hidden pt-10 pb-20 sm:pt-16 sm:pb-28">
       <div aria-hidden className="pointer-events-none absolute inset-0">
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff03_1px,transparent_1px),linear-gradient(to_bottom,#ffffff03_1px,transparent_1px)] bg-[size:30px_30px] light:bg-[linear-gradient(to_right,#0000000a_1px,transparent_1px),linear-gradient(to_bottom,#0000000a_1px,transparent_1px)]" />
-        <div className="absolute inset-0 bg-gradient-to-b from-bg to-navy light:from-bg/60" />
-        <div className="animate-glow absolute -end-80 -top-80 size-[500px] rounded-full bg-brand/10 blur-[120px]" />
-        <div className="absolute start-0 bottom-0 size-[400px] rounded-full bg-[#075e54]/10 blur-[100px]" />
+        <div className="hero-grid absolute inset-0" />
+        <div className="animate-glow absolute -end-72 -top-72 size-[540px] rounded-full bg-brand/12 blur-[130px]" />
+        <div className="absolute start-0 top-1/3 size-[420px] rounded-full bg-teal/10 blur-[120px]" />
       </div>
-      <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 z-10 h-24 bg-gradient-to-b from-bg to-transparent" />
-      <div className="relative z-10 mx-auto flex max-w-5xl flex-col items-center px-4 py-20 text-center">
+      <div className="relative z-10 mx-auto flex max-w-7xl flex-col items-center px-4 text-center sm:px-6">
         <Spotlight />
-        <h1 className="relative z-[2] text-5xl leading-[1.1] font-bold tracking-tight text-balance sm:text-7xl sm:leading-[1.1]">
-          <span className="animate-fade-up block" style={delay(100)}>
+
+        <div className="animate-fade-up relative z-[2]" style={delay(50)}>
+          <span className="eyebrow">
+            <span className="relative flex size-2">
+              <span className="absolute inset-0 animate-ping rounded-full bg-brand opacity-75" />
+              <span className="relative size-2 rounded-full bg-brand" />
+            </span>
+            {h.badge}
+          </span>
+        </div>
+
+        <h1 className="relative z-[2] mt-7 max-w-4xl text-5xl leading-[1.08] font-bold tracking-tight text-balance sm:text-7xl sm:leading-[1.08]">
+          <span className="animate-fade-up block" style={delay(140)}>
             {h.title}
           </span>
-          <span className="animate-fade-up block" style={delay(250)}>
+          <span className="animate-fade-up mt-1 block" style={delay(260)}>
             <span className="text-shimmer">{h.accent}</span>
           </span>
         </h1>
-        <p className="animate-fade-up relative z-[2] mx-auto mt-8 max-w-3xl text-xl leading-relaxed text-ink-2 sm:text-2xl" style={delay(400)}>
+
+        <p className="animate-fade-up relative z-[2] mx-auto mt-7 max-w-2xl text-lg leading-relaxed text-ink-2 sm:text-xl" style={delay(380)}>
           {h.text}
         </p>
-        <div className="animate-fade-up relative z-[2] mt-10 flex flex-wrap items-center justify-center gap-4" style={delay(550)}>
-          <Link href="/register" className={buttonClass('white', 'lg', 'h-12 px-8 text-lg hover:shadow-[0_0_40px_-8px] hover:shadow-brand/50')}>
+
+        <div className="animate-fade-up relative z-[2] mt-9 flex flex-wrap items-center justify-center gap-4" style={delay(500)}>
+          <Link
+            href="/register"
+            className={buttonClass(
+              'brand',
+              'lg',
+              'shine-auto h-13 rounded-2xl bg-gradient-to-r from-brand to-teal px-8 text-base font-semibold text-on-brand shadow-[0_14px_40px_-10px] shadow-brand/50',
+            )}
+          >
             {h.cta} <Arrow />
           </Link>
-          <a href="/docs" className={buttonClass('white', 'md', 'h-10')}>
+          <Link href="/guide" className={buttonClass('outline', 'lg', 'h-13 rounded-2xl border-line-strong bg-card/80 px-7 text-base backdrop-blur')}>
+            <Code2 className="size-4.5 text-brand" />
             {h.docs} <Arrow />
-          </a>
+          </Link>
         </div>
+
         <ul
-          className="animate-fade-up relative z-[2] mx-auto mt-10 inline-flex flex-wrap items-center justify-center gap-x-5 gap-y-2 rounded-2xl border border-line bg-card/70 px-6 py-3.5 text-[15px] font-semibold backdrop-blur"
-          style={delay(700)}
+          className="animate-fade-up relative z-[2] mx-auto mt-8 inline-flex flex-wrap items-center justify-center gap-x-5 gap-y-2 rounded-full border border-line bg-card/75 px-6 py-2.5 text-sm font-medium text-ink-2 shadow-xs backdrop-blur"
+          style={delay(600)}
         >
           {h.trust.map((item, i) => {
             const Icon = icons[i]!;
             return (
               <li key={item} className="flex items-center gap-2">
-                {i > 0 && <span className="me-3 hidden h-4 w-px bg-line-strong sm:block" />}
-                <Icon className={cx('size-4', i === 0 ? 'text-brand' : i === 1 ? 'text-sky-400' : 'text-red-400')} />
+                {i > 0 && <span className="me-3 hidden h-3.5 w-px bg-line-strong sm:block" />}
+                <Icon className={cx('size-4', i === 0 ? 'text-brand' : i === 1 ? 'text-sky-400' : 'text-emerald-400')} />
                 {item}
               </li>
             );
           })}
         </ul>
-        <a href="#features" className="animate-fade-in relative z-[2] mt-14 flex flex-col items-center gap-3 text-sm text-muted transition-colors hover:text-ink" style={delay(1000)}>
-          {h.scroll}
-          <span className="flex h-10 w-6 justify-center rounded-full border border-line-strong pt-2">
-            <span className="animate-scroll-dot size-1.5 rounded-full bg-ink" />
-          </span>
-        </a>
+
+        <HeroShowcase />
       </div>
     </section>
   );
@@ -211,25 +361,25 @@ function Integration() {
   const { t } = useI18n();
   const s = t.landing.integration;
   return (
-    <section id="features" className="section-wash scroll-mt-16 py-24 sm:py-32">
-      <div className="mx-auto max-w-5xl px-4">
+    <section id="features" className="section-wash scroll-mt-20 py-24 sm:py-32">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <SectionIntro eyebrow={s.eyebrow} top={s.top} accent={s.accent} text={s.text} />
         <Reveal delay={100}>
           <CodeTabs className="mt-14" />
         </Reveal>
         <Reveal>
-          <ul className="mt-10 flex flex-wrap items-center justify-center gap-2.5" dir="ltr">
+          <ul className="mt-9 flex flex-wrap items-center justify-center gap-2.5" dir="ltr">
             {LANGUAGES.map((l) => (
               <li key={l}>
-                <span className="block rounded-lg border border-line bg-ink/[0.03] px-3 py-1.5 text-sm font-medium text-ink-2 transition-all duration-300 hover:-translate-y-0.5 hover:border-brand/40 hover:text-ink">
+                <span className="block rounded-xl border border-line bg-card/80 px-3.5 py-1.5 font-mono text-xs font-semibold text-ink-2 shadow-2xs transition-all duration-300 hover:-translate-y-0.5 hover:border-brand/50 hover:text-brand">
                   {l}
                 </span>
               </li>
             ))}
           </ul>
         </Reveal>
-        <Reveal className="mt-12 flex justify-center">
-          <Link href="/register" className={buttonClass('brand', 'lg', 'h-14 bg-gradient-to-r from-brand to-teal px-7 text-lg')}>
+        <Reveal className="mt-11 flex justify-center">
+          <Link href="/register" className={buttonClass('brand', 'lg', 'shine h-13 rounded-2xl bg-gradient-to-r from-brand to-teal px-8 text-base font-semibold')}>
             {s.cta} <Arrow />
           </Link>
         </Reveal>
@@ -241,26 +391,32 @@ function Integration() {
 function DeveloperResources() {
   const { t } = useI18n();
   const s = t.landing.resources;
+  const badges = ['OpenAPI 3.1 · Scalar', 'was_*** · wap_***', 'Idempotency-Key', 'Drop-in REST'];
   return (
     <section className="section-wash py-24 sm:py-32">
-      <div className="mx-auto max-w-5xl px-4">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <SectionIntro eyebrow={s.eyebrow} top={s.top} accent={s.accent} accentFirst text={s.text} />
-        <div className="mt-14 grid gap-6 sm:grid-cols-2">
+        <div className="mt-16 grid gap-6 sm:grid-cols-2">
           {s.items.map((item, i) => {
             const { icon: Icon, tint, href } = RESOURCES[i]!;
             return (
               <Reveal key={item.title} delay={i * 90}>
-                <article className="lift group flex h-full flex-col rounded-xl border border-line bg-gradient-to-b from-card to-surface p-6">
-                  <h3 className="flex items-center gap-3 text-xl font-semibold">
-                    <span className="flex size-10 items-center justify-center rounded-lg bg-ink/5 transition-transform duration-300 group-hover:scale-110">
-                      <Icon className={cx('size-5', tint)} />
+                <article className="lift card-luxury group relative flex h-full flex-col overflow-hidden rounded-3xl border border-line p-7 sm:p-8">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="flex size-12 items-center justify-center rounded-2xl border border-line bg-surface transition-transform duration-300 group-hover:scale-110 group-hover:border-brand/40">
+                      <Icon className={cx('size-5.5', tint)} />
                     </span>
-                    {item.title}
-                  </h3>
-                  <p className="mt-4 flex-1 leading-relaxed text-ink-2">{item.text}</p>
-                  <Link href={href} className="mt-5 inline-flex items-center justify-center gap-2 text-sm font-medium text-brand hover:underline">
-                    {item.cta} <ArrowUpRight className={cx('size-4', flip)} />
-                  </Link>
+                    <span className="ltr rounded-full border border-line bg-surface/80 px-3 py-1 font-mono text-[11px] font-medium text-muted">
+                      {badges[i]}
+                    </span>
+                  </div>
+                  <h3 className="mt-6 text-xl font-bold tracking-tight sm:text-2xl">{item.title}</h3>
+                  <p className="mt-3 flex-1 leading-relaxed text-ink-2">{item.text}</p>
+                  <div className="mt-6 border-t border-line/70 pt-4">
+                    <Link href={href} className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand transition-colors hover:text-brand-strong">
+                      {item.cta} <ArrowUpRight className={cx('size-4 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5', flip)} />
+                    </Link>
+                  </div>
                 </article>
               </Reveal>
             );
@@ -275,33 +431,31 @@ function HowItWorks() {
   const { t } = useI18n();
   const s = t.landing.how;
   return (
-    <section id="how" className="section-wash scroll-mt-16 py-24 sm:py-32">
-      <div className="mx-auto max-w-5xl px-4">
+    <section id="how" className="section-wash scroll-mt-20 py-24 sm:py-32">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6">
         <SectionIntro eyebrow={s.eyebrow} top={s.top} accent={s.accent} text={s.text} />
-        <ol className="mx-auto mt-16 max-w-3xl">
+        <ol className="mt-16 grid gap-6 lg:grid-cols-3">
           {s.steps.map((step, i) => {
             const Icon = STEP_ICONS[i]!;
             return (
-              <li key={step.title} className="relative pb-16 last:pb-0">
-                {i < s.steps.length - 1 && <span className="absolute top-24 bottom-0 start-12 w-px bg-gradient-to-b from-brand/70 to-brand/0" />}
-                <Reveal delay={i * 120} className="flex gap-8">
-                  <span className="relative flex size-24 shrink-0 items-center justify-center rounded-full border border-line-strong bg-gradient-to-b from-raised to-surface text-3xl font-bold shadow-[0_0_40px_-10px] shadow-brand/30">
-                    {i + 1}
-                  </span>
-                  <div className="pt-2">
-                    <span className="flex size-14 items-center justify-center rounded-xl bg-brand/15 text-brand">
+              <Reveal key={step.title} delay={i * 120} className="h-full">
+                <li className="lift card-luxury relative flex h-full flex-col overflow-hidden rounded-3xl border border-line p-7 sm:p-8">
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="flex size-14 items-center justify-center rounded-2xl bg-brand/15 text-brand ring-1 ring-brand/25">
                       <Icon className="size-6" />
                     </span>
-                    <h3 className="mt-4 text-2xl font-semibold">{step.title}</h3>
-                    <p className="mt-3 text-lg leading-relaxed text-ink-2">{step.text}</p>
+                    <span className="ltr font-mono text-4xl font-bold tracking-tighter text-ink/15">0{i + 1}</span>
                   </div>
-                </Reveal>
-              </li>
+                  <h3 className="mt-7 text-2xl font-bold tracking-tight">{step.title}</h3>
+                  <p className="mt-3 flex-1 leading-relaxed text-ink-2">{step.text}</p>
+                  <div className="mt-6 h-1 w-16 rounded-full bg-gradient-to-r from-brand to-teal opacity-70" />
+                </li>
+              </Reveal>
             );
           })}
         </ol>
         <Reveal className="mt-14 flex justify-center">
-          <Link href="/register" className={buttonClass('white', 'lg', 'h-12 px-8 text-lg')}>
+          <Link href="/register" className={buttonClass('white', 'lg', 'h-13 rounded-2xl px-8 text-base font-semibold')}>
             {s.cta} <Arrow />
           </Link>
         </Reveal>
@@ -315,39 +469,42 @@ function SendReceive() {
   const s = t.landing.sendReceive;
   return (
     <section className="section-wash overflow-hidden py-24 sm:py-32">
-      <div className="mx-auto grid max-w-7xl items-center gap-16 px-4 sm:px-6 lg:grid-cols-[1.1fr_1fr]">
+      <div className="mx-auto grid max-w-7xl items-center gap-16 px-4 sm:px-6 lg:grid-cols-[1.15fr_1fr]">
         <div>
           <Reveal>
-            <span className="eyebrow">{s.eyebrow}</span>
-            <h2 className="mt-7 text-5xl leading-[1.1] font-bold tracking-tight sm:text-6xl">
+            <span className="eyebrow">
+              <Activity className="size-3.5 text-brand" />
+              {s.eyebrow}
+            </span>
+            <h2 className="mt-6 text-4xl leading-[1.12] font-bold tracking-tight sm:text-5xl lg:text-6xl">
               {s.title}
               <br />
               <span className="text-shimmer">{s.accent}</span>
             </h2>
-            <p className="mt-6 max-w-xl text-lg leading-relaxed text-ink-2">
+            <p className="mt-5 max-w-xl text-lg leading-relaxed text-ink-2">
               {s.textBefore}{' '}
-              <a href="/docs" className="font-semibold text-brand hover:underline">
+              <Link href="/guide" className="font-semibold text-brand underline decoration-brand/40 underline-offset-4 hover:decoration-brand">
                 {s.docs}
-              </a>{' '}
+              </Link>{' '}
               {s.textAfter}
             </p>
           </Reveal>
           <div className="mt-10 grid gap-8 sm:grid-cols-[2fr_1fr]">
             <div>
-              <h3 className="mb-4 text-lg font-semibold">{s.typesTitle}</h3>
+              <h3 className="mb-4 text-sm font-semibold tracking-wider text-muted uppercase">{s.typesTitle}</h3>
               <div className="grid grid-cols-2 gap-3">
                 {s.types.map((type, i) => {
                   const Icon = MESSAGE_TYPE_ICONS[i]!;
                   return (
                     <Reveal key={type.title} delay={i * 60}>
-                      <div className="lift h-full rounded-xl border border-line bg-ink/[0.02] p-4">
+                      <div className="lift card-luxury h-full rounded-2xl border border-line p-4">
                         <p className="flex items-center gap-2.5 font-semibold">
-                          <span className="flex size-7 items-center justify-center rounded-full bg-brand text-on-brand">
+                          <span className="flex size-8 items-center justify-center rounded-xl bg-brand/15 text-brand">
                             <Icon className="size-4" />
                           </span>
                           {type.title}
                         </p>
-                        <p className="mt-2 text-sm text-ink-2">{type.text}</p>
+                        <p className="mt-2 text-xs leading-relaxed text-ink-2">{type.text}</p>
                       </div>
                     </Reveal>
                   );
@@ -355,20 +512,20 @@ function SendReceive() {
               </div>
             </div>
             <div>
-              <h3 className="mb-4 text-lg font-semibold">{s.recipientsTitle}</h3>
+              <h3 className="mb-4 text-sm font-semibold tracking-wider text-muted uppercase">{s.recipientsTitle}</h3>
               <div className="grid gap-3">
                 {s.recipients.map((r, i) => {
                   const { icon: Icon, tint } = RECIPIENTS[i]!;
                   return (
                     <Reveal key={r.title} delay={i * 80}>
-                      <div className="lift rounded-xl border border-line bg-ink/[0.02] p-4">
+                      <div className="lift card-luxury rounded-2xl border border-line p-4">
                         <p className="flex items-center gap-2.5 font-semibold">
-                          <span className={cx('flex size-7 items-center justify-center rounded-full bg-gradient-to-br text-white', tint)}>
+                          <span className={cx('flex size-8 items-center justify-center rounded-xl bg-gradient-to-br text-white shadow-xs', tint)}>
                             <Icon className="size-4" />
                           </span>
                           {r.title}
                         </p>
-                        <p className="mt-2 text-sm text-ink-2">{r.text}</p>
+                        <p className="mt-2 text-xs leading-relaxed text-ink-2">{r.text}</p>
                       </div>
                     </Reveal>
                   );
@@ -377,14 +534,14 @@ function SendReceive() {
             </div>
           </div>
           <Reveal>
-            <Link href="/register" className={buttonClass('brand', 'lg', 'mt-10 bg-gradient-to-r from-brand to-teal text-on-brand')}>
+            <Link href="/register" className={buttonClass('brand', 'lg', 'shine mt-10 h-13 rounded-2xl bg-gradient-to-r from-brand to-teal px-8 text-on-brand')}>
               {s.cta} <Arrow />
             </Link>
           </Reveal>
         </div>
         <Reveal delay={150}>
-          <div className="animate-float">
-            <PhoneMock className="-rotate-3 rtl:rotate-3" />
+          <div className="animate-float relative">
+            <PhoneMock className="-rotate-2 rtl:rotate-2" />
           </div>
         </Reveal>
       </div>
@@ -405,24 +562,27 @@ function UseCases() {
             const Icon = USE_CASE_ICONS[i]!;
             return (
               <Reveal key={u.title} delay={(i % 3) * 100}>
-                <article className="lift group h-full rounded-2xl border border-line bg-gradient-to-b from-card to-surface p-7">
-                  <span
-                    className={cx(
-                      'flex size-16 items-center justify-center rounded-xl bg-gradient-to-br text-white transition-transform duration-500 group-hover:-rotate-6 group-hover:scale-110',
-                      tints[i % tints.length],
-                    )}
-                  >
-                    <Icon className="size-7" />
-                  </span>
-                  <h3 className="mt-7 text-2xl leading-snug font-semibold">{u.title}</h3>
-                  <p className="mt-4 text-lg leading-relaxed text-ink-2">{u.text}</p>
+                <article className="lift card-luxury group flex h-full flex-col rounded-3xl border border-line p-7 sm:p-8">
+                  <div className="flex items-center justify-between">
+                    <span
+                      className={cx(
+                        'flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br text-white shadow-md transition-transform duration-500 group-hover:-rotate-6 group-hover:scale-110',
+                        tints[i % tints.length],
+                      )}
+                    >
+                      <Icon className="size-6" />
+                    </span>
+                    <span className="ltr font-mono text-xs font-semibold text-faint">0{i + 1}</span>
+                  </div>
+                  <h3 className="mt-6 text-xl leading-snug font-bold tracking-tight sm:text-2xl">{u.title}</h3>
+                  <p className="mt-3 flex-1 leading-relaxed text-ink-2">{u.text}</p>
                 </article>
               </Reveal>
             );
           })}
         </div>
         <Reveal className="mt-14 flex justify-center">
-          <Link href="/register" className={buttonClass('brand', 'lg', 'h-14 bg-gradient-to-r from-brand to-teal px-7 text-lg')}>
+          <Link href="/register" className={buttonClass('brand', 'lg', 'shine h-13 rounded-2xl bg-gradient-to-r from-brand to-teal px-8 text-base font-semibold')}>
             {s.cta} <Arrow />
           </Link>
         </Reveal>
@@ -435,12 +595,12 @@ function Pricing() {
   const { t } = useI18n();
   const s = t.landing.pricing;
   return (
-    <section id="pricing" className="section-wash scroll-mt-16 py-24 sm:py-32">
+    <section id="pricing" className="section-wash scroll-mt-20 py-24 sm:py-32">
       <div className="mx-auto max-w-7xl px-4 sm:px-6">
         <SectionIntro
           eyebrow={
             <>
-              <Sparkles className="size-4 text-brand" /> {s.eyebrow}
+              <Sparkles className="size-3.5 text-brand" /> {s.eyebrow}
             </>
           }
           top={s.top}
@@ -451,17 +611,17 @@ function Pricing() {
           <PlanCards />
         </div>
         <Reveal className="mx-auto mt-14 max-w-4xl">
-          <div className="flex flex-wrap items-center justify-between gap-5 rounded-2xl border border-line bg-surface p-6">
+          <div className="card-luxury flex flex-wrap items-center justify-between gap-5 rounded-3xl border border-line p-6 sm:p-8">
             <div className="flex items-center gap-4">
-              <span className="flex size-12 items-center justify-center rounded-xl bg-ink/[0.06]">
-                <Users className="size-5" />
+              <span className="flex size-13 items-center justify-center rounded-2xl bg-brand/15 text-brand">
+                <Users className="size-6" />
               </span>
               <div>
-                <h3 className="text-lg font-semibold">{s.higherTitle}</h3>
-                <p className="text-ink-2">{s.higherText}</p>
+                <h3 className="text-lg font-bold">{s.higherTitle}</h3>
+                <p className="text-sm text-ink-2">{s.higherText}</p>
               </div>
             </div>
-            <a href={`mailto:${BRAND.supportEmail}`} className={buttonClass('brand', 'lg')}>
+            <a href={`mailto:${BRAND.supportEmail}`} className={buttonClass('brand', 'lg', 'rounded-xl')}>
               {s.higherCta} <Arrow />
             </a>
           </div>
@@ -475,37 +635,40 @@ function Faq() {
   const { t } = useI18n();
   const s = t.landing.faq;
   return (
-    <section id="faq" className="section-wash scroll-mt-16 py-24 sm:py-32">
-      <div className="mx-auto max-w-4xl px-4">
+    <section id="faq" className="section-wash scroll-mt-20 py-24 sm:py-32">
+      <div className="mx-auto max-w-4xl px-4 sm:px-6">
         <SectionIntro eyebrow={s.eyebrow} top={s.top} accent={s.accent} text={s.text} />
         <Reveal className="mt-14">
-          <div className="space-y-4 rounded-2xl border border-line bg-surface p-4 sm:p-7">
+          <div className="card-luxury space-y-3 rounded-3xl border border-line p-4 sm:p-6">
             {s.items.map((item) => (
-              <details key={item.q} className="group rounded-xl border border-line bg-ink/[0.02] transition-colors open:bg-ink/[0.04] hover:border-line-strong">
-                <summary className="flex cursor-pointer list-none items-center gap-4 px-5 py-5 text-lg font-semibold [&::-webkit-details-marker]:hidden">
-                  <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-brand/15 text-brand">
+              <details
+                key={item.q}
+                className="group rounded-2xl border border-line bg-surface/40 transition-all open:border-brand/40 open:bg-surface/80 hover:border-line-strong"
+              >
+                <summary className="flex cursor-pointer list-none items-center gap-4 px-5 py-4 text-base font-semibold sm:text-lg [&::-webkit-details-marker]:hidden">
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-brand/15 text-brand transition-colors group-open:bg-brand group-open:text-on-brand">
                     <CircleHelp className="size-4" />
                   </span>
-                  <span className="flex-1 text-center">{item.q}</span>
-                  <ChevronDown className="size-5 shrink-0 text-muted transition-transform duration-300 group-open:rotate-180" />
+                  <span className="flex-1 text-start">{item.q}</span>
+                  <ChevronDown className="size-5 shrink-0 text-muted transition-transform duration-300 group-open:rotate-180 group-open:text-brand" />
                 </summary>
-                <p className="animate-fade-up px-5 pb-5 ps-[4.25rem] leading-relaxed text-ink-2">{item.a}</p>
+                <p className="animate-fade-up px-5 pb-5 ps-[4.25rem] text-sm leading-relaxed text-ink-2 sm:text-base">{item.a}</p>
               </details>
             ))}
           </div>
         </Reveal>
-        <div className="mt-14 grid gap-8 sm:grid-cols-2">
-          <Reveal className="flex flex-col items-center gap-4">
+        <div className="mt-12 grid gap-6 sm:grid-cols-2">
+          <Reveal className="card-luxury flex flex-col items-center gap-4 rounded-2xl border border-line p-6 text-center">
             <span className="eyebrow">{s.helpEyebrow}</span>
-            <a href={`mailto:${BRAND.supportEmail}`} className={buttonClass('white', 'lg', 'h-12 px-7 text-lg')}>
+            <a href={`mailto:${BRAND.supportEmail}`} className={buttonClass('white', 'lg', 'h-11 rounded-xl px-6')}>
               {s.helpCta} <Arrow />
             </a>
           </Reveal>
-          <Reveal delay={100} className="flex flex-col items-center gap-4">
+          <Reveal delay={100} className="card-luxury flex flex-col items-center gap-4 rounded-2xl border border-line p-6 text-center">
             <span className="eyebrow">{s.docsEyebrow}</span>
-            <a href="/docs" className={buttonClass('outline', 'lg', 'h-12 px-7 text-lg')}>
+            <Link href="/guide" className={buttonClass('outline', 'lg', 'h-11 rounded-xl px-6')}>
               {s.docsCta} <Arrow />
-            </a>
+            </Link>
           </Reveal>
         </div>
       </div>
@@ -521,35 +684,39 @@ function FinalCta() {
     <section className="py-24 sm:py-32">
       <div className="mx-auto max-w-7xl px-4 sm:px-6">
         <Reveal>
-          <div className="relative grid items-center gap-12 overflow-hidden rounded-3xl border border-line bg-gradient-to-br from-surface via-card to-brand/10 p-8 sm:p-14 lg:grid-cols-2">
-            <div aria-hidden className="animate-glow pointer-events-none absolute -end-24 -bottom-24 size-80 rounded-full bg-brand/10 blur-3xl" />
-            <div className="relative">
-              <h2 className="text-4xl leading-[1.15] font-bold tracking-tight sm:text-5xl">
+          <div className="card-luxury relative grid items-center gap-12 overflow-hidden rounded-[2rem] border border-brand/30 bg-gradient-to-br from-surface via-card to-brand/10 p-8 sm:p-14 lg:grid-cols-2">
+            <div aria-hidden className="hero-grid pointer-events-none absolute inset-0 opacity-60" />
+            <div aria-hidden className="animate-glow pointer-events-none absolute -end-24 -bottom-24 size-80 rounded-full bg-brand/15 blur-3xl" />
+            <div className="relative z-10">
+              <h2 className="text-4xl leading-[1.12] font-bold tracking-tight sm:text-5xl">
                 {s.title}
                 <br />
                 <span className="text-shimmer">{s.accent}</span>
               </h2>
-              <p className="mt-6 text-lg text-ink-2">{s.text}</p>
-              <ul className="mt-8 space-y-4">
+              <p className="mt-5 text-lg leading-relaxed text-ink-2">{s.text}</p>
+              <ul className="mt-8 space-y-3.5">
                 {s.points.map((text, i) => {
                   const Icon = icons[i]!;
                   return (
-                    <li key={text} className="flex items-center gap-4 text-lg">
-                      <span className="flex size-8 items-center justify-center rounded-full bg-brand/90 text-on-brand">
-                        <Icon className="size-4" />
+                    <li key={text} className="flex items-center gap-3.5 text-base font-medium">
+                      <span className="flex size-7 items-center justify-center rounded-full bg-brand text-on-brand shadow-xs">
+                        <Icon className="size-3.5" />
                       </span>
                       {text}
                     </li>
                   );
                 })}
               </ul>
-              <Link href="/register" className={buttonClass('brand', 'lg', 'mt-10 h-14 w-full max-w-md bg-gradient-to-r from-brand to-teal text-lg')}>
+              <Link
+                href="/register"
+                className={buttonClass('brand', 'lg', 'shine-auto mt-9 h-13 w-full max-w-md rounded-2xl bg-gradient-to-r from-brand to-teal text-base font-semibold')}
+              >
                 {s.cta} <Arrow />
               </Link>
-              <p className="mt-3 text-sm text-faint">{s.note}</p>
+              <p className="mt-3 text-xs text-faint">{s.note}</p>
             </div>
-            <div className="relative grid items-end gap-6 sm:grid-cols-2" dir="ltr">
-              <div className="rounded-2xl border border-line bg-[#0b0f17] p-4 font-mono text-[12px] leading-6 shadow-2xl">
+            <div className="relative z-10 grid items-end gap-6 sm:grid-cols-2" dir="ltr">
+              <div className="rounded-2xl border border-white/10 bg-[#0b0f17] p-5 font-mono text-[12px] leading-6 shadow-2xl">
                 <div className="mb-3 flex gap-1.5">
                   <span className="size-2.5 rounded-full bg-[#ff5f57]" />
                   <span className="size-2.5 rounded-full bg-[#febc2e]" />
@@ -557,15 +724,15 @@ function FinalCta() {
                 </div>
                 <p className="text-[#569cd6]">
                   await <span className="text-[#dcdcaa]">send</span>
-                  <span className="text-ink-2">({'{'}</span>
+                  <span className="text-white/70">({'{'}</span>
                 </p>
-                <p className="ps-4 text-ink-2">
+                <p className="ps-4 text-white/70">
                   to: <span className="text-[#ce9178]">'+201012345678'</span>,
                 </p>
-                <p className="ps-4 text-ink-2">
+                <p className="ps-4 text-white/70">
                   text: <span className="text-[#ce9178]">'Works like a charm!'</span>
                 </p>
-                <p className="text-ink-2">{'});'}</p>
+                <p className="text-white/70">{'});'}</p>
                 <p className="mt-3 animate-pulse text-brand">✓ Message sent</p>
               </div>
               <div className="animate-float" style={delay(800)}>
@@ -582,19 +749,19 @@ function FinalCta() {
 function Footer() {
   const { t } = useI18n();
   return (
-    <footer className="border-t border-line">
+    <footer className="border-t border-line bg-surface/30">
       <div className="mx-auto grid max-w-7xl gap-12 px-4 py-16 sm:px-6 md:grid-cols-[1.4fr_repeat(3,1fr)]">
-        <Reveal className="space-y-5">
+        <Reveal className="space-y-4">
           <Logo />
-          <p className="max-w-xs leading-relaxed text-ink-2">{t.brand.about}</p>
+          <p className="max-w-xs text-sm leading-relaxed text-ink-2">{t.brand.about}</p>
         </Reveal>
         {t.landing.footer.columns.map((col, c) => (
           <Reveal key={col.title} delay={(c + 1) * 80}>
-            <h3 className="text-lg font-semibold">{col.title}</h3>
-            <ul className="mt-5 space-y-3.5">
+            <h3 className="text-sm font-bold tracking-wider text-ink uppercase">{col.title}</h3>
+            <ul className="mt-4 space-y-3 text-sm">
               {col.links.map((label, i) => (
                 <li key={label}>
-                  <Link href={FOOTER_HREFS[c]![i]!} className="text-ink-2 transition-colors hover:text-ink">
+                  <Link href={FOOTER_HREFS[c]![i]!} className="text-ink-2 transition-colors hover:text-brand">
                     {label}
                   </Link>
                 </li>
@@ -603,9 +770,9 @@ function Footer() {
           </Reveal>
         ))}
       </div>
-      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 border-t border-line px-4 py-6 text-sm text-faint sm:px-6">
+      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 border-t border-line px-4 py-6 text-xs text-faint sm:px-6">
         <p>
-          © {new Date().getFullYear()} <span className="ltr">{BRAND.name}</span>. {t.landing.footer.rights}
+          © {new Date().getFullYear()} <span className="ltr font-semibold text-ink-2">{BRAND.name}</span>. {t.landing.footer.rights}
         </p>
         <p className="max-w-2xl">{t.brand.disclaimer}</p>
       </div>

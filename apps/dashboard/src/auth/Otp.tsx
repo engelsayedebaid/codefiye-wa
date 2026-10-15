@@ -11,6 +11,12 @@ import { Button, ErrorNote, Field, Modal, SuccessNote } from '../ui';
 /** What the API returns after sending a code. */
 export type Ticket = { verificationId: string; phone: string; channel: string; expiresAt: string; resendAfter: number };
 
+/**
+ * Requests that send a code wait for WhatsApp (and, when the API relays to a worker on another
+ * network, for that worker's answer), so they get longer than the default before giving up.
+ */
+export const SEND_CODE_TIMEOUT_MS = 45_000;
+
 /** The user's words for a failed code check or resend. `restart`: the verification is gone, go back to the details. */
 export function codeError(err: unknown, t: Dict): { message: string; restart?: boolean } {
   const v = t.auth.verify;
@@ -35,8 +41,6 @@ export function codeError(err: unknown, t: Dict): { message: string; restart?: b
       // A login that ended: back to email and password.
       case 'login_expired':
         return { message: t.auth.errors.loginExpired, restart: true };
-      case 'login_denied':
-        return { message: t.auth.errors.loginDenied, restart: true };
       case 'too_many_codes':
         return { message: t.auth.errors.tooManyCodes, restart: true };
       case 'account_suspended':
@@ -185,7 +189,7 @@ export function PhoneVerifyModal({ onClose }: { onClose: () => void }) {
     if (!normalized) return setFieldError([t.auth.errors.phoneInvalid]);
     setSending(true);
     try {
-      setTicket(await api<Ticket>('/api/account/phone', { method: 'POST', body: { phone: normalized, lang } }));
+      setTicket(await api<Ticket>('/api/account/phone', { method: 'POST', body: { phone: normalized, lang }, timeoutMs: SEND_CODE_TIMEOUT_MS }));
     } catch (err) {
       const { message } = codeError(err, t);
       if (err instanceof ApiRequestError && (err.code === 'phone_taken' || err.code === 'phone_unreachable' || err.errors?.phone)) setFieldError([message]);
@@ -213,7 +217,7 @@ export function PhoneVerifyModal({ onClose }: { onClose: () => void }) {
             await queryClient.invalidateQueries({ queryKey: qk.me });
             setDone(true);
           }}
-          onResend={(verificationId) => api<Ticket>('/api/account/phone/resend', { method: 'POST', body: { verificationId } })}
+          onResend={(verificationId) => api<Ticket>('/api/account/phone/resend', { method: 'POST', body: { verificationId }, timeoutMs: SEND_CODE_TIMEOUT_MS })}
           onRestart={(message) => {
             setTicket(null);
             setError(message ?? null);

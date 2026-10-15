@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { constants as zlibConstants } from 'node:zlib';
+import compress from '@fastify/compress';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
@@ -34,7 +36,7 @@ import { templateRoutes } from './routes/templates';
 /** Floor for dashboard sessions, so browsing the console on a small plan doesn't trip the API limit. */
 const CONSOLE_RPM = 240;
 /** What a dashboard session may still reach before its user sets up two-factor authentication. */
-const TWO_FACTOR_EXEMPT = /^\/api\/(me|account\/2fa(\/[^?]*)?|account\/login-requests(\/[^?]*)?|events)(\?.*)?$/;
+const TWO_FACTOR_EXEMPT = /^\/api\/(me|account\/2fa(\/[^?]*)?|events)(\?.*)?$/;
 /** No request may hang: anything still running after this gets a 503 (SSE streams excepted). */
 const HANDLER_TIMEOUT_MS = 60_000;
 const REQUEST_ID_RE = /^[A-Za-z0-9._-]{8,64}$/;
@@ -88,12 +90,16 @@ export async function buildApp(deps: Deps, options: AppOptions) {
     loggerInstance: options.logger,
     trustProxy: trustRule(options.trustProxy),
     bodyLimit: 1024 * 1024,
+    // Longer than the proxy's idle timeout (Railway: 60 s), or the proxy reuses a connection we
+    // just closed and the request fails with a 502. headersTimeout must exceed keepAliveTimeout.
+    keepAliveTimeout: 65_000,
     // Accept a caller's correlation id when it looks like one; otherwise mint our own.
     genReqId: (req) => {
       const given = req.headers['x-request-id'];
       return typeof given === 'string' && REQUEST_ID_RE.test(given) ? given : randomUUID();
     },
   }).withTypeProvider<ZodTypeProvider>();
+  app.server.headersTimeout = 66_000;
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
 
@@ -128,7 +134,8 @@ export async function buildApp(deps: Deps, options: AppOptions) {
     reply.header('x-frame-options', 'DENY');
     reply.header('referrer-policy', 'strict-origin-when-cross-origin');
     reply.header('cross-origin-opener-policy', 'same-origin');
-    reply.header('permissions-policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+    // The dashboard records voice notes, so the microphone stays allowed for our own origin.
+    reply.header('permissions-policy', 'camera=(), microphone=(self), geolocation=(), payment=()');
     if (req.protocol === 'https') reply.header('strict-transport-security', 'max-age=15552000; includeSubDomains');
     // Chat media sets its own (immutable per message); everything else under /api is never cached.
     if (req.url.startsWith('/api') && !reply.hasHeader('cache-control')) reply.header('cache-control', 'no-store');
@@ -139,6 +146,9 @@ export async function buildApp(deps: Deps, options: AppOptions) {
     return payload;
   });
 
+  // Lists of chats and messages shrink several times over; tiny bodies and streams are left alone
+  // (SSE replies are hijacked and never reach onSend, so they aren't touched).
+  await app.register(compress, { threshold: 1024, encodings: ['br', 'gzip'], brotliOptions: { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 4 } } });
   await app.register(cookie);
   await app.register(cors, {
     origin: options.corsOrigins,
@@ -256,10 +266,18 @@ export async function buildApp(deps: Deps, options: AppOptions) {
   );
 
   if (dist && indexHtml) {
-    await app.register(fastifyStatic, { root: dist, wildcard: false });
+    await app.register(fastifyStatic, {
+      root: dist,
+      wildcard: false,
+      // Vite names every file under /assets by its content hash: cache those for good. index.html
+      // (and the favicon etc.) are revalidated each time, so a deploy shows up on the next load.
+      setHeaders: (res, path) => {
+        res.header('cache-control', path.replace(/\\/g, '/').includes('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache');
+      },
+    });
     // SPA fallback: unknown GETs outside /api render the dashboard.
     app.setNotFoundHandler((req, reply) => {
-      if (req.method === 'GET' && !req.url.startsWith('/api')) return reply.sendFile('index.html');
+      if (req.method === 'GET' && !req.url.startsWith('/api')) return reply.header('cache-control', 'no-cache').sendFile('index.html');
       return reply.code(404).send({ success: false, message: 'Not found', code: 'not_found' } satisfies ApiFailure);
     });
   }

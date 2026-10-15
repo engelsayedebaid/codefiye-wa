@@ -1,6 +1,7 @@
 import type { MessageStatus, SessionStatus } from '@wa/shared/constants';
 import {
   AlertTriangle,
+  BadgeCheck,
   Check,
   CheckCheck,
   ChevronDown,
@@ -531,17 +532,16 @@ export function Loading({ className }: { className?: string }) {
 export function Checkbox({ label, checked, onChange, hint }: { label: string; checked: boolean; onChange: (v: boolean) => void; hint?: string }) {
   return (
     <label className="flex cursor-pointer items-start gap-3">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="mt-px size-4 shrink-0 cursor-pointer appearance-none rounded-[4px] border border-line bg-transparent bg-center bg-no-repeat shadow-xs transition-colors outline-none checked:border-ink checked:bg-ink focus-visible:ring-[3px] focus-visible:ring-ring/50"
-        style={{
-          backgroundImage: checked
-            ? "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23171717' stroke-width='2'%3E%3Cpath d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E\")"
-            : undefined,
-        }}
-      />
+      {/* The tick is drawn in the page background colour, so it reads on the filled box in both themes. */}
+      <span className="relative mt-px flex size-4 shrink-0">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => onChange(e.target.checked)}
+          className="peer size-4 cursor-pointer appearance-none rounded-[4px] border border-line bg-transparent shadow-xs transition-colors outline-none checked:border-ink checked:bg-ink focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        />
+        <Check className="pointer-events-none absolute inset-0 m-auto size-3 text-bg opacity-0 transition-opacity peer-checked:opacity-100" strokeWidth={3} aria-hidden />
+      </span>
       <span className="space-y-1">
         <span className="block text-sm leading-none font-medium">{label}</span>
         {hint && <span className="block text-sm text-muted">{hint}</span>}
@@ -702,6 +702,16 @@ export const MESSAGE_STATUS: Record<MessageStatus, { tone: Tone; icon: typeof Wi
   failed: { tone: 'critical', icon: XCircle },
   received: { tone: 'info', icon: Inbox },
 };
+
+/** The blue verified tick shown beside an admin's name. */
+export function VerifiedMark({ className }: { className?: string }) {
+  const { t } = useI18n();
+  return (
+    <span title={`${t.profile.verified} · ${t.profile.verifiedHint}`} className={cx('inline-flex shrink-0 text-sky-500', className)}>
+      <BadgeCheck className="size-4 fill-sky-500 text-bg" aria-label={t.profile.verified} />
+    </span>
+  );
+}
 
 export function Badge({ tone, children, className }: { tone: Tone; children: ReactNode; className?: string }) {
   return <span className={cx('inline-flex items-center rounded-full px-2 py-1 text-xs font-medium whitespace-nowrap', TONES[tone].chip, className)}>{children}</span>;

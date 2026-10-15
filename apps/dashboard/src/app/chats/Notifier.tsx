@@ -292,7 +292,7 @@ export function useInboxNotes({
 
   useLiveEvents((event) => {
     if (event.type !== 'messages.received' || !enabled) return;
-    const { chatJid, from, type, text, pushName } = event.data;
+    const { chatJid, from, type, text, pushName, chatName } = event.data;
     if (type === 'reaction') return;
     const jid = chatJid ?? from;
     const visible = document.visibilityState === 'visible';
@@ -300,7 +300,8 @@ export function useInboxNotes({
     const chat = cachedChat(event.sessionId, jid);
     const isGroup = jid.endsWith('@g.us');
     const phone = (j: string) => (j.endsWith('@s.whatsapp.net') ? `+${j.split('@')[0]}` : null);
-    const title = chat?.name || (isGroup ? null : pushName) || chat?.phone || phone(jid) || jid.split('@')[0]!;
+    // The event carries the chat's name (a group's subject) for when the chat list isn't loaded here.
+    const title = chat?.name || chatName || (isGroup ? null : pushName) || chat?.phone || phone(jid) || jid.split('@')[0]!;
     const key = ++seq.current;
     const message: NoteMessage = { id: event.data.id, sender: isGroup ? pushName || phone(from) : null, text, type };
     const note = {

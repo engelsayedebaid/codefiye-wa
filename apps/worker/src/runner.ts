@@ -16,6 +16,7 @@ import {
   recordOptOut,
   applyMessageEdit,
   applyMessageRevoke,
+  chatDisplayName,
   dropStoredEnvelope,
   loadMessageRaw,
   recordContactNames,
@@ -399,12 +400,16 @@ export class SessionRunner {
         returning id`,
     );
     if (!row) return; // duplicate delivery
-    await this.publish({ type: 'messages.received', data: { id: row.id, from: m.from, type: m.type, text: m.text, chatJid: m.chatJid, pushName: m.pushName } });
+    // The event names the chat, so a notification on another page shows the group's subject (or the
+    // contact's saved name) rather than a bare id. A group's first message here asks WhatsApp for
+    // its subject (once per runner, bounded by the lookup timeout) before the event goes out.
+    let chatName = m.isGroup ? await this.nameGroup(m.chatJid) : null;
+    chatName ??= await chatDisplayName(sql, this.sessionId, m.chatJid).catch(() => null);
+    await this.publish({ type: 'messages.received', data: { id: row.id, from: m.from, type: m.type, text: m.text, chatJid: m.chatJid, pushName: m.pushName, chatName } });
     if (this.settings.autoRead) {
       await this.provider?.markRead([m]).catch((err) => this.log.warn({ err }, 'markRead failed'));
       await markChatRead(sql, this.sessionId, m.chatJid);
     }
-    if (m.isGroup) await this.nameGroup(m.chatJid);
     await this.onOptOutReply(m);
   }
 

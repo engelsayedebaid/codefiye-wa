@@ -1,3 +1,4 @@
+import type { PaymentDetails } from '@wa/shared/payments';
 import { createContext, useContext } from 'react';
 
 export type Plan = {
@@ -16,6 +17,12 @@ export type PlanRequest = {
   id: string;
   planId: string;
   status: 'pending' | 'approved' | 'rejected' | 'cancelled';
+  /** Months the customer paid for. */
+  months: number;
+  /** How the customer paid; null for requests made without payment details. */
+  payment: PaymentDetails | null;
+  /** A transfer screenshot is attached (admins open it from `/api/admin/plan-requests/:id/proof`). */
+  hasProof: boolean;
   note: string | null;
   adminNote: string | null;
   createdAt: string;

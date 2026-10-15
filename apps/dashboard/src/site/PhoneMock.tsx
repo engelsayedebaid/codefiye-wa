@@ -28,22 +28,32 @@ export function PhoneMock({ className, variant = 'full' }: { className?: string;
   const { t } = useI18n();
   const p = t.landing.phone;
   return (
-    <div aria-hidden className={cx('relative mx-auto w-[300px] sm:w-[340px]', className)}>
-      <div className="rounded-[2.6rem] border border-white/15 bg-[#0b0b0b] p-2.5 shadow-[0_30px_80px_-20px_rgba(0,0,0,0.9)]">
-        <div className="relative overflow-hidden rounded-[2.1rem] bg-[#efeae2]">
-          <div className="absolute top-2 left-1/2 z-10 h-5 w-24 -translate-x-1/2 rounded-full bg-black" />
-          <header className="flex items-center gap-3 bg-[#008069] px-4 pt-9 pb-3 text-white">
-            <span className="flex size-9 items-center justify-center rounded-full bg-white/20 text-sm font-bold">{p.initial}</span>
+    <div aria-hidden className={cx('relative mx-auto w-[305px] sm:w-[350px]', className)}>
+      {/* Ambient glow behind the phone */}
+      <div className="pointer-events-none absolute -inset-4 -z-10 rounded-[3.2rem] bg-gradient-to-tr from-brand/25 via-teal/15 to-transparent blur-2xl" />
+
+      <div className="rounded-[2.85rem] border border-white/20 bg-gradient-to-b from-[#222625] via-[#111312] to-[#080909] p-2.5 shadow-[0_35px_90px_-20px_rgba(0,0,0,0.85),inset_0_1px_1px_rgba(255,255,255,0.2)]">
+        <div className="relative overflow-hidden rounded-[2.3rem] border border-black/40 bg-[#efeae2]">
+          {/* Dynamic Island */}
+          <div className="absolute top-2 left-1/2 z-10 flex h-5 w-24 -translate-x-1/2 items-center justify-end rounded-full bg-black px-2 shadow-inner">
+            <span className="size-2 rounded-full bg-[#1a2b23] ring-1 ring-emerald-500/40" />
+          </div>
+
+          <header className="flex items-center gap-3 bg-gradient-to-r from-[#075e54] to-[#008069] px-4 pt-9 pb-3.5 text-white shadow-sm">
+            <span className="relative flex size-9 items-center justify-center rounded-full bg-white/20 text-sm font-bold ring-2 ring-white/25">
+              {p.initial}
+              <span className="absolute end-0 bottom-0 size-2.5 rounded-full bg-[#25d366] ring-2 ring-[#075e54]" />
+            </span>
             <div className="flex-1 leading-tight">
               <p className="text-sm font-semibold">{p.contact}</p>
-              <p className="text-[11px] text-white/80">{p.online}</p>
+              <p className="text-[11px] text-white/85">{p.online}</p>
             </div>
-            <Video className="size-4.5" />
+            <Video className="size-4.5 opacity-90" />
           </header>
 
           <div
             className="space-y-2.5 px-3 py-4"
-            style={{ backgroundImage: 'radial-gradient(rgba(0,0,0,0.035) 1px, transparent 1px)', backgroundSize: '14px 14px' }}
+            style={{ backgroundImage: 'radial-gradient(rgba(0,0,0,0.04) 1px, transparent 1px)', backgroundSize: '14px 14px' }}
           >
             {variant === 'full' ? (
               <>
@@ -52,25 +62,25 @@ export function PhoneMock({ className, variant = 'full' }: { className?: string;
                 </Bubble>
                 <Bubble out time="10:21" at={500}>
                   <span className="flex items-center gap-2">
-                    <span className="flex size-7 items-center justify-center rounded-full bg-[#00a884] text-white">
+                    <span className="flex size-7 items-center justify-center rounded-full bg-[#00a884] text-white shadow-xs">
                       <Play className="size-3.5 fill-current" />
                     </span>
                     <span className="flex h-6 flex-1 items-center gap-0.5">
                       {[6, 12, 18, 9, 14, 20, 8, 16, 11, 6, 13, 9].map((h, i) => (
-                        <span key={i} className="w-0.5 rounded-full bg-[#8696a0]" style={{ height: h }} />
+                        <span key={i} className="w-0.5 rounded-full bg-[#00a884]/75" style={{ height: h }} />
                       ))}
                     </span>
                     <Mic className="size-3.5 text-[#00a884]" />
                   </span>
                 </Bubble>
                 <Bubble out time="10:22" at={800}>
-                  <span className="flex items-center gap-2.5 rounded-lg bg-black/5 p-2">
-                    <span className="flex size-9 items-center justify-center rounded-md bg-[#e5484d] text-[10px] font-bold text-white">PDF</span>
+                  <span className="flex items-center gap-2.5 rounded-lg bg-black/[0.04] p-2">
+                    <span className="flex size-9 items-center justify-center rounded-md bg-[#e5484d] text-[10px] font-bold text-white shadow-xs">PDF</span>
                     <span className="leading-tight">
                       <span className="block text-xs font-semibold">{p.pdfName}</span>
                       <span className="block text-[10px] text-[#667781]">{p.pdfMeta}</span>
                     </span>
-                    <FileText className="size-4 text-[#667781]" />
+                    <FileText className="ms-auto size-4 text-[#667781]" />
                   </span>
                 </Bubble>
                 <Bubble out time="10:22" className="w-[78%] p-1.5" at={1100}>
@@ -84,7 +94,7 @@ export function PhoneMock({ className, variant = 'full' }: { className?: string;
                     />
                     <MapPin className="absolute top-1/2 left-1/2 size-6 -translate-x-1/2 -translate-y-full animate-bounce fill-[#e5484d] text-white" />
                   </span>
-                  <span className="block px-1.5 pt-1.5 text-xs">{p.location}</span>
+                  <span className="block px-1.5 pt-1.5 text-xs font-medium">{p.location}</span>
                 </Bubble>
                 <Bubble time="10:24" at={1400}>
                   {p.thanks}
@@ -100,8 +110,8 @@ export function PhoneMock({ className, variant = 'full' }: { className?: string;
           </div>
 
           <footer className="flex items-center gap-2 bg-[#f0f2f5] px-3 py-2.5">
-            <span className="flex-1 rounded-full bg-white px-4 py-2 text-[13px] text-[#8696a0]">{p.placeholder}</span>
-            <span className="flex size-10 items-center justify-center rounded-full bg-[#00a884] text-white">
+            <span className="flex-1 rounded-full bg-white px-4 py-2 text-[13px] text-[#8696a0] shadow-2xs">{p.placeholder}</span>
+            <span className="flex size-10 items-center justify-center rounded-full bg-[#00a884] text-white shadow-sm">
               <Send className="size-4 rtl:-scale-x-100" />
             </span>
           </footer>

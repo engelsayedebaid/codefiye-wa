@@ -1,13 +1,32 @@
+import { DEFAULT_PAYMENT_SETTINGS, enabledPaymentMethods, PAYMENT_METHODS, type PaymentMethod, type PaymentSettings, planPriceEgp } from '@wa/shared/payments';
 import { getPlan, PLANS } from '@wa/shared/plans';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, Ban, CircleDollarSign, History, Hourglass, Inbox, MessageSquare, Search, Smartphone, Users } from 'lucide-react';
-import { type FormEvent, useEffect, useState } from 'react';
+import {
+  Activity,
+  AlertTriangle,
+  Ban,
+  CircleDollarSign,
+  CreditCard,
+  History,
+  Hourglass,
+  ImageOff,
+  Inbox,
+  LayoutGrid,
+  MessageSquare,
+  MessageSquareText,
+  Search,
+  Smartphone,
+  Users,
+  ZoomIn,
+} from 'lucide-react';
+import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { api, errorMessage } from '../api';
-import { useAccount } from '../app/account';
+import { type PlanRequest, useAccount } from '../app/account';
+import { METHOD_LOOK, MethodChip, MethodGlyph, PaymentDetailsRows, usePaymentSettings } from '../app/payments/methods';
 import { useI18n } from '../i18n';
 import { qk } from '../queries';
 import { TemplatePreview } from './Templates';
-import { Badge, Button, Card, cx, delay, EmptyState, ErrorNote, Field, inputClass, Loading, LoadError, Modal, PageHeader, Pagination, Select, usePlanName } from '../ui';
+import { Badge, Button, Card, cx, delay, EmptyState, ErrorNote, Field, inputClass, Loading, LoadError, Modal, PageHeader, Pagination, Select, SuccessNote, TextArea, usePlanName } from '../ui';
 
 type Stats = {
   users: number;
@@ -39,13 +58,8 @@ type AdminUser = {
   messages30d: number;
 };
 
-type AdminRequest = {
-  id: string;
-  planId: string;
-  status: 'pending' | 'approved' | 'rejected' | 'cancelled';
-  note: string | null;
-  createdAt: string;
-  workspace: { id: string; name: string; planId: string; ownerEmail: string | null };
+type AdminRequest = PlanRequest & {
+  workspace: { id: string; name: string; planId: string; ownerEmail: string | null; ownerPhone: string | null };
 };
 
 type AuditEntry = {
@@ -65,6 +79,15 @@ type Page<T> = { items: T[]; total: number; page: number; pageSize: number };
 const DURATIONS = [1, 3, 6, 12, null] as const;
 type Duration = (typeof DURATIONS)[number];
 const PAGE_SIZE = 25;
+
+type Tab = 'overview' | 'users' | 'payments' | 'messages' | 'audit';
+const TABS: { id: Tab; icon: typeof Users }[] = [
+  { id: 'overview', icon: LayoutGrid },
+  { id: 'users', icon: Users },
+  { id: 'payments', icon: CreditCard },
+  { id: 'messages', icon: MessageSquareText },
+  { id: 'audit', icon: History },
+];
 
 /** The value, once it has stopped changing for `ms` (search as you type without a request per key). */
 function useDebounced<T>(value: T, ms: number) {
@@ -97,95 +120,365 @@ function DurationSelect({ value, onChange, label }: { value: Duration; onChange:
   );
 }
 
-function StatCard({ icon: Icon, label, value, index, accent }: { icon: typeof Users; label: string; value: string; index: number; accent?: 'info' | 'danger' }) {
+// --- stats strip ---------------------------------------------------------------------------------
+
+function Stat({ icon: Icon, label, value, index, accent }: { icon: typeof Users; label: string; value: string; index: number; accent?: 'info' | 'danger' | 'brand' }) {
   return (
-    <div
-      className={cx(
-        'lift animate-fade-up flex items-center gap-4 rounded-xl border bg-card p-5 shadow-sm',
-        accent === 'info' ? 'border-sky-500/40' : accent === 'danger' ? 'border-red-500/40' : 'border-line',
-      )}
-      style={delay(index * 60)}
-    >
+    <div className="animate-fade-up flex min-w-0 items-center gap-3 px-4 py-3.5" style={delay(index * 50)}>
       <span
         className={cx(
-          'flex size-11 items-center justify-center rounded-lg',
-          accent === 'info' ? 'bg-sky-500/15 text-sky-300' : accent === 'danger' ? 'bg-red-500/15 text-red-300' : 'bg-raised text-brand',
+          'flex size-9 shrink-0 items-center justify-center rounded-lg',
+          accent === 'info' ? 'bg-sky-500/15 text-sky-400' : accent === 'danger' ? 'bg-red-500/15 text-red-400' : accent === 'brand' ? 'bg-brand/15 text-brand' : 'bg-raised text-muted',
         )}
       >
-        <Icon className="size-5" />
+        <Icon className="size-4" />
       </span>
       <div className="min-w-0">
-        <p className="truncate text-sm text-muted">{label}</p>
-        <p className="text-2xl font-semibold tabular-nums">{value}</p>
+        <p className="truncate text-[11px] font-medium tracking-wide text-muted uppercase">{label}</p>
+        <p className="text-xl leading-tight font-semibold tabular-nums">{value}</p>
       </div>
     </div>
   );
 }
 
-function Requests() {
-  const { t, fmt } = useI18n();
-  const r = t.admin.requests;
-  const planName = usePlanName();
-  const refresh = useRefreshAdmin();
-  const [durations, setDurations] = useState<Record<string, Duration>>({});
-  const requests = useQuery({ queryKey: qk.admin.requests, queryFn: ({ signal }) => api<AdminRequest[]>('/api/admin/plan-requests?status=pending', { signal }) });
+// --- plan requests -------------------------------------------------------------------------------
 
-  const decide = useMutation({
-    mutationFn: ({ req, approve, note }: { req: AdminRequest; approve: boolean; note?: string }) =>
-      api(`/api/admin/plan-requests/${req.id}/${approve ? 'approve' : 'reject'}`, {
-        method: 'POST',
-        body: approve ? { months: durations[req.id] === undefined ? 1 : durations[req.id] } : { note },
-      }),
+/** Initials of a workspace name for its avatar tile. */
+const initialsOf = (name: string) => {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase() || '?';
+};
+
+function ProofThumb({ req, onOpen }: { req: AdminRequest; onOpen: () => void }) {
+  const { t } = useI18n();
+  const r = t.admin.requests;
+  const [broken, setBroken] = useState(false);
+  if (!req.hasProof || broken) {
+    return (
+      <span className="flex h-24 w-32 shrink-0 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-line text-[11px] text-faint">
+        <ImageOff className="size-4" />
+        {r.noProof}
+      </span>
+    );
+  }
+  return (
+    <button type="button" onClick={onOpen} className="group relative h-24 w-32 shrink-0 overflow-hidden rounded-lg border border-line bg-black/30" aria-label={r.viewProof}>
+      <img src={`/api/admin/plan-requests/${req.id}/proof`} alt="" loading="lazy" onError={() => setBroken(true)} className="size-full object-cover transition-transform duration-300 group-hover:scale-105" />
+      <span className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+        <ZoomIn className="size-5 text-white" />
+      </span>
+    </button>
+  );
+}
+
+function ProofLightbox({ req, onClose }: { req: AdminRequest; onClose: () => void }) {
+  const { t } = useI18n();
+  return (
+    <Modal title={t.admin.requests.proofTitle(req.workspace.name)} onClose={onClose} size="xl">
+      <div className="flex flex-col gap-4 pb-6 lg:flex-row">
+        <img src={`/api/admin/plan-requests/${req.id}/proof`} alt="" className="max-h-[70svh] min-w-0 flex-1 rounded-lg bg-black/40 object-contain" />
+        {req.payment && (
+          <div className="w-full shrink-0 space-y-3 lg:w-72">
+            <MethodChip method={req.payment.method} />
+            <PaymentDetailsRows payment={req.payment} />
+            {req.note && <p className="rounded-md bg-raised/40 px-3 py-2 text-sm text-ink-2">{req.note}</p>}
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+function RejectRequest({ req, onClose }: { req: AdminRequest; onClose: () => void }) {
+  const { t } = useI18n();
+  const r = t.admin.requests;
+  const refresh = useRefreshAdmin();
+  const [note, setNote] = useState('');
+  const reject = useMutation({
+    mutationFn: () => api(`/api/admin/plan-requests/${req.id}/reject`, { method: 'POST', body: { note: note.trim() || undefined } }),
+    onSuccess: onClose,
     onSettled: refresh,
   });
+  return (
+    <Modal title={r.rejectTitle(req.workspace.name)} description={r.rejectText} onClose={onClose}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!reject.isPending) reject.mutate();
+        }}
+        className="space-y-4"
+      >
+        <Field label={r.rejectReason} value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} autoFocus />
+        <ErrorNote>{reject.isError ? errorMessage(reject.error) : null}</ErrorNote>
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose}>
+            {t.common.cancel}
+          </Button>
+          <Button type="submit" variant="danger" loading={reject.isPending}>
+            {r.rejectSubmit}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
 
-  const reject = (req: AdminRequest) => {
-    const answer = prompt(r.rejectPrompt);
-    if (answer !== null) decide.mutate({ req, approve: false, note: answer.trim() || undefined });
-  };
-  const busy = decide.isPending ? decide.variables.req.id : null;
+const REQUEST_TONES = { pending: 'info', approved: 'good', rejected: 'critical', cancelled: 'neutral' } as const;
+
+function RequestCard({ req, index, egpPerUsd, onProof, onReject }: { req: AdminRequest; index: number; egpPerUsd: number; onProof: () => void; onReject: () => void }) {
+  const { t, fmt } = useI18n();
+  const r = t.admin.requests;
+  const p = t.subscription.payment;
+  const planName = usePlanName();
+  const refresh = useRefreshAdmin();
+  const [months, setMonths] = useState<Duration>((DURATIONS as readonly (number | null)[]).includes(req.months) ? (req.months as Duration) : 1);
+  const approve = useMutation({
+    mutationFn: () => api(`/api/admin/plan-requests/${req.id}/approve`, { method: 'POST', body: { months } }),
+    onSettled: refresh,
+  });
+  const plan = getPlan(req.planId);
+  const expected = planPriceEgp(plan.priceUsd, req.months, egpPerUsd);
+  const pending = req.status === 'pending';
+  const look = req.payment ? METHOD_LOOK[req.payment.method] : null;
 
   return (
-    <Card title={r.title} description={r.text} className="animate-fade-up" style={delay(200)}>
-      <ErrorNote>{decide.isError ? errorMessage(decide.error) : null}</ErrorNote>
+    <li className="animate-fade-up overflow-hidden rounded-xl border border-line bg-card shadow-sm" style={delay(Math.min(index, 8) * 60)}>
+      <div className="flex flex-wrap items-start gap-4 p-4">
+        <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-raised to-line-strong text-sm font-semibold">{initialsOf(req.workspace.name)}</span>
+        <div className="min-w-0 flex-1 space-y-1">
+          <p className="flex flex-wrap items-center gap-2">
+            <span className="font-semibold">{req.workspace.name}</span>
+            <Badge tone="info">{r.wants(planName(plan))}</Badge>
+            <span className="text-xs text-muted">{r.paidFor(req.months)}</span>
+            {!pending && <Badge tone={REQUEST_TONES[req.status]}>{t.status.request[req.status]}</Badge>}
+          </p>
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-muted">
+            {req.workspace.ownerEmail && <span className="ltr">{req.workspace.ownerEmail}</span>}
+            {req.workspace.ownerPhone && <span className="ltr font-mono text-xs">{req.workspace.ownerPhone}</span>}
+            <span aria-hidden>·</span>
+            <span>{r.currentPlan(planName(getPlan(req.workspace.planId)))}</span>
+            <span aria-hidden>·</span>
+            <span title={fmt.dateTime(req.createdAt)}>{fmt.timeAgo(req.createdAt)}</span>
+          </p>
+        </div>
+        {pending && (
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="w-36">
+              <DurationSelect label={r.duration} value={months} onChange={setMonths} />
+            </div>
+            <Button variant="brand" loading={approve.isPending} onClick={() => approve.mutate()}>
+              {r.approve}
+            </Button>
+            <Button variant="ghost" disabled={approve.isPending} onClick={onReject} className="text-red-400 hover:text-red-300">
+              {r.reject}
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {/* payment panel */}
+      <div className={cx('flex flex-wrap items-start gap-4 border-t px-4 py-3', look ? cx('border-line/60 bg-raised/20') : 'border-line/60 bg-raised/10')}>
+        {req.payment ? (
+          <>
+            <ProofThumb req={req} onOpen={onProof} />
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <MethodGlyph method={req.payment.method} size="sm" />
+                <span className="text-sm font-semibold">{p.methods[req.payment.method]}</span>
+                {expected !== null && egpPerUsd > 0 && (
+                  <span className={cx('rounded-full px-2 py-0.5 text-xs tabular-nums', req.payment.amount && Math.abs(req.payment.amount - expected) > expected * 0.02 ? 'bg-amber-500/15 text-amber-400' : 'bg-raised text-muted')}>
+                    {r.expected(p.egp(expected))}
+                  </span>
+                )}
+              </div>
+              <PaymentDetailsRows payment={req.payment} />
+              {req.note && (
+                <p className="text-sm text-ink-2">
+                  <span className="text-muted">{r.note}: </span>
+                  <bdi>{req.note}</bdi>
+                </p>
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="flex items-center gap-2 text-sm text-muted">
+            <AlertTriangle className="size-4 text-amber-400" />
+            {r.noPayment}
+            {req.note && (
+              <>
+                <span aria-hidden>·</span>
+                <bdi className="text-ink-2">{req.note}</bdi>
+              </>
+            )}
+          </div>
+        )}
+        {req.adminNote && !pending && <p className="w-full text-xs text-muted">{req.adminNote}</p>}
+      </div>
+      <ErrorNote>{approve.isError ? errorMessage(approve.error) : null}</ErrorNote>
+    </li>
+  );
+}
+
+function Requests() {
+  const { t } = useI18n();
+  const r = t.admin.requests;
+  const [scope, setScope] = useState<'pending' | 'all'>('pending');
+  const requests = useQuery({
+    queryKey: [...qk.admin.requests, scope],
+    queryFn: ({ signal }) => api<AdminRequest[]>(`/api/admin/plan-requests?status=${scope}`, { signal }),
+    placeholderData: keepPreviousData,
+  });
+  const settings = usePaymentSettings();
+  const [proof, setProof] = useState<AdminRequest | null>(null);
+  const [rejecting, setRejecting] = useState<AdminRequest | null>(null);
+
+  return (
+    <section className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold">{r.title}</h2>
+          <p className="text-sm text-muted">{r.text}</p>
+        </div>
+        <div className="flex gap-1 rounded-lg border border-line p-1">
+          {(['pending', 'all'] as const).map((s) => (
+            <button key={s} type="button" onClick={() => setScope(s)} className={cx('h-7 rounded-md px-3 text-xs font-medium transition-colors', scope === s ? 'bg-raised text-ink' : 'text-muted hover:text-ink')}>
+              {s === 'pending' ? r.pendingOnly : r.all}
+            </button>
+          ))}
+        </div>
+      </div>
       {requests.isError && <LoadError error={requests.error} onRetry={() => void requests.refetch()} retrying={requests.isFetching} />}
       {!requests.data ? (
         !requests.isError && <Loading />
       ) : requests.data.length === 0 ? (
-        <EmptyState icon={Inbox} title={r.empty} />
+        <Card>
+          <EmptyState icon={Inbox} title={scope === 'pending' ? r.empty : r.emptyAll} />
+        </Card>
       ) : (
-        <ul className="divide-y divide-line">
+        <ul className={cx('space-y-3 transition-opacity', requests.isPlaceholderData && 'opacity-60')}>
           {requests.data.map((req, i) => (
-            <li key={req.id} className="animate-fade-up flex flex-wrap items-center gap-4 py-4" style={delay(i * 60)}>
-              <div className="min-w-0 flex-1 space-y-1">
-                <p className="flex flex-wrap items-center gap-2 font-medium">
-                  {req.workspace.name}
-                  <Badge tone="info">{r.wants(planName(getPlan(req.planId)))}</Badge>
-                </p>
-                <p className="text-sm text-muted">
-                  {req.workspace.ownerEmail && <span className="ltr">{req.workspace.ownerEmail}</span>} · {r.currentPlan(planName(getPlan(req.workspace.planId)))} ·{' '}
-                  {fmt.timeAgo(req.createdAt)}
-                </p>
-                {req.note && <p className="rounded-md bg-raised/40 px-3 py-2 text-sm text-ink-2">{req.note}</p>}
-              </div>
-              <div className="flex flex-wrap items-end gap-2">
-                <div className="w-36">
-                  <DurationSelect label={r.duration} value={durations[req.id] === undefined ? 1 : durations[req.id]!} onChange={(v) => setDurations((d) => ({ ...d, [req.id]: v }))} />
-                </div>
-                <Button variant="brand" loading={busy === req.id && decide.variables?.approve} disabled={busy !== null} onClick={() => decide.mutate({ req, approve: true })}>
-                  {r.approve}
-                </Button>
-                <Button variant="ghost" disabled={busy !== null} onClick={() => reject(req)} className="text-red-400 hover:text-red-300">
-                  {r.reject}
-                </Button>
-              </div>
-            </li>
+            <RequestCard key={req.id} req={req} index={i} egpPerUsd={settings.data?.egpPerUsd ?? 0} onProof={() => setProof(req)} onReject={() => setRejecting(req)} />
           ))}
         </ul>
       )}
-    </Card>
+      {proof && <ProofLightbox req={proof} onClose={() => setProof(null)} />}
+      {rejecting && <RejectRequest req={rejecting} onClose={() => setRejecting(null)} />}
+    </section>
   );
 }
+
+// --- payment methods settings --------------------------------------------------------------------
+
+function MethodSettings({ method, enabled, complete, onToggle, children }: { method: PaymentMethod; enabled: boolean; complete: boolean; onToggle: (v: boolean) => void; children: ReactNode }) {
+  const { t } = useI18n();
+  const look = METHOD_LOOK[method];
+  return (
+    <div className={cx('rounded-xl border transition-colors', enabled ? cx('bg-card', look.ring) : 'border-line bg-card/60')}>
+      <div className="flex items-center gap-3 border-b border-line/60 px-4 py-3">
+        <MethodGlyph method={method} />
+        <p className="min-w-0 flex-1 text-sm font-semibold">{t.subscription.payment.methods[method]}</p>
+        <label className="flex shrink-0 cursor-pointer items-center gap-2 text-xs font-medium text-muted">
+          {t.admin.payments.enabled}
+          <span className={cx('relative inline-flex h-5 w-9 items-center rounded-full transition-colors', enabled ? 'bg-brand' : 'bg-line-strong')}>
+            <input type="checkbox" checked={enabled} onChange={(e) => onToggle(e.target.checked)} className="peer sr-only" />
+            <span className={cx('absolute top-0.5 size-4 rounded-full bg-white shadow transition-[inset-inline-start]', enabled ? 'start-[1.125rem]' : 'start-0.5')} />
+          </span>
+        </label>
+      </div>
+      <div className={cx('grid gap-3 p-4 transition-opacity', !enabled && 'opacity-60')}>{children}</div>
+      {enabled && !complete && (
+        <p className="flex items-center gap-2 border-t border-line/60 px-4 py-2 text-xs text-amber-400">
+          <AlertTriangle className="size-3.5" /> {t.admin.payments.incomplete}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function PaymentMethodsSettings() {
+  const { t } = useI18n();
+  const a = t.admin.payments;
+  const queryClient = useQueryClient();
+  const settings = usePaymentSettings();
+  const [draft, setDraft] = useState<PaymentSettings | null>(null);
+  const current = draft ?? settings.data ?? DEFAULT_PAYMENT_SETTINGS;
+  const dirty = draft !== null && JSON.stringify(draft) !== JSON.stringify(settings.data);
+  const enabled = enabledPaymentMethods(current);
+  const [saved, setSaved] = useState(false);
+
+  const save = useMutation({
+    mutationFn: () => api<PaymentSettings>('/api/admin/payment-methods', { method: 'PUT', body: current }),
+    onSuccess: (next) => {
+      queryClient.setQueryData(qk.paymentMethods, next);
+      setDraft(null);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    },
+  });
+
+  const patch = <K extends keyof PaymentSettings>(key: K, value: PaymentSettings[K]) => setDraft({ ...current, [key]: value });
+  const patchMethod = <M extends 'vodafone_cash' | 'instapay' | 'bank_transfer'>(m: M, value: Partial<PaymentSettings[M]>) => patch(m, { ...current[m], ...value } as PaymentSettings[M]);
+
+  if (settings.isError) return <LoadError error={settings.error} onRetry={() => void settings.refetch()} retrying={settings.isFetching} />;
+  if (!settings.data) return <Loading />;
+
+  return (
+    <form
+      onSubmit={(e: FormEvent) => {
+        e.preventDefault();
+        if (!save.isPending && dirty) save.mutate();
+      }}
+      className="space-y-5"
+    >
+      <div>
+        <h2 className="text-lg font-semibold">{a.title}</h2>
+        <p className="max-w-2xl text-sm text-muted">{a.text}</p>
+      </div>
+
+      <Card bodyClassName="grid gap-4 md:grid-cols-[14rem_1fr] md:items-start">
+        <Field
+          label={a.rate}
+          hint={a.rateHint}
+          type="number"
+          min={1}
+          step="0.01"
+          dir="ltr"
+          value={current.egpPerUsd}
+          onChange={(e) => patch('egpPerUsd', Math.max(0, Number(e.target.value) || 0))}
+        />
+        <TextArea label={a.instructions} placeholder={a.instructionsPlaceholder} value={current.instructions} onChange={(e) => patch('instructions', e.target.value)} maxLength={500} rows={3} />
+      </Card>
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <MethodSettings method="vodafone_cash" enabled={current.vodafone_cash.enabled} complete={enabled.includes('vodafone_cash')} onToggle={(v) => patchMethod('vodafone_cash', { enabled: v })}>
+          <Field label={a.vodafone.number} value={current.vodafone_cash.number} onChange={(e) => patchMethod('vodafone_cash', { number: e.target.value })} dir="ltr" inputMode="tel" placeholder="010xxxxxxxx" />
+          <Field label={a.vodafone.name} value={current.vodafone_cash.name} onChange={(e) => patchMethod('vodafone_cash', { name: e.target.value })} />
+        </MethodSettings>
+        <MethodSettings method="instapay" enabled={current.instapay.enabled} complete={enabled.includes('instapay')} onToggle={(v) => patchMethod('instapay', { enabled: v })}>
+          <Field label={a.instapay.address} value={current.instapay.address} onChange={(e) => patchMethod('instapay', { address: e.target.value })} dir="ltr" placeholder="name@instapay" />
+          <Field label={a.instapay.name} value={current.instapay.name} onChange={(e) => patchMethod('instapay', { name: e.target.value })} />
+        </MethodSettings>
+        <MethodSettings method="bank_transfer" enabled={current.bank_transfer.enabled} complete={enabled.includes('bank_transfer')} onToggle={(v) => patchMethod('bank_transfer', { enabled: v })}>
+          <Field label={a.bank.bankName} value={current.bank_transfer.bankName} onChange={(e) => patchMethod('bank_transfer', { bankName: e.target.value })} />
+          <Field label={a.bank.accountName} value={current.bank_transfer.accountName} onChange={(e) => patchMethod('bank_transfer', { accountName: e.target.value })} />
+          <Field label={a.bank.accountNumber} value={current.bank_transfer.accountNumber} onChange={(e) => patchMethod('bank_transfer', { accountNumber: e.target.value })} dir="ltr" />
+          <Field label={a.bank.iban} value={current.bank_transfer.iban} onChange={(e) => patchMethod('bank_transfer', { iban: e.target.value })} dir="ltr" placeholder="EG…" />
+        </MethodSettings>
+      </div>
+
+      <ErrorNote>{save.isError ? errorMessage(save.error) : null}</ErrorNote>
+      <SuccessNote>{saved && a.saved}</SuccessNote>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-muted">{a.enabledCount(enabled.length, PAYMENT_METHODS.length)}</p>
+        <Button type="submit" variant="brand" loading={save.isPending} disabled={!dirty}>
+          {a.save}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+// --- users ---------------------------------------------------------------------------------------
 
 function ChangePlan({ user, onClose }: { user: AdminUser & { workspace: NonNullable<AdminUser['workspace']> }; onClose: () => void }) {
   const { t } = useI18n();
@@ -370,7 +663,6 @@ function UsersTable({ selfId }: { selfId: string | null }) {
     <Card
       title={u.title}
       className="animate-fade-up"
-      style={delay(260)}
       bodyClassName="px-4"
       actions={
         <div className="flex flex-wrap items-center gap-2">
@@ -502,6 +794,8 @@ function UsersTable({ selfId }: { selfId: string | null }) {
   );
 }
 
+// --- verification message ------------------------------------------------------------------------
+
 type OtpTextResponse = { texts: { ar: string | null; en: string | null }; defaults: { ar: string; en: string } };
 
 /** The message sent for sign-up / phone-link codes — per language, empty falls back to the built-in text. */
@@ -531,7 +825,6 @@ function OtpText() {
       title={o.title}
       description={o.text}
       className="animate-fade-up"
-      style={delay(280)}
       actions={
         <div className="flex gap-1 rounded-lg border border-line p-1">
           {(['ar', 'en'] as const).map((l) => (
@@ -587,6 +880,8 @@ function OtpText() {
   );
 }
 
+// --- audit log -----------------------------------------------------------------------------------
+
 function AuditLog() {
   const { t, fmt } = useI18n();
   const a = t.admin.audit;
@@ -599,7 +894,7 @@ function AuditLog() {
   const data = log.data;
 
   return (
-    <Card title={a.title} description={a.text} className="animate-fade-up" style={delay(320)}>
+    <Card title={a.title} description={a.text} className="animate-fade-up">
       {log.isError && <LoadError error={log.error} onRetry={() => void log.refetch()} retrying={log.isFetching} />}
       {!data ? (
         !log.isError && <Loading />
@@ -637,6 +932,8 @@ function AuditLog() {
   );
 }
 
+// --- page ----------------------------------------------------------------------------------------
+
 export function AdminPage() {
   const { t, fmt } = useI18n();
   const a = t.admin;
@@ -644,29 +941,62 @@ export function AdminPage() {
   const isAdmin = Boolean(account?.user?.isAdmin);
   // The server refuses non-admins anyway; this only avoids pointless requests and a broken page.
   const stats = useQuery({ queryKey: qk.admin.stats, queryFn: ({ signal }) => api<Stats>('/api/admin/stats', { signal }), enabled: isAdmin });
+  const [tab, setTab] = useState<Tab>('overview');
 
   if (account && !isAdmin) return <ErrorNote>{a.forbidden}</ErrorNote>;
 
   const n = (v: number | undefined) => (v === undefined ? '…' : fmt.number.format(v));
   const s = stats.data;
+  const pendingCount = s?.pendingRequests ?? 0;
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6">
       <PageHeader title={a.title} description={a.description} />
       {stats.isError && <LoadError error={stats.error} onRetry={() => void stats.refetch()} retrying={stats.isFetching} />}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard index={0} icon={Users} label={a.stats.users} value={n(s?.users)} />
-        <StatCard index={1} icon={Activity} label={a.stats.workspaces} value={n(s?.workspaces)} />
-        <StatCard index={2} icon={CircleDollarSign} label={a.stats.activePaid} value={n(s?.activePaid)} />
-        <StatCard index={3} icon={Smartphone} label={a.stats.sessions} value={s ? `${n(s.connected)} / ${n(s.sessions)}` : '…'} />
-        <StatCard index={4} icon={Hourglass} label={a.stats.pending} value={n(s?.pendingRequests)} accent={s?.pendingRequests ? 'info' : undefined} />
-        <StatCard index={5} icon={MessageSquare} label={a.stats.messagesToday} value={n(s?.messagesToday)} />
-        <StatCard index={6} icon={Ban} label={a.stats.suspended} value={n(s?.suspended)} accent={s?.suspended ? 'danger' : undefined} />
+
+      {/* stats strip */}
+      <div className="grid grid-cols-2 divide-line overflow-hidden rounded-xl border border-line bg-card shadow-sm sm:grid-cols-4 lg:grid-cols-7 [&>*:not(:last-child)]:border-e [&>*:not(:last-child)]:border-line/60 max-lg:[&>*:nth-child(-n+4)]:border-b max-sm:[&>*:nth-child(-n+6)]:border-b">
+        <Stat index={0} icon={Users} label={a.stats.users} value={n(s?.users)} />
+        <Stat index={1} icon={Activity} label={a.stats.workspaces} value={n(s?.workspaces)} />
+        <Stat index={2} icon={CircleDollarSign} label={a.stats.activePaid} value={n(s?.activePaid)} accent="brand" />
+        <Stat index={3} icon={Smartphone} label={a.stats.sessions} value={s ? `${n(s.connected)} / ${n(s.sessions)}` : '…'} />
+        <Stat index={4} icon={Hourglass} label={a.stats.pending} value={n(s?.pendingRequests)} accent={pendingCount ? 'info' : undefined} />
+        <Stat index={5} icon={MessageSquare} label={a.stats.messagesToday} value={n(s?.messagesToday)} />
+        <Stat index={6} icon={Ban} label={a.stats.suspended} value={n(s?.suspended)} accent={s?.suspended ? 'danger' : undefined} />
       </div>
-      <Requests />
-      <OtpText />
-      <UsersTable selfId={account?.user?.id ?? null} />
-      <AuditLog />
+
+      {/* tabs */}
+      <nav aria-label={a.title} className="code-scroll -mx-1 flex gap-1 overflow-x-auto px-1 pb-1">
+        {TABS.map(({ id, icon: Icon }) => {
+          const active = tab === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setTab(id)}
+              aria-current={active ? 'page' : undefined}
+              className={cx(
+                'flex h-9 shrink-0 items-center gap-2 rounded-full border px-4 text-sm font-medium transition-colors',
+                active ? 'border-ink bg-ink text-bg' : 'border-line bg-card text-muted hover:border-line-strong hover:text-ink',
+              )}
+            >
+              <Icon className="size-4" />
+              {a.tabs[id]}
+              {id === 'overview' && pendingCount > 0 && (
+                <span className={cx('rounded-full px-1.5 py-0.5 text-[11px] leading-none font-semibold tabular-nums', active ? 'bg-bg/20 text-bg' : 'bg-brand text-on-brand')}>{pendingCount}</span>
+              )}
+            </button>
+          );
+        })}
+      </nav>
+
+      <div key={tab} className="animate-fade-up">
+        {tab === 'overview' && <Requests />}
+        {tab === 'users' && <UsersTable selfId={account?.user?.id ?? null} />}
+        {tab === 'payments' && <PaymentMethodsSettings />}
+        {tab === 'messages' && <OtpText />}
+        {tab === 'audit' && <AuditLog />}
+      </div>
     </div>
   );
 }

@@ -23,7 +23,6 @@ import {
   PageHeader,
   Phone,
   Progress,
-  Select,
   SESSION_STATUS,
   SessionStatusBadge,
   TONES,
@@ -67,9 +66,16 @@ export function SessionsPage() {
   const used = sessions?.length ?? 0;
   const atLimit = limit !== null && used >= limit;
   const visible = sessions?.filter((x) => filter === 'all' || x.status === filter) ?? null;
+  // Status chips double as the filter; only statuses that occur are offered.
+  const counts = new Map<SessionStatus, number>();
+  for (const x of sessions ?? []) counts.set(x.status, (counts.get(x.status) ?? 0) + 1);
+  const chips: { value: SessionStatus | 'all'; label: string; n: number; dot?: string }[] = [
+    { value: 'all', label: s.all, n: used },
+    ...SESSION_STATUSES.filter((st) => counts.has(st)).map((st) => ({ value: st, label: t.status.session[st].label, n: counts.get(st)!, dot: TONES[SESSION_STATUS[st].tone].dot })),
+  ];
 
   return (
-    <div className="mx-auto w-full max-w-7xl space-y-6">
+    <div className="mx-auto w-full max-w-7xl space-y-5">
       <PageHeader
         title={s.title}
         description={s.description}
@@ -85,57 +91,53 @@ export function SessionsPage() {
         }
       />
 
-      {account && (
-        <div className="animate-fade-up rounded-lg bg-raised/40 p-4" style={delay(80)}>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="font-medium">{s.usage}</p>
-              <p className="text-sm text-muted">{limit === null ? s.usageUnlimited(used) : s.usageText(used, limit)}</p>
-            </div>
+      {/* usage + filter */}
+      {account && sessions && sessions.length > 0 && (
+        <div className="animate-fade-up flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-b border-line pb-4" style={delay(60)}>
+          <div role="radiogroup" aria-label={s.filter} className="flex flex-wrap gap-1">
+            {chips.map((c) => {
+              const active = filter === c.value;
+              return (
+                <button
+                  key={c.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => setFilter(c.value)}
+                  className={cx('flex h-8 items-center gap-2 rounded-md px-3 text-sm transition-colors', active ? 'bg-raised font-medium text-ink' : 'text-muted hover:bg-raised/60 hover:text-ink')}
+                >
+                  {c.dot && <span className={cx('size-1.5 rounded-full', c.dot)} />}
+                  {c.label}
+                  <span className="ltr text-xs text-faint tabular-nums">{c.n}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex items-center gap-4 text-sm">
+            <span className="text-muted">{limit === null ? s.usageUnlimited(used) : s.usageText(used, limit)}</span>
+            {limit !== null && <Progress className="h-1.5 w-24" value={limit ? (used / limit) * 100 : 0} />}
             {atLimit && (
               <Link href="/subscription" className={buttonClass('outline', 'sm')}>
                 {s.upgrade}
               </Link>
             )}
           </div>
-          {limit !== null && <Progress className="mt-2 h-2 bg-raised" value={limit ? (used / limit) * 100 : 0} />}
         </div>
       )}
 
       <ErrorNote>{removal.isError ? errorMessage(removal.error) : null}</ErrorNote>
       {list.isError && <LoadError error={list.error} onRetry={() => void list.refetch()} retrying={list.isFetching} />}
 
-      {sessions && sessions.length > 0 && (
-        <Select<SessionStatus | 'all'>
-          value={filter}
-          onChange={setFilter}
-          className="w-56"
-          aria-label={s.filter}
-          options={[
-            { value: 'all', label: s.allStatuses },
-            ...SESSION_STATUSES.map((status) => ({
-              value: status,
-              label: (
-                <span className="flex items-center gap-2">
-                  <span className={cx('size-2 shrink-0 rounded-full', TONES[SESSION_STATUS[status].tone].dot)} />
-                  {t.status.session[status].label}
-                </span>
-              ),
-            })),
-          ]}
-        />
-      )}
-
       {visible === null ? (
         !list.isError && (
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="h-48 animate-pulse rounded-xl border border-line bg-raised/30" />
-          ))}
-        </div>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="h-52 animate-pulse rounded-2xl border border-line bg-raised/30" />
+            ))}
+          </div>
         )
       ) : sessions!.length === 0 ? (
-        <div className="animate-fade-up rounded-xl border border-line">
+        <div className="animate-fade-up rounded-xl border border-dashed border-line" style={delay(60)}>
           <EmptyState
             icon={Smartphone}
             title={s.emptyTitle}
@@ -150,36 +152,34 @@ export function SessionsPage() {
       ) : visible.length === 0 ? (
         <p className="animate-fade-in py-12 text-center text-muted">{s.noMatch}</p>
       ) : (
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {visible.map((session, i) => {
             const needsLink = session.status !== 'connected' && session.status !== 'connecting';
+            const tone = SESSION_STATUS[session.status].tone;
             return (
-              <article
-                key={session.id}
-                className="lift animate-fade-up flex flex-col overflow-hidden rounded-xl border border-line bg-card shadow-sm"
-                style={delay(120 + i * 70)}
-              >
-                <Link href={`/sessions/${session.id}`} className="block space-y-1.5 px-6 pt-6 pb-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <h3 className="truncate text-lg font-semibold">{session.name}</h3>
+              <article key={session.id} className="animate-fade-up flex flex-col rounded-xl border border-line bg-card transition-colors hover:border-line-strong" style={delay(80 + i * 50)}>
+                <Link href={`/sessions/${session.id}`} className="block px-5 pt-5 pb-4">
+                  <span className="flex items-center justify-between gap-3">
+                    <span className="flex min-w-0 items-center gap-2.5">
+                      <span className={cx('size-2 shrink-0 rounded-full', TONES[tone].dot)} />
+                      <span className="truncate text-base font-semibold">{session.name}</span>
+                    </span>
                     <SessionStatusBadge status={session.status} />
-                  </div>
-                  <p className="text-sm text-muted">
-                    <Phone value={session.phoneNumber} />
-                  </p>
+                  </span>
+                  <span className="mt-1.5 block ps-[18px] text-sm text-muted">{session.phoneNumber ? <Phone value={session.phoneNumber} /> : s.unlinked}</span>
                 </Link>
-                <dl className="grid flex-1 grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 px-6 py-4 text-sm">
+                <dl className="grid flex-1 grid-cols-[auto_1fr] gap-x-6 gap-y-1 px-5 pb-4 text-sm">
                   <dt className="text-muted">{s.lastActivity}</dt>
-                  <dd>{fmt.timeAgo(session.lastSeenAt ?? session.connectedAt)}</dd>
+                  <dd className="text-ink-2">{fmt.timeAgo(session.lastSeenAt ?? session.connectedAt)}</dd>
                   <dt className="text-muted">{s.created}</dt>
-                  <dd>{fmt.timeAgo(session.createdAt)}</dd>
+                  <dd className="text-ink-2">{fmt.timeAgo(session.createdAt)}</dd>
                   {session.lastError && (
                     <dd className="col-span-2 truncate text-xs text-red-400" title={session.lastError}>
                       {session.lastError}
                     </dd>
                   )}
                 </dl>
-                <footer className="flex items-center justify-between gap-2 border-t border-line px-6 py-4">
+                <footer className="flex items-center justify-between gap-2 border-t border-line px-5 py-3">
                   <Link href={`/sessions/${session.id}`} className={buttonClass(needsLink ? 'white' : 'outline', 'sm')}>
                     {needsLink ? <Smartphone className="size-4" /> : <Settings2 className="size-4" />}
                     {needsLink ? s.link : s.manage}

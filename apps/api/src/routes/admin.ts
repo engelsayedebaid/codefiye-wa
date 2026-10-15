@@ -1,5 +1,5 @@
-import { and, eq, notify, planRequests, type Sql, type SqlFragment, type TxSql, type UserRole, type UserStatus, workspaces, type Db } from '@wa/db';
-import { CHANNELS, ok, PLANS, successSchema, TRIAL_DAYS } from '@wa/shared';
+import { and, eq, notify, planRequests, type Sql, type SqlFragment, sqlExpr, type TxSql, type UserRole, type UserStatus, workspaces, type Db } from '@wa/db';
+import { CHANNELS, enabledPaymentMethods, ok, paymentSettingsSchema, PLANS, successSchema, TRIAL_DAYS } from '@wa/shared';
 import type { FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -10,7 +10,8 @@ import { conflict, forbidden, notFound, unprocessable } from '../lib/errors';
 import { getFeatures, type RuntimeFeature, setFeature } from '../lib/features';
 import { OTP_DEFAULT_TEXTS } from '../lib/otp';
 import { getOtpTexts, setOtpTexts } from '../lib/otp-text';
-import { planRequestDto, toPlanRequestDto, toWorkspaceDto } from './account';
+import { getPaymentSettings, setPaymentSettings } from '../lib/payments';
+import { planRequestDto, type PlanRequestRow, planRequestRowDto, toPlanRequestDto, toWorkspaceDto } from './account';
 
 // Operator endpoints: not part of the public API, so hidden from /docs.
 const schemaBase = { tags: ['Admin'], hide: true };
@@ -135,7 +136,7 @@ const toAdminUserDto = (r: AdminUserRow): z.infer<typeof adminUserDto> => ({
 });
 
 const adminRequestDto = planRequestDto.extend({
-  workspace: z.object({ id: z.uuid(), name: z.string(), planId: z.string(), ownerEmail: z.string().nullable() }),
+  workspace: z.object({ id: z.uuid(), name: z.string(), planId: z.string(), ownerEmail: z.string().nullable(), ownerPhone: z.string().nullable() }),
 });
 
 const auditDto = z.object({
@@ -576,22 +577,16 @@ export function adminRoutes({ sql, db, auth, workers }: Deps): FastifyPluginAsyn
       },
       async (req) => {
         const rows = await sql<
-          {
-            id: string;
-            plan_id: string;
-            status: 'pending' | 'approved' | 'rejected' | 'cancelled';
-            note: string | null;
-            admin_note: string | null;
-            created_at: Date;
-            decided_at: Date | null;
+          (PlanRequestRow & {
             workspace_id: string;
             workspace_name: string;
             workspace_plan_id: string;
             owner_email: string | null;
-          }[]
+            owner_phone: string | null;
+          })[]
         >`
-          select r.id, r.plan_id, r.status, r.note, r.admin_note, r.created_at, r.decided_at,
-            w.id as workspace_id, w.name as workspace_name, w.plan_id as workspace_plan_id, u.email as owner_email
+          select r.id, r.plan_id, r.status, r.months, r.payment, (r.proof is not null) as has_proof, r.note, r.admin_note, r.created_at, r.decided_at,
+            w.id as workspace_id, w.name as workspace_name, w.plan_id as workspace_plan_id, u.email as owner_email, u.phone as owner_phone
           from plan_requests r
           join workspaces w on w.id = r.workspace_id
           left join users u on u.id = w.owner_id
@@ -600,16 +595,43 @@ export function adminRoutes({ sql, db, auth, workers }: Deps): FastifyPluginAsyn
           limit 200`;
         return ok(
           rows.map((r) => ({
-            id: r.id,
-            planId: r.plan_id,
-            status: r.status,
-            note: r.note,
-            adminNote: r.admin_note,
-            createdAt: r.created_at.toISOString(),
-            decidedAt: r.decided_at?.toISOString() ?? null,
-            workspace: { id: r.workspace_id, name: r.workspace_name, planId: r.workspace_plan_id, ownerEmail: r.owner_email },
+            ...planRequestRowDto(r),
+            workspace: { id: r.workspace_id, name: r.workspace_name, planId: r.workspace_plan_id, ownerEmail: r.owner_email, ownerPhone: r.owner_phone },
           })),
         );
+      },
+    );
+
+    app.get(
+      '/plan-requests/:id/proof',
+      {
+        schema: { ...schemaBase, summary: 'The transfer screenshot attached to a request', params: z.object({ id: z.uuid() }) },
+      },
+      async (req, reply) => {
+        const [row] = await sql<{ proof: Buffer | null; proof_mimetype: string | null }[]>`select proof, proof_mimetype from plan_requests where id = ${req.params.id}`;
+        if (!row?.proof || !row.proof_mimetype) throw notFound('This request has no screenshot', 'proof_not_found');
+        return reply
+          .header('content-type', row.proof_mimetype)
+          .header('content-length', String(row.proof.length))
+          .header('cache-control', 'private, max-age=3600')
+          .header('content-security-policy', "sandbox; default-src 'none'; img-src 'self'")
+          .send(row.proof);
+      },
+    );
+
+    app.get(
+      '/payment-methods',
+      { schema: { ...schemaBase, summary: 'Accepted payment methods and receiving accounts', response: { 200: successSchema(paymentSettingsSchema) } } },
+      async () => ok(await getPaymentSettings(sql)),
+    );
+
+    app.put(
+      '/payment-methods',
+      { schema: { ...schemaBase, summary: 'Set the accepted payment methods and receiving accounts', body: paymentSettingsSchema, response: { 200: successSchema(paymentSettingsSchema) } } },
+      async (req) => {
+        const saved = await setPaymentSettings(sql, req.body);
+        await audit(sql, req, { action: 'payment_methods.update', targetType: 'feature', targetId: 'payment_methods', details: { enabled: enabledPaymentMethods(saved) } });
+        return ok(saved);
       },
     );
 
@@ -618,10 +640,23 @@ export function adminRoutes({ sql, db, auth, workers }: Deps): FastifyPluginAsyn
         .update(planRequests)
         .set({ status, adminNote, decidedAt: new Date(), decidedBy })
         .where(and(eq(planRequests.id, id), eq(planRequests.status, 'pending')))
-        .returning();
+        .returning({
+          id: planRequests.id,
+          workspaceId: planRequests.workspaceId,
+          planId: planRequests.planId,
+          status: planRequests.status,
+          months: planRequests.months,
+          payment: planRequests.payment,
+          hasProof: sqlExpr<boolean>`${planRequests.proof} is not null`,
+          note: planRequests.note,
+          adminNote: planRequests.adminNote,
+          createdAt: planRequests.createdAt,
+          decidedAt: planRequests.decidedAt,
+        });
       if (!row) throw conflict('This request is no longer pending', 'not_pending');
       return row;
     };
+    const decidedDto = (row: Awaited<ReturnType<typeof decide>>) => toPlanRequestDto({ ...row, payment: row.payment ?? null });
 
     app.post(
       '/plan-requests/:id/approve',
@@ -629,26 +664,28 @@ export function adminRoutes({ sql, db, auth, workers }: Deps): FastifyPluginAsyn
         schema: {
           ...schemaBase,
           summary: 'Approve a request and activate its plan',
+          description: 'Without `months`, the plan runs for as long as the customer paid for.',
           params: z.object({ id: z.uuid() }),
-          body: z.object({ months: months.default(1), note: z.string().trim().max(500).optional() }),
+          body: z.object({ months: months.optional(), note: z.string().trim().max(500).optional() }),
           response: { 200: successSchema(planRequestDto) },
         },
       },
       async (req) => {
         const row = await db.transaction(async (tx) => {
           const approved = await decide(tx, req.params.id, req.auth.userId, 'approved', req.body.note || null);
-          const { after } = await applyPlan(tx, approved.workspaceId, approved.planId, req.body.months);
+          const duration = req.body.months === undefined ? approved.months : req.body.months;
+          const { after } = await applyPlan(tx, approved.workspaceId, approved.planId, duration);
           await auditIn(tx, req, {
             action: 'plan_request.approve',
             targetType: 'plan_request',
             targetId: approved.id,
             targetLabel: after.name,
-            details: { planId: approved.planId, months: req.body.months, expiresAt: after.planExpiresAt?.toISOString() ?? null },
+            details: { planId: approved.planId, months: duration, paymentMethod: approved.payment?.method ?? null, expiresAt: after.planExpiresAt?.toISOString() ?? null },
           });
           return approved;
         });
         await auth.revoke({ workspaceIds: [row.workspaceId] });
-        return ok(toPlanRequestDto(row));
+        return ok(decidedDto(row));
       },
     );
 
@@ -669,7 +706,7 @@ export function adminRoutes({ sql, db, auth, workers }: Deps): FastifyPluginAsyn
           await auditIn(tx, req, { action: 'plan_request.reject', targetType: 'plan_request', targetId: rejected.id, details: { planId: rejected.planId, note: req.body.note ?? null } });
           return rejected;
         });
-        return ok(toPlanRequestDto(row));
+        return ok(decidedDto(row));
       },
     );
   };

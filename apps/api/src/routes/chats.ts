@@ -954,6 +954,8 @@ export function chatRoutes(deps: Deps): FastifyPluginAsyncZod {
       '/media/:id',
       {
         config: { rateLimit: false },
+        // Already-compressed media, served with Range support: gzipping it would only hide the file size.
+        compress: false,
         schema: {
           ...schemaBase,
           summary: 'The file of a chat message (images, video, voice notes, documents)',

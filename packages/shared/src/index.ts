@@ -6,6 +6,8 @@ export * from './events';
 export * from './jid';
 export * from './messages';
 export * from './name-suggestions';
+export * from './payments';
+export * from './payments-schema';
 export * from './phone';
 export * from './plans';
 export * from './templates';

@@ -12,6 +12,8 @@ export const qk = {
   templates: ['templates'] as const,
   keys: ['keys'] as const,
   planRequests: ['plan-requests'] as const,
+  /** Accepted payment methods and receiving accounts (what the admin set). */
+  paymentMethods: ['payment-methods'] as const,
   chats: {
     all: ['chats'] as const,
     numbers: ['chats', 'numbers'] as const,

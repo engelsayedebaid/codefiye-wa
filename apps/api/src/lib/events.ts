@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { notify, type Sql } from '@wa/db';
-import { type AuthInvalidation, CHANNELS, type WaEvent } from '@wa/shared';
+import { type AuthInvalidation, CHANNELS, type RpcResult, type WaEvent } from '@wa/shared';
 import type { Logger } from 'pino';
 
 const RESYNC = Symbol('resync');
 const REVOKE = Symbol('revoke');
 const HEARTBEAT = Symbol('heartbeat');
+const RPC = Symbol('rpc');
 
 const HEARTBEAT_EVERY_MS = 30_000;
 const HEARTBEAT_TIMEOUT_MS = 10_000;
@@ -77,7 +78,32 @@ export class EventBus {
         // ignore malformed payloads
       }
     });
+    // Answers to worker calls relayed over Postgres; never fanned out to subscribers.
+    await listener.listen(CHANNELS.rpc, (payload) => {
+      try {
+        this.emitter.emit(RPC, JSON.parse(payload) as RpcResult);
+      } catch {
+        // ignore malformed payloads
+      }
+    });
     this.listener = listener;
+  }
+
+  /** Resolves with the worker's answer to a relayed call, or null when none arrives within `timeoutMs`. */
+  waitRpc(requestId: string, timeoutMs: number): Promise<RpcResult | null> {
+    return new Promise((resolve) => {
+      const onResult = (result: RpcResult) => {
+        if (result.requestId !== requestId) return;
+        clearTimeout(timer);
+        this.emitter.off(RPC, onResult);
+        resolve(result);
+      };
+      const timer = setTimeout(() => {
+        this.emitter.off(RPC, onResult);
+        resolve(null);
+      }, timeoutMs);
+      this.emitter.on(RPC, onResult);
+    });
   }
 
   /** Publishes a nonce on our own channel; if it doesn't come back, the listener is rebuilt. */

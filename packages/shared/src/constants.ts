@@ -44,6 +44,8 @@ export const CHANNELS = {
   control: 'wa_control',
   /** api → api: drop cached credentials (revoked keys, suspended or deleted users) on every instance. */
   auth: 'wa_auth',
+  /** worker → api: answers to RPC calls relayed over `wa_control` (when the API can't reach the worker's URL). */
+  rpc: 'wa_rpc',
 } as const;
 
 /** Payload of `wa_auth`. */

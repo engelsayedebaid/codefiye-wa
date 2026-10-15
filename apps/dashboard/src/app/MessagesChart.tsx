@@ -19,7 +19,7 @@ const SURFACE = 'var(--color-card)';
 const GRID = 'color-mix(in oklab, var(--color-ink) 8%, transparent)';
 const AXIS = 'color-mix(in oklab, var(--color-ink) 22%, transparent)';
 const HOVER = 'color-mix(in oklab, var(--color-ink) 38%, transparent)';
-const HEIGHT = 260;
+const DEFAULT_HEIGHT = 260;
 const PAD = { top: 16, right: 44, bottom: 30, left: 40 };
 
 const parseDay = (d: string) => new Date(`${d}T00:00:00Z`);
@@ -45,7 +45,7 @@ function useWidth<T extends HTMLElement>() {
   return { ref, width };
 }
 
-export function MessagesChart({ data, loading }: { data: DailyPoint[]; loading?: boolean }) {
+export function MessagesChart({ data, loading, height: HEIGHT = DEFAULT_HEIGHT }: { data: DailyPoint[]; loading?: boolean; height?: number }) {
   const { t, fmt, dir } = useI18n();
   const numberFormat = fmt.number;
   const dayLabel = fmt.dayShort;
@@ -158,12 +158,20 @@ export function MessagesChart({ data, loading }: { data: DailyPoint[]; loading?:
           >
             {ticks.map((t) => (
               <g key={t}>
-                <line x1={PAD.left} x2={width - PAD.right} y1={y(t)} y2={y(t)} stroke={t === 0 ? AXIS : GRID} strokeWidth={1} />
+                <line x1={PAD.left} x2={width - PAD.right} y1={y(t)} y2={y(t)} stroke={t === 0 ? AXIS : GRID} strokeWidth={1} strokeDasharray={t === 0 ? undefined : '3 3'} />
                 <text x={PAD.left - 8} y={y(t)} dy="0.32em" textAnchor="end" className="fill-faint text-[11px] tabular-nums">
                   {numberFormat.format(t)}
                 </text>
               </g>
             ))}
+            <defs>
+              {SERIES.map((s) => (
+                <linearGradient key={s.key} id={`area-${s.key}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={s.color} stopOpacity="0.22" />
+                  <stop offset="100%" stopColor={s.color} stopOpacity="0.0" />
+                </linearGradient>
+              ))}
+            </defs>
             {data.map((d, i) =>
               (i % labelEvery === 0 && last - i >= labelEvery) || i === last ? (
                 <text key={d.day} x={x(i)} y={HEIGHT - 8} textAnchor={i === last ? 'end' : i === 0 ? 'start' : 'middle'} className="fill-faint text-[11px]">
@@ -172,14 +180,23 @@ export function MessagesChart({ data, loading }: { data: DailyPoint[]; loading?:
               ) : null,
             )}
 
-            {hover !== null && <line x1={x(hover)} x2={x(hover)} y1={PAD.top} y2={PAD.top + innerH} stroke={HOVER} strokeWidth={1} />}
+            {hover !== null && <line x1={x(hover)} x2={x(hover)} y1={PAD.top} y2={PAD.top + innerH} stroke={HOVER} strokeWidth={1} strokeDasharray="3 3" />}
+
+            {data.length > 1 &&
+              SERIES.map((s) => (
+                <polygon
+                  key={`fill-${s.key}`}
+                  fill={`url(#area-${s.key})`}
+                  points={`${x(0)},${y(0)} ${data.map((d, i) => `${x(i)},${y(d[s.key])}`).join(' ')} ${x(last)},${y(0)}`}
+                />
+              ))}
 
             {SERIES.map((s) => (
               <polyline
                 key={s.key}
                 fill="none"
                 stroke={s.color}
-                strokeWidth={2}
+                strokeWidth={2.25}
                 strokeLinejoin="round"
                 strokeLinecap="round"
                 points={data.map((d, i) => `${x(i)},${y(d[s.key])}`).join(' ')}

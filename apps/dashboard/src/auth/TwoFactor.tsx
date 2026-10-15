@@ -1,24 +1,15 @@
 import { asciiDigits } from '@wa/shared/phone';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Copy, Download, ShieldAlert, ShieldCheck, Smartphone } from 'lucide-react';
+import { Check, Copy, Download, ShieldCheck, Smartphone } from 'lucide-react';
 import { type FormEvent, type ReactNode, useState } from 'react';
 import { api, ApiRequestError, errorMessage } from '../api';
 import { useI18n } from '../i18n';
 import { qk } from '../queries';
 import { signOut } from '../session';
-import { Button, cx, ErrorNote, Loading, Modal, SuccessNote } from '../ui';
+import { Button, cx, ErrorNote, Loading } from '../ui';
 import { AuthLayout } from './AuthPages';
 
 type Setup = { secret: string; otpauthUrl: string; qrImage: string };
-type LoginRequest = { id: string; ip: string | null; userAgent: string | null; createdAt: string; expiresAt: string };
-
-/** "Chrome · Windows" from a user agent; good enough to recognise your own device. */
-export function describeDevice(ua: string | null, unknown: string) {
-  if (!ua) return unknown;
-  const browser = /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : null;
-  const os = /Windows/.test(ua) ? 'Windows' : /Android/.test(ua) ? 'Android' : /iPhone|iPad|iPod/.test(ua) ? 'iOS' : /Mac OS X/.test(ua) ? 'macOS' : /Linux/.test(ua) ? 'Linux' : null;
-  return [browser, os].filter(Boolean).join(' · ') || unknown;
-}
 
 /**
  * Two-factor is mandatory: a signed-in user without it sees only this until an authenticator app is
@@ -70,7 +61,6 @@ export function TwoFactorSetup({ onEnabled }: { onEnabled: (codes: string[]) => 
 
   return (
     <AuthLayout title={s.title} subtitle={s.text} footer={logout} wide>
-      <LoginRequests />
       {setup.isPending ? (
         <Loading className="py-16" />
       ) : setup.isError ? (
@@ -267,87 +257,5 @@ export function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () =
         </Button>
       </div>
     </AuthLayout>
-  );
-}
-
-/**
- * Logins waiting for this device's approval (the account is signed in here and someone passed every
- * step elsewhere). Checked every few seconds while the tab is visible.
- */
-export function LoginRequests() {
-  const { t, fmt } = useI18n();
-  const r = t.auth.loginRequest;
-  const queryClient = useQueryClient();
-  const requests = useQuery({
-    queryKey: ['login-requests'],
-    queryFn: ({ signal }) => api<LoginRequest[]>('/api/account/login-requests', { signal }),
-    refetchInterval: 5_000,
-    retry: false,
-  });
-  const [dismissed, setDismissed] = useState<string[]>([]);
-  const [busy, setBusy] = useState<'approve' | 'deny' | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-
-  const request = requests.data?.find((x) => !dismissed.includes(x.id));
-  if (notice && !request) {
-    return (
-      <Modal title={r.title} onClose={() => setNotice(null)}>
-        <SuccessNote>{notice}</SuccessNote>
-        <Button className="w-full" onClick={() => setNotice(null)}>
-          {t.common.close}
-        </Button>
-      </Modal>
-    );
-  }
-  if (!request) return null;
-
-  const decide = async (decision: 'approve' | 'deny') => {
-    setBusy(decision);
-    setError(null);
-    try {
-      await api(`/api/account/login-requests/${request.id}/${decision}`, { method: 'POST' });
-      setNotice(decision === 'approve' ? r.approved : r.denied);
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(null);
-      setDismissed((d) => [...d, request.id]);
-      void queryClient.invalidateQueries({ queryKey: ['login-requests'] });
-    }
-  };
-
-  return (
-    <Modal title={r.title} description={r.text} onClose={() => setDismissed((d) => [...d, request.id])}>
-      <dl className="grid gap-2 rounded-lg border border-line bg-raised/30 p-4 text-sm">
-        <div className="flex justify-between gap-3">
-          <dt className="text-muted">{r.device}</dt>
-          <dd className="font-medium">
-            <bdi>{describeDevice(request.userAgent, r.unknown)}</bdi>
-          </dd>
-        </div>
-        <div className="flex justify-between gap-3">
-          <dt className="text-muted">{r.ip}</dt>
-          <dd className="ltr font-mono">{request.ip ?? '—'}</dd>
-        </div>
-        <div className="flex justify-between gap-3">
-          <dt className="text-muted">{r.time}</dt>
-          <dd>{fmt.dateTime(request.createdAt)}</dd>
-        </div>
-      </dl>
-      <p className="flex items-start gap-2 text-xs text-muted">
-        <ShieldAlert className="mt-0.5 size-3.5 shrink-0" />
-        {r.denyHint}
-      </p>
-      <ErrorNote>{error}</ErrorNote>
-      <div className="grid grid-cols-2 gap-2">
-        <Button variant="outline" loading={busy === 'deny'} disabled={busy !== null} onClick={() => void decide('deny')}>
-          {r.deny}
-        </Button>
-        <Button loading={busy === 'approve'} disabled={busy !== null} onClick={() => void decide('approve')}>
-          {r.approve}
-        </Button>
-      </div>
-    </Modal>
   );
 }

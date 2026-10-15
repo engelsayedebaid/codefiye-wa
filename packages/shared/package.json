@@ -9,6 +9,7 @@
     "./broadcasts": "./src/broadcasts.ts",
     "./constants": "./src/constants.ts",
     "./name-suggestions": "./src/name-suggestions.ts",
+    "./payments": "./src/payments.ts",
     "./phone": "./src/phone.ts",
     "./template-text": "./src/template-text.ts",
     "./chats": "./src/chats.ts",

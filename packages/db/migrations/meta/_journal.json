@@ -141,6 +141,20 @@
       "when": 1792050925558,
       "tag": "0019_two_factor_login",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1792061745789,
+      "tag": "0020_plan_payments",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1792063037211,
+      "tag": "0021_drop_login_approval",
+      "breakpoints": true
     }
   ]
 }

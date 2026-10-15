@@ -42,7 +42,7 @@ const { sql, db, end } = createDb(urls.pooled);
 const auth = createAuth(sql);
 const events = new EventBus({ createListener: () => createListener(urls.direct), sql, logger, onAuth: (target) => auth.apply(target) });
 await events.start();
-const workers = new WorkerClient(sql, config.WORKER_SECRET);
+const workers = new WorkerClient(sql, config.WORKER_SECRET, events);
 
 function otpSender(): OtpSender | null {
   if (config.OTP_CHANNEL === 'sms') {

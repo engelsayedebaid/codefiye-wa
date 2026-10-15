@@ -9,8 +9,12 @@ export type WaEvent =
   | Base<'session.status', { status: SessionStatus; phone: string | null; lastError: string | null }>
   | Base<'qrcode.updated', { qr: string }>
   | Base<'pairing.updated', { code: string }>
-  /** `chatJid`: the chat it belongs to (the sender in 1:1 chats, as WhatsApp addressed it — possibly a LID). */
-  | Base<'messages.received', { id: number; from: string; type: MessageType; text: string | null; chatJid?: string; pushName?: string | null }>
+  /**
+   * `chatJid`: the chat it belongs to (the sender in 1:1 chats, as WhatsApp addressed it — possibly a LID).
+   * `chatName`: what the chat is called (a group's subject, a contact's saved/verified name), so a
+   * notification can show it without the chat list loaded.
+   */
+  | Base<'messages.received', { id: number; from: string; type: MessageType; text: string | null; chatJid?: string; pushName?: string | null; chatName?: string | null }>
   | Base<'messages.update', { id: number; status: MessageStatus; error: string | null }>
   /** A message that didn't arrive through `messages.received`: sent from the phone itself, or queued from the chats page. */
   | Base<'messages.created', { id: number; chatJid: string; direction: MessageDirection; type: MessageType; /** The Idempotency-Key it was sent with, if any. */ ref?: string | null }>
@@ -36,4 +40,12 @@ export type ControlMessage =
   | { type: 'session.changed'; sessionId: string }
   | { type: 'message.queued'; sessionId: string }
   /** A sync job was started, paused, resumed, cancelled or retried. */
-  | { type: 'sync.changed'; sessionId: string };
+  | { type: 'sync.changed'; sessionId: string }
+  /**
+   * A worker RPC call relayed through Postgres: the API could not reach the owning worker's URL (it
+   * runs on another network, e.g. a dev API with the session on Railway). The owner answers on `wa_rpc`.
+   */
+  | { type: 'rpc'; sessionId: string; requestId: string; action: string; body: unknown };
+
+/** Payload of `wa_rpc`: the outcome of one relayed call, in the shape the worker's HTTP RPC would answer. */
+export type RpcResult = { requestId: string } & ({ ok: true; data: unknown } | { ok: false; status: number; code: string; message: string });

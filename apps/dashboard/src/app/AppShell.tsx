@@ -20,6 +20,7 @@ import {
   PhoneCall,
   ShieldCheck,
   Smartphone,
+  UserRound,
   X,
 } from 'lucide-react';
 import { getPlan, planHasFeature } from '@wa/shared/plans';
@@ -34,11 +35,11 @@ import { signOut } from '../session';
 import type { Session } from '../types';
 import { BRAND } from '../brand';
 import { useI18n } from '../i18n';
+import { prefetchAllPages, prefetchPage } from '../prefetch';
 import { Link, navigate, usePath } from '../router';
 import type { ChatNumber } from './chats/model';
 import { notificationsOn, NoteStack, useInboxNotes } from './chats/Notifier';
-import { Badge, Button, buttonClass, cx, ErrorNote, Field, flip, LangSwitch, Logo, LogoMark, Modal, SuccessNote, ThemeSwitch, usePlanName } from '../ui';
-import { LoginRequests } from '../auth/TwoFactor';
+import { Button, buttonClass, cx, ErrorNote, Field, flip, LangSwitch, Logo, LogoMark, Modal, SuccessNote, ThemeSwitch, usePlanName, VerifiedMark } from '../ui';
 import { type Account, AccountContext, isUnlimitedPlan, planState, useAccount } from './account';
 
 const COLLAPSE_KEY = 'wa.sidebar.collapsed';
@@ -90,7 +91,8 @@ function useNav() {
     ] as NavItem[],
     admin: [{ href: '/admin', label: n.admin, icon: ShieldCheck }] as NavItem[],
     secondary: [
-      { href: '/docs', label: t.app.secondary.docs, icon: BookOpen, newTab: true },
+      { href: '/guide', label: t.app.secondary.guide, icon: BookOpen, newTab: false },
+      { href: '/docs', label: t.app.secondary.docs, icon: FileText, newTab: true },
       { href: '/#faq', label: t.app.secondary.help, icon: CircleHelp, newTab: false },
       { href: `mailto:${BRAND.supportEmail}`, label: t.app.secondary.contact, icon: Mail, newTab: false },
     ],
@@ -103,7 +105,9 @@ function Breadcrumbs({ path }: { path: string }) {
   const labels = Object.fromEntries([...nav.main, ...nav.admin].map((n) => [n.href, n.label]));
   const parts: { label: string; href?: string }[] = path.startsWith('/sessions/')
     ? [{ label: labels['/sessions']!, href: '/sessions' }, { label: t.app.sessionDetail }]
-    : [{ label: labels[path] ?? labels['/dashboard']! }];
+    : path === '/profile'
+      ? [{ label: t.profile.title }]
+      : [{ label: labels[path] ?? labels['/dashboard']! }];
   return (
     <nav aria-label={t.app.breadcrumb}>
       <ol className="flex items-center gap-1.5 text-sm text-muted">
@@ -138,7 +142,7 @@ function initials(name: string) {
   return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase() || '?';
 }
 
-function ChangePassword({ onClose }: { onClose: () => void }) {
+export function ChangePassword({ onClose }: { onClose: () => void }) {
   const { t } = useI18n();
   const p = t.app.password;
   const [current, setCurrent] = useState('');
@@ -226,12 +230,15 @@ function UserMenu({ account, collapsed, onLogout }: { account: Account | null; c
             <div className="min-w-0 leading-tight">
               <p className="flex items-center gap-1.5 truncate text-sm font-medium">
                 {name}
-                {account?.user?.isAdmin && <Badge tone="good">{t.app.admin}</Badge>}
+                {account?.user?.isAdmin && <VerifiedMark />}
               </p>
               {email && <p className="ltr truncate text-xs text-muted">{email}</p>}
             </div>
           </div>
           <div className="-mx-1 my-1 h-px bg-line" />
+          <Link href="/profile" role="menuitem" onClick={() => setOpen(false)} className={menuItem}>
+            <UserRound className="size-4 text-muted" /> {t.app.userMenu.profile}
+          </Link>
           <Link href="/subscription" role="menuitem" onClick={() => setOpen(false)} className={menuItem}>
             <CreditCard className="size-4 text-muted" /> {t.app.userMenu.subscription}
           </Link>
@@ -264,7 +271,10 @@ function UserMenu({ account, collapsed, onLogout }: { account: Account | null; c
         {!collapsed && (
           <>
             <span className="min-w-0 flex-1 leading-tight">
-              <span className="block truncate text-sm font-medium">{name}</span>
+              <span className="flex items-center gap-1 truncate text-sm font-medium">
+                <span className="truncate">{name}</span>
+                {account?.user?.isAdmin && <VerifiedMark />}
+              </span>
               {email && <span className="ltr block truncate text-[11px] text-muted">{email}</span>}
             </span>
             <ChevronsUpDown className="size-4 shrink-0 text-muted" />
@@ -302,6 +312,8 @@ function NavGroup({
               <Link
                 href={item.href}
                 onClick={onNavigate}
+                onPointerEnter={() => prefetchPage(item.href)}
+                onFocus={() => prefetchPage(item.href)}
                 aria-current={active ? 'page' : undefined}
                 title={collapsed ? item.label : undefined}
                 className={itemClass(active, collapsed)}
@@ -562,6 +574,8 @@ export function AppShell({ children, account }: { children: ReactNode; account: 
   // The account is cached and kept fresh by React Query; pages call reload() after changing it.
   const context = useMemo(() => ({ account, reload: () => void queryClient.invalidateQueries({ queryKey: qk.me }) }), [account, queryClient]);
   useLiveCache();
+  // The other pages' code arrives in idle time, so the first click on each is instant.
+  useEffect(() => prefetchAllPages(location.pathname), []);
 
   const toggle = () => {
     if (window.matchMedia('(min-width: 768px)').matches) {
@@ -580,7 +594,6 @@ export function AppShell({ children, account }: { children: ReactNode; account: 
 
   return (
     <AccountContext.Provider value={context}>
-      <LoginRequests />
       <InboxAlerts account={account} path={path} />
       <div className="flex min-h-svh bg-surface">
         <aside className={cx('sticky top-0 hidden h-svh shrink-0 px-2 py-2 transition-[width] duration-300 ease-out md:block', collapsed ? 'w-[72px]' : 'w-[272px]')}>

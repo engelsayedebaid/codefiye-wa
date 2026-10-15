@@ -1,16 +1,18 @@
 import { getPlan } from '@wa/shared/plans';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Hourglass, Info, Infinity as InfinityIcon, Smartphone } from 'lucide-react';
-import { type FormEvent, type ReactNode, useState } from 'react';
-import { api, ApiRequestError, errorMessage } from '../api';
+import { CheckCircle2, Hourglass, Info, Infinity as InfinityIcon, Smartphone } from 'lucide-react';
+import { type ReactNode, useState } from 'react';
+import { api, errorMessage } from '../api';
 import { isUnlimitedPlan, type PlanRequest, planState, useAccount } from '../app/account';
+import { MethodChip, PaymentDetailsRows } from '../app/payments/methods';
+import { RequestPlanModal } from '../app/payments/RequestPlan';
 import { PhoneVerifyModal } from '../auth/Otp';
 import { BRAND } from '../brand';
 import { useI18n } from '../i18n';
 import { qk } from '../queries';
 import { type PricedPlan } from '../site/content';
 import { PlanCards } from '../site/Pricing';
-import { Badge, Button, buttonClass, Card, delay, ErrorNote, Field, Modal, PageHeader, SuccessNote, type Tone, usePlanName } from '../ui';
+import { Badge, Button, buttonClass, Card, delay, ErrorNote, PageHeader, SuccessNote, type Tone, usePlanName } from '../ui';
 
 const REQUEST_TONES: Record<PlanRequest['status'], Tone> = { pending: 'info', approved: 'good', rejected: 'critical', cancelled: 'neutral' };
 
@@ -20,43 +22,6 @@ function Stat({ label, value, index }: { label: string; value: ReactNode; index:
       <dt className="text-sm text-muted">{label}</dt>
       <dd className="mt-1 text-xl font-semibold tabular-nums">{value}</dd>
     </div>
-  );
-}
-
-function RequestPlan({ plan, onClose, onSent, onNeedsPhone }: { plan: PricedPlan; onClose: () => void; onSent: () => void; onNeedsPhone: () => void }) {
-  const { t } = useI18n();
-  const s = t.subscription;
-  const [note, setNote] = useState('');
-  const request = useMutation({
-    mutationFn: () => api('/api/plan-requests', { method: 'POST', body: { planId: plan.id, note: note.trim() || undefined } }),
-    onSuccess: onSent,
-    onError: (err) => {
-      if (err instanceof ApiRequestError && err.code === 'phone_unverified') onNeedsPhone();
-    },
-  });
-
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    if (!request.isPending) request.mutate();
-  };
-
-  const error = request.error instanceof ApiRequestError && request.error.code === 'duplicate_request' ? s.duplicate : request.isError ? errorMessage(request.error) : null;
-
-  return (
-    <Modal title={s.modalTitle(plan.name)} description={s.modalText} onClose={onClose}>
-      <form onSubmit={submit} className="space-y-4">
-        <Field label={s.noteLabel} placeholder={s.notePlaceholder} value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} autoFocus />
-        <ErrorNote>{error}</ErrorNote>
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={onClose}>
-            {t.common.cancel}
-          </Button>
-          <Button type="submit" variant="brand" loading={request.isPending}>
-            {s.submit}
-          </Button>
-        </div>
-      </form>
-    </Modal>
   );
 }
 
@@ -72,7 +37,11 @@ function RequestHistory() {
       <ul className="divide-y divide-line">
         {past.slice(0, 5).map((r) => (
           <li key={r.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
-            <span className="font-medium">{planName(getPlan(r.planId))}</span>
+            <span className="flex flex-wrap items-center gap-2 font-medium">
+              {planName(getPlan(r.planId))}
+              <span className="text-xs font-normal text-muted">{t.subscription.payment.months(r.months)}</span>
+              {r.payment && <MethodChip method={r.payment.method} />}
+            </span>
             <span className="flex items-center gap-3 text-muted">
               {fmt.date(r.decidedAt ?? r.createdAt)}
               <Badge tone={REQUEST_TONES[r.status]}>{t.status.request[r.status]}</Badge>
@@ -151,17 +120,33 @@ export function SubscriptionPage() {
       <SuccessNote>{sent && !pending && s.sent}</SuccessNote>
 
       {pending && (
-        <div className="animate-fade-up flex flex-wrap items-center justify-between gap-4 rounded-lg border border-sky-500/25 bg-sky-500/10 p-4">
-          <div className="flex items-start gap-3">
-            <Hourglass className="mt-0.5 size-5 shrink-0 animate-pulse text-sky-300" />
-            <div>
-              <p className="font-medium text-sky-200">{s.pendingTitle(planName(getPlan(pending.planId)))}</p>
-              <p className="text-sm text-muted">{s.pendingText(fmt.timeAgo(pending.createdAt))}</p>
+        <div className="animate-fade-up rounded-xl border border-sky-500/25 bg-sky-500/10 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="flex min-w-0 items-start gap-3">
+              <Hourglass className="mt-0.5 size-5 shrink-0 animate-pulse text-sky-300" />
+              <div className="min-w-0">
+                <p className="flex flex-wrap items-center gap-2 font-medium text-sky-200">
+                  {s.pendingTitle(planName(getPlan(pending.planId)))}
+                  <span className="rounded-full bg-sky-500/15 px-2 py-0.5 text-xs font-medium text-sky-200">{s.payment.months(pending.months)}</span>
+                </p>
+                <p className="text-sm text-muted">{pending.payment ? s.payment.pendingPaid(fmt.timeAgo(pending.createdAt)) : s.pendingText(fmt.timeAgo(pending.createdAt))}</p>
+              </div>
             </div>
+            <Button variant="outline" size="sm" loading={cancel.isPending} onClick={() => cancel.mutate(pending.id)}>
+              {s.cancelRequest}
+            </Button>
           </div>
-          <Button variant="outline" size="sm" loading={cancel.isPending} onClick={() => cancel.mutate(pending.id)}>
-            {s.cancelRequest}
-          </Button>
+          {pending.payment && (
+            <div className="mt-3 flex flex-wrap items-start gap-x-6 gap-y-2 border-t border-sky-500/15 pt-3 ps-8">
+              <MethodChip method={pending.payment.method} />
+              <PaymentDetailsRows payment={pending.payment} className="flex-1" />
+              {pending.hasProof && (
+                <span className="flex items-center gap-1 text-xs text-muted">
+                  <CheckCircle2 className="size-3.5 text-brand" /> {s.payment.proofAttached}
+                </span>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -212,7 +197,7 @@ export function SubscriptionPage() {
       )}
 
       {requesting && (
-        <RequestPlan
+        <RequestPlanModal
           plan={requesting}
           onClose={() => setRequesting(null)}
           onSent={() => {

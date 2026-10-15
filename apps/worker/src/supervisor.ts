@@ -1,5 +1,6 @@
-import type { SessionSettings, Sql } from '@wa/db';
-import { CHANNELS, type ControlMessage, type SessionStatus } from '@wa/shared';
+import { notify, type SessionSettings, type Sql } from '@wa/db';
+import { CHANNELS, type ControlMessage, type RpcResult, type SessionStatus } from '@wa/shared';
+import { describeRpcError, dispatch } from './rpc';
 import { type RunnerContext, SessionRunner } from './runner';
 
 export type SupervisorOptions = Omit<RunnerContext, 'onStopped'> & {
@@ -14,6 +15,8 @@ export type SupervisorOptions = Omit<RunnerContext, 'onStopped'> & {
 const HEARTBEAT_TIMEOUT = '30 seconds';
 /** A runner stalled this long (several ticks, not a passing moment) is restarted. */
 const STALL_RESTART_MS = 15_000;
+/** NOTIFY payloads are capped at 8000 bytes; a relayed answer above this is refused rather than lost. */
+const RPC_RESULT_MAX_BYTES = 7_500;
 
 /**
  * Distributed supervisor: every worker runs one. Each tick it heartbeats, drops sessions it no
@@ -69,7 +72,30 @@ export class Supervisor {
       this.runners.get(message.sessionId)?.sync.interrupt();
       return;
     }
+    if (message.type === 'rpc') {
+      // Only the owner answers, so the API gets exactly one reply (or none: the session isn't running anywhere).
+      if (this.runners.has(message.sessionId)) void this.answerRpc(message);
+      return;
+    }
     void this.tick();
+  }
+
+  /** An RPC call the API relayed through Postgres because it can't reach this worker's URL (see apps/api/src/lib/workers.ts). */
+  private async answerRpc(message: Extract<ControlMessage, { type: 'rpc' }>) {
+    const { sql, logger } = this.options;
+    let result: RpcResult;
+    try {
+      const data = await dispatch(this, message.sessionId, message.action, message.body);
+      result = { requestId: message.requestId, ok: true, data };
+      if (Buffer.byteLength(JSON.stringify(result)) > RPC_RESULT_MAX_BYTES) {
+        result = { requestId: message.requestId, ok: false, status: 500, code: 'too_large', message: 'The answer is too large to relay through Postgres' };
+      }
+    } catch (err) {
+      const described = describeRpcError(err);
+      if (described.status === 500) logger.error({ err, action: message.action, sessionId: message.sessionId }, 'relayed rpc error');
+      result = { requestId: message.requestId, ok: false, ...described };
+    }
+    await notify(sql, CHANNELS.rpc, result).catch((err) => logger.warn({ err, action: message.action }, 'could not answer relayed rpc'));
   }
 
   /** Runs a reconcile pass; calls made while one is in flight coalesce into one more pass. */

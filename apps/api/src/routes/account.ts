@@ -1,5 +1,20 @@
 import { pgError, PG_ERRORS, type Sql, type TxSql, type UserRole, type UserStatus, type workspaces } from '@wa/db';
-import { getPlan, normalizePhone, ok, REQUESTABLE_PLANS, SESSION_STATUSES, successSchema, TRIAL_DAYS } from '@wa/shared';
+import {
+  enabledPaymentMethods,
+  getPlan,
+  normalizePhone,
+  ok,
+  type PaymentDetails,
+  paymentDetailsSchema,
+  paymentMonthsSchema,
+  paymentSettingsSchema,
+  PROOF_MAX_BYTES,
+  PROOF_MIMETYPES,
+  REQUESTABLE_PLANS,
+  SESSION_STATUSES,
+  successSchema,
+  TRIAL_DAYS,
+} from '@wa/shared';
 import { randomBytes } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
@@ -10,6 +25,7 @@ import { clearSessionCookie, CONSOLE_TTL_SEC, requirePat, SESSION_COOKIE, setSes
 import { ApiError, badRequest, conflict, forbidden, notFound, tooMany, unprocessable } from '../lib/errors';
 import { getFeatures } from '../lib/features';
 import { generateKey, hashKey } from '../lib/keys';
+import { getPaymentSettings } from '../lib/payments';
 import { hashPassword, needsRehash, passwordProblems, verifyPassword } from '../lib/passwords';
 import { generateRecoveryCodes, generateTotpSecret, hashRecoveryCode, looksLikeRecoveryCode, matchTotp, otpauthUrl, totpCipher, type TotpCipher } from '../lib/totp';
 import { createVerifications, type Lang, normalizeCode, type VerificationTicket } from '../lib/verification';
@@ -103,33 +119,70 @@ export const planRequestDto = z.object({
   id: z.uuid(),
   planId: z.string(),
   status: z.enum(['pending', 'approved', 'rejected', 'cancelled']),
+  /** Months the customer paid for. */
+  months: z.number(),
+  /** How the customer paid; null for requests without payment details. */
+  payment: paymentDetailsSchema.nullable(),
+  /** A transfer screenshot is attached (admins fetch it from `/api/admin/plan-requests/:id/proof`). */
+  hasProof: z.boolean(),
   note: z.string().nullable(),
   adminNote: z.string().nullable(),
   createdAt: z.string(),
   decidedAt: z.string().nullable(),
 });
 
-type PlanRequestRow = {
+/** Columns of a request without the screenshot bytes (`has_proof` says whether there is one). */
+export const PLAN_REQUEST_COLUMNS = 'id, plan_id, status, months, payment, (proof is not null) as has_proof, note, admin_note, created_at, decided_at';
+
+export type PlanRequestRow = {
   id: string;
   plan_id: string;
   status: 'pending' | 'approved' | 'rejected' | 'cancelled';
+  months: number;
+  payment: PaymentDetails | null;
+  has_proof: boolean;
   note: string | null;
   admin_note: string | null;
   created_at: Date;
   decided_at: Date | null;
 };
 
-export const toPlanRequestDto = (r: { id: string; planId: string; status: PlanRequestRow['status']; note: string | null; adminNote: string | null; createdAt: Date; decidedAt: Date | null }) => ({
+export const toPlanRequestDto = (r: {
+  id: string;
+  planId: string;
+  status: PlanRequestRow['status'];
+  months: number;
+  payment: PaymentDetails | null;
+  hasProof: boolean;
+  note: string | null;
+  adminNote: string | null;
+  createdAt: Date;
+  decidedAt: Date | null;
+}) => ({
   id: r.id,
   planId: r.planId,
   status: r.status,
+  months: r.months,
+  payment: r.payment,
+  hasProof: r.hasProof,
   note: r.note,
   adminNote: r.adminNote,
   createdAt: r.createdAt.toISOString(),
   decidedAt: r.decidedAt?.toISOString() ?? null,
 });
-const planRequestRowDto = (r: PlanRequestRow) =>
-  toPlanRequestDto({ id: r.id, planId: r.plan_id, status: r.status, note: r.note, adminNote: r.admin_note, createdAt: r.created_at, decidedAt: r.decided_at });
+export const planRequestRowDto = (r: PlanRequestRow) =>
+  toPlanRequestDto({
+    id: r.id,
+    planId: r.plan_id,
+    status: r.status,
+    months: r.months,
+    payment: r.payment,
+    hasProof: r.has_proof,
+    note: r.note,
+    adminNote: r.admin_note,
+    createdAt: r.created_at,
+    decidedAt: r.decided_at,
+  });
 
 const USER_COLUMNS = (sql: Sql | TxSql) => sql`id, name, email, password_hash, role, status, suspended_reason, phone, phone_verified_at, totp_enabled_at`;
 
@@ -185,17 +238,11 @@ const TOTP_ISSUER = 'WA CodeFiye';
 const LOGIN_TTL_SEC = 15 * 60;
 /** Authenticator codes allowed per login attempt (a recovery code counts too). */
 const LOGIN_TOTP_ATTEMPTS = 5;
-/**
- * A dashboard session counts as "signed in on another device" (and must approve a new login) when it
- * was used within this window. Older ones would leave a user who lost that device waiting for an
- * answer that never comes; a recovery code skips the approval in that case.
- */
-const APPROVER_ACTIVE_SEC = 3 * 86_400;
 
-type LoginStep = 'phone' | 'totp' | 'approval' | 'done';
+type LoginStep = 'phone' | 'totp' | 'done';
 
 const loginResponse = z.object({
-  step: z.enum(['phone', 'totp', 'approval', 'done']).describe('What the client does next; `done` = the session cookie is set'),
+  step: z.enum(['phone', 'totp', 'done']).describe('What the client does next; `done` = the session cookie is set'),
   loginId: z.uuid(),
   /** Returned once, by `/api/auth/login`: send it with every later step of this login. */
   loginToken: z.string().optional(),
@@ -216,7 +263,6 @@ type AttemptRow = {
   phone_verified_at: Date | null;
   totp_verified_at: Date | null;
   totp_attempts: number;
-  approval: 'pending' | 'approved' | 'denied' | null;
   expires_at: Date;
 };
 
@@ -260,8 +306,8 @@ async function spendRecoveryCode(sql: Sql | TxSql, userId: string, code: string)
  * its workspace and the trial are created only once the phone is confirmed.
  *
  * Login is a sequence of steps on a `login_attempts` row: password → code sent to the verified phone
- * → authenticator code (once two-factor is set up) → approval from another signed-in device, when
- * there is one. The session cookie is set only when every step passed.
+ * → authenticator code (once two-factor is set up). The session cookie is set only when every step
+ * passed.
  */
 export function publicAccountRoutes(deps: Deps): FastifyPluginAsyncZod {
   const { sql, throttle, auth } = deps;
@@ -278,7 +324,7 @@ export function publicAccountRoutes(deps: Deps): FastifyPluginAsyncZod {
   /** The open login the client holds (id + secret token). */
   async function loadAttempt(id: string, token: string) {
     const [attempt] = await sql<AttemptRow[]>`
-      select id, user_id, workspace_id, remember, phone_verification_id, phone_verified_at, totp_verified_at, totp_attempts, approval, expires_at
+      select id, user_id, workspace_id, remember, phone_verification_id, phone_verified_at, totp_verified_at, totp_attempts, expires_at
       from login_attempts
       where id = ${id} and token_hash = ${hashKey(token)} and completed_at is null and expires_at > now()`;
     if (!attempt) throw loginGone();
@@ -296,33 +342,11 @@ export function publicAccountRoutes(deps: Deps): FastifyPluginAsyncZod {
     ...extra,
   });
 
-  /**
-   * Moves a login as far as it can go: the next factor it needs, the other device's answer, or — when
-   * everything passed — the session cookie.
-   */
+  /** Moves a login as far as it can go: the next factor it needs, or — when everything passed — the session cookie. */
   async function advance(attempt: AttemptRow, req: FastifyRequest, reply: FastifyReply) {
     const user = await loadUser(attempt.user_id);
     if (phonePending(attempt)) return stepResponse(attempt, 'phone');
     if (user.totp_enabled_at && !attempt.totp_verified_at) return stepResponse(attempt, 'totp');
-
-    let approval = attempt.approval;
-    if (approval === null) {
-      // Signed in elsewhere (a dashboard session used recently) → that device decides.
-      const [other] = await sql`
-        select 1 from api_keys k join workspaces w on w.id = k.workspace_id
-        where w.owner_id = ${user.id} and 'console' = any(k.scopes) and k.revoked_at is null
-          and (k.expires_at is null or k.expires_at > now())
-          and coalesce(k.last_used_at, k.created_at) > now() - make_interval(secs => ${APPROVER_ACTIVE_SEC})
-        limit 1`;
-      const [row] = await sql<{ approval: AttemptRow['approval'] }[]>`
-        update login_attempts set approval = ${other ? 'pending' : 'approved'}, decided_at = ${other ? null : sql`now()`}
-        where id = ${attempt.id} and approval is null
-        returning approval`;
-      // Lost a race with a concurrent request of the same login: take what it decided.
-      approval = row ? row.approval : ((await sql<{ approval: AttemptRow['approval'] }[]>`select approval from login_attempts where id = ${attempt.id}`)[0]?.approval ?? null);
-    }
-    if (approval === 'pending') return stepResponse({ ...attempt, approval }, 'approval');
-    if (approval === 'denied') throw forbidden('This login was declined from your signed-in device.', 'login_denied');
 
     const [done] = await sql`update login_attempts set completed_at = now() where id = ${attempt.id} and completed_at is null returning id`;
     if (!done) throw loginGone();
@@ -347,16 +371,14 @@ export function publicAccountRoutes(deps: Deps): FastifyPluginAsyncZod {
     return LOGIN_TOTP_ATTEMPTS - row.totp_attempts;
   }
 
-  /** A recovery code stands in for the authenticator and the other device, and signs that device (and every other session) out. */
+  /** A recovery code stands in for the authenticator and signs every other session of the account out. */
   async function recover(attempt: AttemptRow, code: string, req: FastifyRequest, reply: FastifyReply) {
     const user = await loadUser(attempt.user_id);
     if (!user.totp_enabled_at) throw badRequest('Two-factor authentication is not set up on this account', 'two_factor_off');
     const left = await spendFactorAttempt(attempt.id);
     const ended = await sql.begin(async (tx) => {
       if (!(await spendRecoveryCode(tx, user.id, code))) return null;
-      await tx`
-        update login_attempts set totp_verified_at = coalesce(totp_verified_at, now()), approval = 'approved', decided_at = now(), decided_by = null
-        where id = ${attempt.id}`;
+      await tx`update login_attempts set totp_verified_at = coalesce(totp_verified_at, now()) where id = ${attempt.id}`;
       return tx<{ id: string }[]>`
         update api_keys set revoked_at = now()
         where workspace_id in (select id from workspaces where owner_id = ${user.id}) and 'console' = any(scopes) and revoked_at is null
@@ -365,7 +387,7 @@ export function publicAccountRoutes(deps: Deps): FastifyPluginAsyncZod {
     if (!ended) throw codeWrong(left);
     if (ended.length) await auth.revoke({ keyIds: ended.map((k) => k.id) });
     req.log.info({ userId: user.id, sessionsEnded: ended.length }, 'login with a recovery code');
-    return advance({ ...attempt, totp_verified_at: new Date(), approval: 'approved' }, req, reply);
+    return advance({ ...attempt, totp_verified_at: new Date() }, req, reply);
   }
 
   return async (app) => {
@@ -472,8 +494,7 @@ export function publicAccountRoutes(deps: Deps): FastifyPluginAsyncZod {
           summary: 'Log in',
           description:
             'Checks the password and starts a login. Next steps, as `step` says: `phone` (a code was sent to the account\'s number → ' +
-            '`/api/auth/login/phone`), `totp` (authenticator code → `/api/auth/login/totp`), `approval` (another signed-in device ' +
-            'must approve → poll `/api/auth/login/status`), `done` (the dashboard session cookie is set). ' +
+            '`/api/auth/login/phone`), `totp` (authenticator code → `/api/auth/login/totp`), `done` (the dashboard session cookie is set). ' +
             'For API access, create a workspace token (`wap_…`) instead.',
           security: [],
           body: z.object({ email: z.string().trim().min(3).max(254), password: z.string().min(1).max(200), remember: z.boolean().default(true), lang }),
@@ -518,7 +539,7 @@ export function publicAccountRoutes(deps: Deps): FastifyPluginAsyncZod {
           insert into login_attempts (user_id, workspace_id, token_hash, remember, ip, user_agent, phone_verification_id, expires_at)
           values (${user.id}, ${workspace.id}, ${hashKey(loginToken)}, ${req.body.remember}, ${req.ip},
                   ${req.headers['user-agent']?.slice(0, 400) ?? null}, ${ticket?.verificationId ?? null}, now() + make_interval(secs => ${LOGIN_TTL_SEC}))
-          returning id, user_id, workspace_id, remember, phone_verification_id, phone_verified_at, totp_verified_at, totp_attempts, approval, expires_at`;
+          returning id, user_id, workspace_id, remember, phone_verification_id, phone_verified_at, totp_verified_at, totp_attempts, expires_at`;
         const next = await advance(attempt!, req, reply);
         return ok({ ...next, loginToken, ticket: next.step === 'phone' ? ticket : null });
       },
@@ -593,8 +614,8 @@ export function publicAccountRoutes(deps: Deps): FastifyPluginAsyncZod {
           tags,
           summary: 'Log in: use a recovery code',
           description:
-            'For a lost phone or authenticator, or when the other signed-in device can\'t answer: replaces the authenticator code ' +
-            'and the approval, and ends every other dashboard session of the account. Each recovery code works once.',
+            'For a lost phone or authenticator: replaces the authenticator code and ends every other dashboard session of the ' +
+            'account. Each recovery code works once.',
           security: [],
           body: z.object({ ...loginRef, code: z.string().trim().min(10).max(32) }),
           response: { 200: successSchema(loginResponse) },
@@ -605,23 +626,6 @@ export function publicAccountRoutes(deps: Deps): FastifyPluginAsyncZod {
         if (phonePending(attempt)) throw badRequest('Confirm the phone code first', 'step_order');
         return ok(await recover(attempt, req.body.code, req, reply));
       },
-    );
-
-    app.post(
-      '/login/status',
-      {
-        // Polled every few seconds while the other device decides.
-        config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
-        schema: {
-          tags,
-          summary: 'Log in: check the approval',
-          description: 'While `step` is `approval`, poll this every few seconds. Once approved it sets the session cookie (`done`); declined → 403 `login_denied`.',
-          security: [],
-          body: z.object(loginRef),
-          response: { 200: successSchema(loginResponse) },
-        },
-      },
-      async (req, reply) => ok(await advance(await loadAttempt(req.body.loginId, req.body.loginToken), req, reply)),
     );
 
     app.post(
@@ -710,7 +714,7 @@ export function accountRoutes(deps: Deps): FastifyPluginAsyncZod {
     >`
       select w.id, w.name, w.plan_id, w.trial_ends_at, w.plan_expires_at,
         u.id as user_id, u.name as user_name, u.email, u.role, u.status, u.phone, u.phone_verified_at, u.totp_enabled_at,
-        (select to_jsonb(r) from plan_requests r where r.workspace_id = w.id and r.status = 'pending' limit 1) as request
+        (select to_jsonb(r) from (select ${sql.unsafe(PLAN_REQUEST_COLUMNS)} from plan_requests x where x.workspace_id = w.id and x.status = 'pending' limit 1) r) as request
       from workspaces w
       left join users u on u.id = w.owner_id
       where w.id = ${workspaceId}`;
@@ -781,6 +785,28 @@ export function accountRoutes(deps: Deps): FastifyPluginAsyncZod {
           await auth.revoke({ keyIds: [req.auth.keyId] });
         }
         setSessionCookie(reply, token, { remember: req.body.remember, secure: req.secureCookies });
+        return ok(await loadMe(req.auth.workspaceId));
+      },
+    );
+
+    app.put(
+      '/account/profile',
+      {
+        schema: {
+          tags,
+          summary: 'Edit the profile: your name and the workspace name',
+          body: z.object({ name: z.string().trim().min(2).max(120).optional(), workspaceName: z.string().trim().min(2).max(120).optional() }),
+          response: { 200: successSchema(meResponse) },
+        },
+      },
+      async (req) => {
+        const userId = requireUser(req);
+        if (!req.auth.console) throw forbidden('Edit the profile from the dashboard', 'console_required');
+        const { name, workspaceName } = req.body;
+        await sql.begin(async (tx) => {
+          if (name !== undefined) await tx`update users set name = ${name} where id = ${userId}`;
+          if (workspaceName !== undefined) await tx`update workspaces set name = ${workspaceName} where id = ${req.auth.workspaceId} and owner_id = ${userId}`;
+        });
         return ok(await loadMe(req.auth.workspaceId));
       },
     );
@@ -993,74 +1019,59 @@ export function accountRoutes(deps: Deps): FastifyPluginAsyncZod {
       },
     );
 
-    const loginRequestDto = z.object({ id: z.uuid(), ip: z.string().nullable(), userAgent: z.string().nullable(), createdAt: z.string(), expiresAt: z.string() });
-
-    app.get(
-      '/account/login-requests',
-      {
-        schema: {
-          tags,
-          summary: 'Logins waiting for this device\'s approval',
-          description: 'Someone passed every login step on another device while this account is signed in here: approve or decline it.',
-          response: { 200: successSchema(z.array(loginRequestDto)) },
-        },
-      },
-      async (req) => {
-        const userId = requireUser(req);
-        const rows = await sql<{ id: string; ip: string | null; user_agent: string | null; created_at: Date; expires_at: Date }[]>`
-          select id, ip, user_agent, created_at, expires_at from login_attempts
-          where user_id = ${userId} and approval = 'pending' and completed_at is null and expires_at > now()
-          order by created_at desc limit 10`;
-        return ok(rows.map((r) => ({ id: r.id, ip: r.ip, userAgent: r.user_agent, createdAt: r.created_at.toISOString(), expiresAt: r.expires_at.toISOString() })));
-      },
-    );
-
-    app.post(
-      '/account/login-requests/:id/:decision',
-      {
-        schema: {
-          tags,
-          summary: 'Approve or decline a login',
-          description: 'Only from a signed-in dashboard (not with an API token).',
-          params: z.object({ id: z.uuid(), decision: z.enum(['approve', 'deny']) }),
-          response: { 200: successSchema(z.object({ approval: z.enum(['approved', 'denied']) })) },
-        },
-      },
-      async (req) => {
-        const userId = requireUser(req);
-        if (!req.auth.console) throw forbidden('Approve logins from the dashboard', 'console_required');
-        const approval = req.params.decision === 'approve' ? 'approved' : 'denied';
-        const [row] = await sql`
-          update login_attempts set approval = ${approval}, decided_by = ${req.auth.keyId}, decided_at = now()
-          where id = ${req.params.id} and user_id = ${userId} and approval = 'pending' and completed_at is null and expires_at > now()
-          returning id`;
-        if (!row) throw notFound('This login request has expired or was already answered', 'login_request_not_found');
-        return ok({ approval: approval as 'approved' | 'denied' });
-      },
-    );
-
     app.get(
       '/plan-requests',
       { schema: { tags, summary: 'Plan requests of this workspace, newest first', response: { 200: successSchema(z.array(planRequestDto)) } } },
       async (req) => {
         requirePat(req);
         const rows = await sql<PlanRequestRow[]>`
-          select id, plan_id, status, note, admin_note, created_at, decided_at from plan_requests
+          select ${sql.unsafe(PLAN_REQUEST_COLUMNS)} from plan_requests
           where workspace_id = ${req.auth.workspaceId} order by created_at desc limit 20`;
         return ok(rows.map(planRequestRowDto));
       },
     );
 
+    app.get(
+      '/payment-methods',
+      {
+        schema: {
+          tags,
+          summary: 'How to pay for a plan: the methods the operator accepts, with their receiving accounts',
+          response: { 200: successSchema(paymentSettingsSchema) },
+        },
+      },
+      async (req) => {
+        requirePat(req);
+        return ok(await getPaymentSettings(sql));
+      },
+    );
+
+    const proofSchema = z.object({
+      mimetype: z.enum(PROOF_MIMETYPES),
+      /** The image, base64 (no data: prefix). */
+      data: z.string().min(1).max(Math.ceil((PROOF_MAX_BYTES * 4) / 3) + 4),
+    });
+
     app.post(
       '/plan-requests',
       {
+        // The screenshot travels inside the JSON body.
+        bodyLimit: 4 * 1024 * 1024,
         schema: {
           tags,
           summary: 'Request a plan',
           description:
             'Asks an admin to move the workspace to a plan. Needs an active account with a verified phone number. ' +
+            'Priced plans need `payment` (how you paid, per method) and `proof` (a screenshot of the transfer) when the operator ' +
+            'accepts at least one payment method (see `GET /api/payment-methods`). ' +
             'Replaces a pending request for another plan; asking again for the pending plan is a 409.',
-          body: z.object({ planId: z.enum(REQUESTABLE_PLANS), note: z.string().trim().max(500).optional() }),
+          body: z.object({
+            planId: z.enum(REQUESTABLE_PLANS),
+            months: paymentMonthsSchema.default(1),
+            payment: paymentDetailsSchema.optional(),
+            proof: proofSchema.optional(),
+            note: z.string().trim().max(500).optional(),
+          }),
           response: { 201: successSchema(planRequestDto) },
         },
       },
@@ -1069,19 +1080,36 @@ export function accountRoutes(deps: Deps): FastifyPluginAsyncZod {
         if (!req.auth.isAdmin && !req.auth.phoneVerified) {
           throw forbidden('Verify your phone number before requesting a plan', 'phone_unverified');
         }
+        const { planId, months, payment, note } = req.body;
+        const settings = await getPaymentSettings(sql);
+        const accepted = enabledPaymentMethods(settings);
+        // Payment is expected when the plan has a price and there is a way to pay; custom-priced plans are arranged by hand.
+        if (getPlan(planId).priceUsd !== null && accepted.length > 0) {
+          if (!payment) throw unprocessable('Choose how you paid', { payment: ['Pick a payment method'] });
+          if (!accepted.includes(payment.method)) throw unprocessable('This payment method is not accepted', { payment: ['Pick an accepted payment method'] });
+          if (!req.body.proof) throw unprocessable('Attach a screenshot of the transfer', { proof: ['Attach a screenshot'] });
+        }
+        let proof: Buffer | null = null;
+        if (req.body.proof) {
+          proof = Buffer.from(req.body.proof.data, 'base64');
+          if (proof.length === 0) throw unprocessable('The screenshot is empty', { proof: ['Attach a screenshot'] });
+          if (proof.length > PROOF_MAX_BYTES) throw unprocessable('The screenshot is too large', { proof: ['Use an image under 2 MB'] });
+        }
+        const proofMimetype = req.body.proof?.mimetype ?? null;
         const ws = req.auth.workspaceId;
         const request = await sql
           .begin(async (tx) => {
             // Serializes concurrent requests of this workspace (the unique index is the backstop).
             await tx`select id from workspaces where id = ${ws} for update`;
             const [pending] = await tx<{ id: string; plan_id: string }[]>`select id, plan_id from plan_requests where workspace_id = ${ws} and status = 'pending'`;
-            if (pending?.plan_id === req.body.planId) {
+            if (pending?.plan_id === planId) {
               throw conflict('You already have a pending request for this plan', 'duplicate_request');
             }
             if (pending) await tx`update plan_requests set status = 'cancelled', decided_at = now() where id = ${pending.id}`;
             const [row] = await tx<PlanRequestRow[]>`
-              insert into plan_requests (workspace_id, plan_id, note) values (${ws}, ${req.body.planId}, ${req.body.note || null})
-              returning id, plan_id, status, note, admin_note, created_at, decided_at`;
+              insert into plan_requests (workspace_id, plan_id, months, payment, proof_mimetype, proof, note)
+              values (${ws}, ${planId}, ${months}, ${payment ? sql.json(payment) : null}, ${proofMimetype}, ${proof}, ${note || null})
+              returning ${sql.unsafe(PLAN_REQUEST_COLUMNS)}`;
             return row!;
           })
           .catch((err) => {
@@ -1108,7 +1136,7 @@ export function accountRoutes(deps: Deps): FastifyPluginAsyncZod {
         const [row] = await sql<PlanRequestRow[]>`
           update plan_requests set status = 'cancelled', decided_at = now()
           where id = ${req.params.id} and workspace_id = ${req.auth.workspaceId} and status = 'pending'
-          returning id, plan_id, status, note, admin_note, created_at, decided_at`;
+          returning ${sql.unsafe(PLAN_REQUEST_COLUMNS)}`;
         if (!row) throw notFound('No pending request with this id');
         return ok(planRequestRowDto(row));
       },

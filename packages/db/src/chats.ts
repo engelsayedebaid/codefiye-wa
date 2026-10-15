@@ -72,6 +72,15 @@ export async function recordContactNames(sql: Sql, sessionId: string, contacts: 
   return changed;
 }
 
+/** What a chat is called, as the chats page lists it (`chat_display_name`); `jid` may be either address. Null when unknown. */
+export async function chatDisplayName(sql: Sql, sessionId: string, jid: string): Promise<string | null> {
+  const [row] = await sql<{ name: string | null }[]>`
+    select chat_display_name(c.session_id, c.jid, c.alt_jid, c.name) as name
+    from chats c where c.session_id = ${sessionId} and (c.jid = ${jid} or c.alt_jid = ${jid})
+    limit 1`;
+  return row?.name ?? null;
+}
+
 /** Keeps a group's subject on its chat row (the trigger only knows contacts' names). */
 export async function setChatName(sql: Sql, sessionId: string, jid: string, name: string) {
   await sql`update chats set name = ${name} where session_id = ${sessionId} and jid = ${jid} and name is distinct from ${name}`;
