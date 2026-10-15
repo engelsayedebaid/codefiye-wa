@@ -758,7 +758,7 @@ export class SessionRunner {
         this.lastCampaignAt = Date.now();
         this.campaignFailures = 0;
       }
-      await this.publish({ type: 'messages.update', data: { id: job.id, status: 'sent', error: null } });
+      await this.publish({ type: 'messages.update', data: { id: job.id, status: 'sent', error: null, waMessageId } });
       lap('stored');
       // Cumulative ms since the job was claimed: lookup → pace → whatsapp (accepted) → stored (+ event).
       const timings = { messageId: job.id, type: job.content.type, ms: at, skippedLookup: known };

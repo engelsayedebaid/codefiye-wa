@@ -347,6 +347,8 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
       if (changed && (event.data.chatJid === null || isChat(chat, event.data.chatJid))) void queryClient.invalidateQueries({ queryKey: key });
     } else if (event.type === 'messages.update' || event.type === 'poll.vote') {
       let found = false;
+      /** Sent, but the event didn't say its WhatsApp id (an older worker): reload so its buttons show. */
+      let idMissing = false;
       queryClient.setQueryData<Pages>(key, (data) => {
         if (!data) return data;
         return {
@@ -356,12 +358,16 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
             messages: p.messages.map((m) => {
               if (m.id !== event.data.id) return m;
               found = true;
-              return event.type === 'messages.update' ? { ...m, status: event.data.status, error: event.data.error } : m;
+              if (event.type !== 'messages.update') return m;
+              // Reply, react and edit need the WhatsApp id, which a message gets once it's sent.
+              const waMessageId = m.waMessageId ?? event.data.waMessageId ?? null;
+              if (!waMessageId && event.data.status === 'sent') idMissing = true;
+              return { ...m, status: event.data.status, error: event.data.error, waMessageId };
             }),
           })),
         };
       });
-      if (found && event.type === 'poll.vote') void queryClient.invalidateQueries({ queryKey: key });
+      if (found && (event.type === 'poll.vote' || idMissing)) void queryClient.invalidateQueries({ queryKey: key });
       // A message sent through the API to this chat appears once WhatsApp accepts it.
       if (!found && event.type === 'messages.update' && event.data.status === 'sent') void catchUp();
     }

@@ -15,7 +15,8 @@ export type WaEvent =
    * notification can show it without the chat list loaded.
    */
   | Base<'messages.received', { id: number; from: string; type: MessageType; text: string | null; chatJid?: string; pushName?: string | null; chatName?: string | null }>
-  | Base<'messages.update', { id: number; status: MessageStatus; error: string | null }>
+  /** `waMessageId` comes with `sent`: the page needs it to offer reply, react and edit without a reload. */
+  | Base<'messages.update', { id: number; status: MessageStatus; error: string | null; waMessageId?: string }>
   /** A message that didn't arrive through `messages.received`: sent from the phone itself, or queued from the chats page. */
   | Base<'messages.created', { id: number; chatJid: string; direction: MessageDirection; type: MessageType; /** The Idempotency-Key it was sent with, if any. */ ref?: string | null }>
   /** A recipient answered a poll we sent; `selected` is their current choice (empty = withdrawn). */
