@@ -78,9 +78,8 @@ function MethodPicker({ methods, value, onChange }: { methods: PaymentMethod[]; 
 function ReceivingAccount({ method, settings }: { method: PaymentMethod; settings: PaymentSettings }) {
   const { t } = useI18n();
   const p = t.subscription.payment;
-  const look = METHOD_LOOK[method];
   return (
-    <div className={cx('overflow-hidden rounded-xl border', look.ring)}>
+    <div className="overflow-hidden rounded-xl border border-line">
       <div className="flex items-center gap-3 border-b border-line/60 bg-raised/30 px-3.5 py-2.5">
         <MethodGlyph method={method} size="sm" />
         <span className="min-w-0 flex-1">
@@ -255,7 +254,7 @@ export function RequestPlanModal({ plan, onClose, onSent, onNeedsPhone }: { plan
     ((method === 'vodafone_cash' && fields.senderPhone.trim().length >= 11) || (method === 'instapay' && fields.sender.trim().length >= 3) || (method === 'bank_transfer' && fields.senderName.trim().length >= 2));
 
   return (
-    <Modal title={s.modalTitle(planName(plan))} description={step === 'plan' ? undefined : p.steps.details} onClose={onClose} size="lg">
+    <Modal title={s.modalTitle(planName(plan))} description={step === 'plan' ? undefined : p.steps.details} onClose={onClose} size="lg" tall>
       <form onSubmit={submit} className="space-y-5">
         {/* step indicator */}
         {payable && (
@@ -314,7 +313,7 @@ export function RequestPlanModal({ plan, onClose, onSent, onNeedsPhone }: { plan
 
             {!payable && !settings.isPending && <Field label={s.noteLabel} placeholder={s.notePlaceholder} value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} />}
             <ErrorNote>{topError}</ErrorNote>
-            <div className="flex justify-end gap-2">
+            <div className="sticky bottom-0 z-10 -mx-6 flex justify-end gap-2 border-t border-line bg-card px-6 py-4">
               <Button variant="outline" onClick={onClose}>
                 {t.common.cancel}
               </Button>
@@ -370,7 +369,8 @@ export function RequestPlanModal({ plan, onClose, onSent, onNeedsPhone }: { plan
               <Field label={s.noteLabel} placeholder={s.notePlaceholder} value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} />
               <ErrorNote>{topError}</ErrorNote>
 
-              <div className="flex items-center justify-between gap-2">
+              {/* Stays in view while the form scrolls inside the dialog. */}
+              <div className="sticky bottom-0 z-10 -mx-6 flex items-center justify-between gap-2 border-t border-line bg-card px-6 py-4">
                 <Button variant="ghost" icon={<ArrowLeft className={cx('size-4', flip)} />} onClick={() => setStep('plan')}>
                   {p.back}
                 </Button>

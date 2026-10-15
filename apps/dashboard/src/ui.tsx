@@ -589,6 +589,7 @@ export function Modal({
   children,
   wide,
   size = wide ? 'lg' : 'md',
+  tall,
 }: {
   title: string;
   description?: string;
@@ -596,6 +597,8 @@ export function Modal({
   children: ReactNode;
   wide?: boolean;
   size?: keyof typeof MODAL_SIZES;
+  /** A long form at this width: the body scrolls under the header like `xl` (end it with a `sticky bottom-0` footer). */
+  tall?: boolean;
 }) {
   const { t } = useI18n();
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -609,13 +612,15 @@ export function Modal({
   useEffect(() => {
     bodyRef.current?.scrollTo({ top: 0 });
   }, [title]);
+  const scrolls = size === 'xl' || tall;
   return (
-    <div className="animate-fade-in fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-[2px]" onClick={onClose}>
+    // A dialog taller than the screen scrolls the overlay (`my-auto` keeps short ones centred) instead of being cut off.
+    <div className="animate-fade-in fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-[2px]" onClick={onClose}>
       <div
         role="dialog"
         aria-modal
         aria-label={title}
-        className={cx('animate-scale-in relative flex w-full flex-col rounded-lg border border-line bg-card shadow-lg', size !== 'sm' && 'gap-4 p-6', MODAL_SIZES[size])}
+        className={cx('animate-scale-in relative my-auto flex w-full flex-col rounded-lg border border-line bg-card shadow-lg', size !== 'sm' && 'gap-4 p-6', MODAL_SIZES[size], tall && 'max-h-[92svh] pb-0')}
         onClick={(e) => e.stopPropagation()}
       >
         <header className="space-y-2 pe-6 text-start">
@@ -625,7 +630,7 @@ export function Modal({
         <button onClick={onClose} className="absolute top-4 end-4 rounded-xs opacity-70 transition-opacity hover:opacity-100" aria-label={t.common.close}>
           <X className="size-4" />
         </button>
-        <div ref={bodyRef} className={cx(size === 'sm' ? 'space-y-3' : 'space-y-4', size === 'xl' && '-mx-6 min-h-0 flex-1 overflow-y-auto px-6 pt-1')}>
+        <div ref={bodyRef} className={cx(size === 'sm' ? 'space-y-3' : 'space-y-4', scrolls && '-mx-6 min-h-0 flex-1 overflow-y-auto px-6 pt-1')}>
           {children}
         </div>
       </div>
