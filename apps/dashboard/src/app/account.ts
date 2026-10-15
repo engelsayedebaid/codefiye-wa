@@ -33,6 +33,8 @@ export type Account = {
     phone: string | null;
     /** Confirmed by a code; needed to request a plan (admins are exempt). */
     phoneVerified: boolean;
+    /** An authenticator app is set up; until then the dashboard shows only the setup screen. */
+    twoFactorEnabled: boolean;
   } | null;
   workspace: { id: string; name: string; planId: string; trialEndsAt: string | null; planExpiresAt: string | null };
   plan: Plan;

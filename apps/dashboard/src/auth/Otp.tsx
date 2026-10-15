@@ -32,6 +32,15 @@ export function codeError(err: unknown, t: Dict): { message: string; restart?: b
         return { message: t.auth.errors.otpUnavailable };
       case 'phone_taken':
         return { message: t.auth.errors.phoneTaken, restart: true };
+      // A login that ended: back to email and password.
+      case 'login_expired':
+        return { message: t.auth.errors.loginExpired, restart: true };
+      case 'login_denied':
+        return { message: t.auth.errors.loginDenied, restart: true };
+      case 'too_many_codes':
+        return { message: t.auth.errors.tooManyCodes, restart: true };
+      case 'account_suspended':
+        return { message: t.auth.errors.suspended, restart: true };
     }
   }
   return { message: errorMessage(err) };

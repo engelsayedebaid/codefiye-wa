@@ -100,6 +100,7 @@ import {
   useState,
 } from 'react';
 import { api, errorMessage } from '../api';
+import { AdLibrary } from '../app/ads/AdLibrary';
 import { useAccount } from '../app/account';
 import { buildAudience, type Entry, parseManual, rowsToEntries } from '../app/recipients';
 import { readSheet, SheetError } from '../app/spreadsheet';
@@ -2622,11 +2623,14 @@ export function AdsPage() {
   const { account } = useAccount();
   const params = useSearchParams();
   const campaignId = params.get('campaign');
-  const tab = campaignId || params.get('tab') === 'history' ? 'history' : 'compose';
+  const isAdmin = account?.user?.isAdmin === true;
+  // Admins land on the ad library; the WhatsApp campaigns (composer, history) are their own tabs.
+  const requested = params.get('tab');
+  const tab = campaignId || requested === 'history' ? 'history' : requested === 'compose' || !isAdmin ? 'compose' : 'library';
+  const tabs = isAdmin ? (['library', 'compose', 'history'] as const) : (['compose', 'history'] as const);
+  const TAB_ICONS = { library: LayoutGrid, compose: Sparkles, history: Megaphone };
   // Kept mounted while browsing campaigns, so a half-written campaign survives a look at the history.
   const [composerKey, setComposerKey] = useState(0);
-
-  const isAdmin = account?.user?.isAdmin === true;
   if (account && !isAdmin) {
     if (!planHasFeature(account.plan.id, 'ads')) return <AdsGate kind="upgrade" />;
     if (!account.features.ads) return <AdsGate kind="soon" />;
@@ -2637,24 +2641,27 @@ export function AdsPage() {
       {isAdmin && account && <AdsFeatureSwitch enabled={account.features.ads} />}
       <PageHeader
         title={t.ads.title}
-        description={t.ads.description}
+        description={tab === 'library' ? t.ads.library.subtitle : t.ads.description}
         actions={
           <div role="tablist" className="inline-flex rounded-lg border border-line bg-raised/30 p-1">
-            {(['compose', 'history'] as const).map((id) => (
-              <Link
-                key={id}
-                role="tab"
-                aria-selected={tab === id}
-                href={id === 'compose' ? '/ads' : '/ads?tab=history'}
-                className={cx(
-                  'flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-all duration-200',
-                  tab === id ? 'bg-bg text-ink shadow-sm' : 'text-muted hover:text-ink',
-                )}
-              >
-                {id === 'compose' ? <Sparkles className="size-4" /> : <Megaphone className="size-4" />}
-                {t.ads.tabs[id]}
-              </Link>
-            ))}
+            {tabs.map((id) => {
+              const Icon = TAB_ICONS[id];
+              return (
+                <Link
+                  key={id}
+                  role="tab"
+                  aria-selected={tab === id}
+                  href={id === 'library' ? '/ads' : id === 'compose' ? (isAdmin ? '/ads?tab=compose' : '/ads') : '/ads?tab=history'}
+                  className={cx(
+                    'flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-all duration-200',
+                    tab === id ? 'bg-bg text-ink shadow-sm' : 'text-muted hover:text-ink',
+                  )}
+                >
+                  <Icon className="size-4" />
+                  {t.ads.tabs[id]}
+                </Link>
+              );
+            })}
           </div>
         }
       />
@@ -2669,7 +2676,7 @@ export function AdsPage() {
           }}
         />
       </div>
-      {campaignId ? <LiveCampaign key={campaignId} id={campaignId} /> : tab === 'history' ? <History /> : null}
+      {campaignId ? <LiveCampaign key={campaignId} id={campaignId} /> : tab === 'history' ? <History /> : tab === 'library' ? <AdLibrary /> : null}
     </div>
   );
 }

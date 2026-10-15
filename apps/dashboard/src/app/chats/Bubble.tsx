@@ -21,6 +21,7 @@ import {
   Reply,
   RotateCw,
   Smartphone,
+  SmilePlus,
   User,
   Users,
 } from 'lucide-react';
@@ -29,6 +30,7 @@ import { useI18n } from '../../i18n';
 import { cx, flip } from '../../ui';
 import { errorText, PollResults, StatusTick } from '../MessageFeed';
 import { ChatText } from './ChatText';
+import { Floating } from './Floating';
 import { type ChatMessage, formatBytes, formatDuration, gradientFor, initials, mediaUrl, type Sender, senderColor, textOf } from './model';
 
 // --- avatar --------------------------------------------------------------------------------------
@@ -171,6 +173,7 @@ function AudioMedia({ m, outbound, localSrc }: { m: ChatMessage; outbound: boole
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(m.content.media?.seconds ?? m.content.seconds ?? 0);
   const [failed, setFailed] = useState(false);
+  const [buffering, setBuffering] = useState(false);
   const [rate, setRate] = useState(1);
   const voice = Boolean(m.content.media?.ptt ?? m.content.ptt);
   const src = localSrc ?? (m.hasMedia ? mediaUrl(m.id) : null);
@@ -192,21 +195,35 @@ function AudioMedia({ m, outbound, localSrc }: { m: ChatMessage; outbound: boole
     if (ref.current) ref.current.playbackRate = next;
   };
 
+  const started = playing || progress > 0;
+
   return (
     <div className="flex w-72 max-w-full items-center gap-3 py-1">
-      <span className="relative shrink-0">
-        <span className={cx('flex size-11 items-center justify-center rounded-full', voice ? 'bg-gradient-to-br from-emerald-500 to-teal-600 text-white' : 'bg-orange-500/90 text-white')}>
-          {voice ? <Mic className="size-5" /> : <Music className="size-5" />}
-        </span>
-      </span>
+      {/* One round control; a small badge says whether it's a voice note or an audio file. */}
       <button
         type="button"
         onClick={toggle}
         disabled={!src || failed}
         aria-label={playing ? t.chats.media.pause : t.chats.media.play}
-        className="flex size-9 shrink-0 items-center justify-center rounded-full text-ink transition-colors hover:bg-ink/10 disabled:opacity-40"
+        className="relative grid size-11 shrink-0 cursor-pointer place-items-center rounded-full bg-brand text-on-brand shadow-sm transition-transform hover:brightness-110 active:scale-95 disabled:cursor-default disabled:opacity-40"
       >
-        {playing ? <Pause className="size-5 fill-current" /> : <Play className="size-5 fill-current" />}
+        {buffering ? (
+          <Loader2 className="size-5 animate-spin" />
+        ) : playing ? (
+          <Pause className="size-[18px] fill-current" />
+        ) : (
+          <Play className="size-[18px] translate-x-px fill-current" />
+        )}
+        <span
+          aria-hidden
+          className={cx(
+            'absolute -end-1 -bottom-1 grid size-5 place-items-center rounded-full ring-2',
+            outbound ? 'ring-(--chat-out)' : 'ring-(--chat-in)',
+            voice ? 'bg-card text-brand' : 'bg-orange-500 text-white',
+          )}
+        >
+          {voice ? <Mic className="size-3" /> : <Music className="size-3" />}
+        </span>
       </button>
       <div className="min-w-0 flex-1">
         <div
@@ -218,29 +235,41 @@ function AudioMedia({ m, outbound, localSrc }: { m: ChatMessage; outbound: boole
           tabIndex={0}
           onClick={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
-            seek((e.clientX - rect.left) / rect.width);
+            seek(Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)));
           }}
           onKeyDown={(e) => {
             if (e.key === 'ArrowRight') seek(Math.min(1, progress + 0.05));
             if (e.key === 'ArrowLeft') seek(Math.max(0, progress - 0.05));
           }}
-          className="flex h-7 cursor-pointer items-center gap-[2px] outline-none"
+          className="group/wave relative flex h-8 cursor-pointer items-center gap-[2px] rounded outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
         >
           {wave.map((h, i) => (
             <span
               key={i}
-              className={cx('w-[3px] flex-1 rounded-full transition-colors', i / wave.length < progress ? (outbound ? 'bg-brand' : 'bg-sky-400') : 'bg-ink/20')}
-              style={{ height: `${h * 100}%` }}
+              className={cx('w-[2.5px] flex-1 rounded-full transition-colors duration-150', i / wave.length < progress ? 'bg-brand' : 'bg-ink/25 group-hover/wave:bg-ink/35')}
+              style={{ height: `${Math.max(18, h * 100)}%` }}
             />
           ))}
+          {/* Where it is: a dot riding the wave once it has started. */}
+          <span
+            aria-hidden
+            className={cx('absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand shadow ring-2 ring-white/80 transition-opacity', started ? 'opacity-100' : 'opacity-0')}
+            style={{ left: `${progress * 100}%` }}
+          />
         </div>
-        <div className="mt-0.5 flex items-center justify-between text-[11px] text-ink/60">
-          <span className="tabular-nums">{failed ? t.chats.media.failed : formatDuration(playing || progress > 0 ? progress * duration : duration)}</span>
-          {playing && (
-            <button type="button" onClick={cycleRate} className="rounded-full bg-ink/10 px-1.5 font-semibold tabular-nums hover:bg-ink/20">
-              {rate}×
-            </button>
-          )}
+        <div className="mt-1 flex items-center justify-between text-[11px] text-ink/60">
+          <span className="tabular-nums">{failed ? t.chats.media.failed : formatDuration(started ? progress * duration : duration)}</span>
+          <button
+            type="button"
+            onClick={cycleRate}
+            disabled={!src || failed}
+            className={cx(
+              'min-w-8 cursor-pointer rounded-full px-1.5 py-px text-center text-[10px] font-bold tabular-nums transition-colors disabled:opacity-40',
+              rate === 1 ? 'bg-ink/10 text-ink/70 hover:bg-ink/20' : 'bg-brand text-on-brand',
+            )}
+          >
+            {rate}×
+          </button>
         </div>
       </div>
       {src && (
@@ -248,10 +277,17 @@ function AudioMedia({ m, outbound, localSrc }: { m: ChatMessage; outbound: boole
           ref={ref}
           src={src}
           preload="none"
-          onPlay={() => setPlaying(true)}
+          onPlay={() => {
+            setPlaying(true);
+            if (ref.current) ref.current.playbackRate = rate;
+          }}
           onPause={() => setPlaying(false)}
+          onWaiting={() => setBuffering(true)}
+          onPlaying={() => setBuffering(false)}
+          onCanPlay={() => setBuffering(false)}
           onEnded={() => {
             setPlaying(false);
+            setBuffering(false);
             setProgress(0);
           }}
           onLoadedMetadata={(e) => Number.isFinite(e.currentTarget.duration) && setDuration(e.currentTarget.duration)}
@@ -426,7 +462,12 @@ type BubbleProps = {
   reactions?: string[];
   highlight?: string;
   quotedAuthor?: (fromMe: boolean, participant: string | null) => string;
-  onReply: (m: ChatMessage) => void;
+  /** Without it (a read-only view such as the peek) there is no reply button. */
+  onReply?: (m: ChatMessage) => void;
+  /** React with an emoji ('' takes ours back); without it, no reaction button. */
+  onReact?: (m: ChatMessage, emoji: string) => void;
+  /** Our own reaction on this message, if any. */
+  myReaction?: string;
   onOpenMedia: (m: ChatMessage) => void;
   onJump?: (waMessageId: string) => void;
   onOpenChat?: (phone: string) => void;
@@ -436,7 +477,92 @@ type BubbleProps = {
   pending?: { failed: boolean; error?: string; onRetry: () => void; onDiscard: () => void };
 };
 
-export const Bubble = memo(function Bubble({ m, sender, first, reactions, highlight, quotedAuthor, onReply, onOpenMedia, onJump, onOpenChat, localSrc, pending }: BubbleProps) {
+const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+const REACT_BAR_WIDTH = 296;
+
+/**
+ * The smiley beside a message: a bar of quick reactions, opened on its own layer (the conversation's
+ * scroll box would clip it). Picking our current reaction again takes it back.
+ */
+function ReactButton({ mine, onPick }: { mine?: string; onPick: (emoji: string) => void }) {
+  const { t } = useI18n();
+  const c = t.chats;
+  const [at, setAt] = useState<{ top: number; left: number } | null>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  const bar = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!at) return;
+    const close = () => setAt(null);
+    const outside = (e: Event) => !bar.current?.contains(e.target as Node) && !button.current?.contains(e.target as Node);
+    const onDown = (e: PointerEvent) => outside(e) && close();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      close();
+    };
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey, true);
+    document.addEventListener('scroll', close, true);
+    return () => {
+      document.removeEventListener('pointerdown', onDown);
+      document.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('scroll', close, true);
+    };
+  }, [at]);
+  const toggle = () => {
+    if (at) return setAt(null);
+    const rect = button.current!.getBoundingClientRect();
+    const left = Math.min(Math.max(8, rect.left + rect.width / 2 - REACT_BAR_WIDTH / 2), window.innerWidth - REACT_BAR_WIDTH - 8);
+    setAt({ top: rect.top - 56 < 8 ? rect.bottom + 8 : rect.top - 56, left });
+  };
+  return (
+    <>
+      <button
+        ref={button}
+        type="button"
+        onClick={toggle}
+        aria-expanded={at !== null}
+        aria-label={c.react}
+        title={c.react}
+        className={cx('rounded-full p-1.5 transition-colors hover:bg-raised hover:text-ink', at ? 'bg-raised text-ink' : 'text-muted')}
+      >
+        <SmilePlus className="size-4" />
+      </button>
+      {at && (
+        <Floating>
+          <div
+            ref={bar}
+            role="menu"
+            aria-label={c.react}
+            className="animate-scale-in fixed z-[70] flex items-center justify-between gap-0.5 rounded-full border border-line bg-card p-1.5 shadow-xl"
+            style={{ top: at.top, left: at.left, width: REACT_BAR_WIDTH }}
+          >
+            {QUICK_REACTIONS.map((emoji) => (
+              <button
+                key={emoji}
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setAt(null);
+                  onPick(mine === emoji ? '' : emoji);
+                }}
+                aria-pressed={mine === emoji}
+                className={cx(
+                  'grid size-10 cursor-pointer place-items-center rounded-full text-[22px] leading-none transition-transform duration-150 hover:scale-125',
+                  mine === emoji && 'bg-brand/15 ring-1 ring-brand/40',
+                )}
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+        </Floating>
+      )}
+    </>
+  );
+}
+
+export const Bubble = memo(function Bubble({ m, sender, first, reactions, myReaction, highlight, quotedAuthor, onReply, onReact, onOpenMedia, onJump, onOpenChat, localSrc, pending }: BubbleProps) {
   const { t, fmt } = useI18n();
   const c = t.chats;
   const out = m.direction === 'out';
@@ -491,7 +617,11 @@ export const Bubble = memo(function Bubble({ m, sender, first, reactions, highli
   );
 
   return (
-    <div id={m.waMessageId ? `msg-${m.waMessageId}` : undefined} className={cx('group/msg flex w-full px-3 md:px-[6%]', out ? 'justify-end' : 'justify-start', first ? 'mt-2' : 'mt-0.5')}>
+    <div
+      id={m.waMessageId ? `msg-${m.waMessageId}` : undefined}
+      // Room under a bubble for its reactions badge, which hangs below it.
+      className={cx('group/msg flex w-full px-3 md:px-[6%]', out ? 'justify-end' : 'justify-start', first ? 'mt-2' : 'mt-0.5', reactions && reactions.length > 0 && 'mb-4')}
+    >
       <div className={cx('flex max-w-[min(88%,34rem)] items-center gap-1', out && 'flex-row-reverse')}>
         <div
           className={cx(
@@ -558,8 +688,9 @@ export const Bubble = memo(function Bubble({ m, sender, first, reactions, highli
             </span>
           )}
         </div>
-        <div className="flex shrink-0 flex-col gap-0.5 opacity-0 transition-opacity group-hover/msg:opacity-100 focus-within:opacity-100">
-          {m.waMessageId && (
+        <div className="flex shrink-0 flex-col gap-0.5 opacity-0 transition-opacity group-hover/msg:opacity-100 focus-within:opacity-100 has-[[aria-expanded=true]]:opacity-100">
+          {m.waMessageId && onReact && !revoked && <ReactButton mine={myReaction} onPick={(emoji) => onReact(m, emoji)} />}
+          {m.waMessageId && onReply && (
             <button type="button" onClick={() => onReply(m)} className="rounded-full p-1.5 text-muted transition-colors hover:bg-raised hover:text-ink" aria-label={c.reply} title={c.reply}>
               <Reply className={cx('size-4', flip)} />
             </button>

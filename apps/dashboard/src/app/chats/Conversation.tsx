@@ -1,4 +1,4 @@
-import { type InfiniteData, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { type InfiniteData, useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Archive,
   ArrowDown,
@@ -7,19 +7,26 @@ import {
   ChevronRight,
   Download,
   ExternalLink,
+  Forward,
   History,
   Info,
+  Layers,
   Loader2,
   MailOpen,
+  MessageCircle,
   MoreVertical,
   Palette,
   Pin,
+  RotateCw,
   Search,
+  Send,
   Undo2,
+  User,
+  Users,
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { api } from '../../api';
+import { api, errorMessage } from '../../api';
 import { useLiveEvents } from '../../events';
 import { useI18n } from '../../i18n';
 import { qk } from '../../queries';
@@ -27,9 +34,14 @@ import { cx, flip, LoadError, Modal } from '../../ui';
 import { Avatar, Bubble } from './Bubble';
 import { TypingDots } from './ChatList';
 import { Composer } from './Composer';
-import { type ChatMessage, type ChatSummary, chatTitle, isChat, jidPhone, livePresence, mediaUrl, type MessagesPage, type Person, type PresenceState, type Sender, textOf } from './model';
+import { useAccount } from '../account';
+import { useCrossSend } from './crossSend';
+import { ForwardChat } from './ForwardChat';
+import { type ChatMessage, type ChatNumber, type ChatSummary, chatTitle, isChat, jidPhone, livePresence, mediaUrl, type MessagesPage, type Person, type PresenceState, type Sender, textOf } from './model';
 import { type Draft, discard, enqueue, type Pending, resolveRef, retry, settle, usePending } from './outbox';
-import { CHAT_WALLS, setChatWall, useChatWall, wallStyle } from './walls';
+import { CHAT_WALLS, setChatWall, useChatWalls, WALL_SCOPES, type WallScope, wallsFor, wallStyle } from './walls';
+
+const WALL_ICONS = { chat: MessageCircle, groups: Users, contacts: User, all: Layers } satisfies Record<WallScope, unknown>;
 
 type Pages = InfiniteData<MessagesPage, number | undefined>;
 
@@ -147,20 +159,36 @@ type Props = {
   /** Ask the phone for older messages of this chat. */
   onSync: () => void;
   syncing: boolean;
+  /** Open with the in-chat search on these words (a result of the search across all chats); a new `seq` searches again. */
+  search?: { q: string; seq: number };
+  /** Open a chat of another number (after sending or forwarding through it). */
+  onOpenIn?: (sessionId: string, jid: string) => void;
 };
 
-export function Conversation({ sessionId, connected, chat, presence, picture, receipts, infoOpen, onBack, onToggleInfo, onFlags, onOpenPhone, onSync, syncing }: Props) {
+export function Conversation({ sessionId, connected, chat, presence, picture, receipts, infoOpen, onBack, onToggleInfo, onFlags, onOpenPhone, onSync, syncing, search, onOpenIn }: Props) {
   const { t, fmt } = useI18n();
   const c = t.chats;
   const queryClient = useQueryClient();
   const title = chatTitle(chat);
-  const wall = useChatWall();
+  const { own: wallOwn, from: wallFrom, wall } = wallsFor(useChatWalls(), chat);
   const [wallOpen, setWallOpen] = useState(false);
+  /** The scope the wallpaper picker sets: the one this chat shows, else its kind (groups / one-to-one chats). */
+  const [wallScope, setWallScope] = useState<WallScope>('chat');
+  const openWalls = () => {
+    setWallScope(wallFrom ?? (chat.isGroup ? 'groups' : 'contacts'));
+    setWallOpen(true);
+  };
 
   // --- search within the chat ---
-  const [searching, setSearching] = useState(false);
-  const [rawQuery, setRawQuery] = useState('');
-  const [q, setQ] = useState('');
+  const [searching, setSearching] = useState(Boolean(search?.q));
+  const [rawQuery, setRawQuery] = useState(search?.q ?? '');
+  const [q, setQ] = useState(search?.q ?? '');
+  useEffect(() => {
+    if (!search?.q) return;
+    setSearching(true);
+    setRawQuery(search.q);
+    setQ(search.q);
+  }, [search]);
   useEffect(() => {
     const timer = setTimeout(() => setQ(rawQuery.trim()), 300);
     return () => clearTimeout(timer);
@@ -181,7 +209,7 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
   });
 
   // Oldest first, reactions folded onto the messages they react to.
-  const { list, reactions, images, people } = useMemo(() => {
+  const { list, reactions, mine, images, people } = useMemo(() => {
     const all = (messages.data?.pages.flatMap((p) => p.messages) ?? []).slice().reverse();
     const people: Record<string, Person> = Object.assign({}, ...(messages.data?.pages.map((p) => p.senders ?? {}) ?? []));
     const byTarget = new Map<string, Map<string, string>>();
@@ -195,7 +223,9 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
     }
     const shown = all.filter((m) => m.type !== 'reaction');
     const reactions = new Map([...byTarget].map(([id, who]) => [id, [...who.values()]]));
-    return { list: shown, reactions, people, images: shown.filter((m) => m.type === 'image' && m.hasMedia && !m.content.viewOnce) };
+    // Our own reaction per message, so picking it again takes it back.
+    const mine = new Map([...byTarget].flatMap(([id, who]) => (who.has('me') ? [[id, who.get('me')!] as const] : [])));
+    return { list: shown, reactions, mine, people, images: shown.filter((m) => m.type === 'image' && m.hasMedia && !m.content.viewOnce) };
   }, [messages.data]);
 
   // The unread divider sits where the chat's unread messages began when it was opened.
@@ -373,15 +403,51 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
   // --- composer: messages show at once and go out in the order written (outbox.ts) ---
   const [reply, setReply] = useState<ChatMessage | null>(null);
   const pending = usePending(sessionId, chat.jid);
+
+  // --- send between numbers (admins, switched on in the chats menu): answer from another number, forward the chat ---
+  const { account } = useAccount();
+  const crossOn = useCrossSend() && account?.user?.isAdmin === true;
+  const numbers = useQuery({
+    queryKey: qk.chats.numbers,
+    queryFn: ({ signal }) => api<ChatNumber[]>('/api/chats/numbers', { signal }),
+    enabled: crossOn,
+    staleTime: 30_000,
+  });
+  const others = crossOn ? (numbers.data ?? []).filter((n) => n.id !== sessionId) : [];
+  /** Another number reaches this contact by phone number (its LID belongs to this number's view of it). */
+  const directJid = chat.isGroup ? null : chat.phone ? `${chat.phone.replace(/\D/g, '')}@s.whatsapp.net` : chat.jid.endsWith('@s.whatsapp.net') ? chat.jid : null;
+  const [via, setVia] = useState<string | null>(null);
+  const viaNumber = directJid ? (others.find((n) => n.id === via) ?? null) : null;
+  /** The numbers this chat sent through: each keeps a line with how its messages are doing. */
+  const [usedVia, setUsedVia] = useState<string[]>([]);
+  const [forwardOpen, setForwardOpen] = useState(false);
+
   const onSend = useCallback(
     (draft: Draft) => {
+      if (viaNumber && directJid) {
+        // A quote points at a message of this number: it can't travel with a message from another one.
+        enqueue(queryClient, viaNumber.id, directJid, { ...draft, quote: null });
+        setUsedVia((u) => (u.includes(viaNumber.id) ? u : [...u, viaNumber.id]));
+        setReply(null);
+        return;
+      }
       enqueue(queryClient, sessionId, chat.jid, draft);
       setReply(null);
       requestAnimationFrame(() => scroller.current?.scrollTo({ top: 0, behavior: 'smooth' }));
     },
-    [queryClient, sessionId, chat.jid],
+    [queryClient, sessionId, chat.jid, viaNumber, directJid],
   );
   const cancelReply = useCallback(() => setReply(null), []);
+  // A reaction goes out at once; it shows when its row comes back (the messages.created event).
+  const [reactError, setReactError] = useState<string | null>(null);
+  const react = useCallback(
+    (m: ChatMessage, emoji: string) =>
+      void api(`/api/chats/${sessionId}/react`, { method: 'POST', body: { messageId: m.id, emoji } }).catch((err: unknown) => {
+        setReactError(`${c.reactFailed}: ${errorMessage(err)}`);
+        setTimeout(() => setReactError(null), 4_000);
+      }),
+    [sessionId, c.reactFailed],
+  );
   const shownIds = useMemo(() => new Set(list.map((m) => m.id)), [list]);
   // Once the list holds the real message, its "sending" stand-in goes.
   useEffect(() => settle(sessionId, chat.jid, (id) => shownIds.has(id)), [shownIds, pending, sessionId, chat.jid]);
@@ -460,7 +526,8 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
                   { icon: Pin, label: chat.pinned ? c.actions.unpin : c.actions.pin, run: () => onFlags({ pinned: !chat.pinned }) },
                   { icon: Archive, label: chat.archived ? c.actions.unarchive : c.actions.archive, run: () => onFlags({ archived: !chat.archived }) },
                   { icon: MailOpen, label: c.actions.markUnread, run: () => onFlags({ unread: true }) },
-                  { icon: Palette, label: c.actions.wallpaper, run: () => setWallOpen(true) },
+                  { icon: Palette, label: c.actions.wallpaper, run: openWalls },
+                  ...(crossOn ? [{ icon: Forward, label: c.cross.forward, run: () => setForwardOpen(true) }] : []),
                 ].map((item) => (
                   <button
                     key={item.label}
@@ -511,6 +578,11 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
 
       {/* thread */}
       <div className="chat-wall relative min-h-0 flex-1" style={wallStyle(wall)}>
+        {reactError && (
+          <p role="status" className="animate-fade-up absolute inset-x-0 top-3 z-20 mx-auto w-fit max-w-[90%] rounded-full bg-red-500/90 px-3 py-1.5 text-xs font-medium text-white shadow-lg">
+            {reactError}
+          </p>
+        )}
         <div ref={scroller} onScroll={onScroll} className="code-scroll flex h-full flex-col-reverse overflow-y-auto overscroll-contain">
           <div className="chat-thread pt-2 pb-4">
             <div ref={topSentinel} />
@@ -553,6 +625,8 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
                             first={item.first}
                             sender={item.sender}
                             reactions={item.m.waMessageId ? reactions.get(item.m.waMessageId) : undefined}
+                            myReaction={item.m.waMessageId ? mine.get(item.m.waMessageId) : undefined}
+                            onReact={connected ? react : undefined}
                             highlight={q || undefined}
                             quotedAuthor={quotedAuthor}
                             onReply={setReply}
@@ -602,43 +676,188 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
         )}
       </div>
 
-      <Composer sessionId={sessionId} jid={chat.jid} connected={connected} title={title} reply={reply} onCancelReply={cancelReply} onSend={onSend} />
+      {crossOn && others.length > 0 && (
+        <div className="border-t border-line bg-surface/60 px-3 py-1.5">
+          {usedVia.map((id) => {
+            const n = (numbers.data ?? []).find((x) => x.id === id);
+            return n && directJid ? <ViaStatus key={id} number={n} jid={directJid} onOpen={onOpenIn ? () => onOpenIn(id, directJid) : undefined} /> : null;
+          })}
+          {directJid ? (
+            <div className="flex items-center gap-1.5 overflow-x-auto text-[11.5px] [scrollbar-width:none]">
+              <Send className={cx('size-3.5 shrink-0 text-muted', flip)} />
+              <span className="shrink-0 text-muted">{c.cross.sendFrom}</span>
+              {[null, ...others].map((n) => {
+                const active = (n?.id ?? null) === (viaNumber?.id ?? null);
+                const online = n ? n.status === 'connected' : connected;
+                return (
+                  <button
+                    key={n?.id ?? 'self'}
+                    type="button"
+                    disabled={!online}
+                    onClick={() => setVia(n?.id ?? null)}
+                    title={n?.phone ?? undefined}
+                    className={cx(
+                      'flex shrink-0 cursor-pointer items-center gap-1 rounded-full border px-2 py-0.5 transition-colors disabled:cursor-not-allowed disabled:opacity-45',
+                      active ? (n ? 'border-amber-500/50 bg-amber-500/10 text-amber-500' : 'border-brand/40 bg-brand/10 text-brand') : 'border-line text-ink-2 hover:border-line-strong',
+                    )}
+                  >
+                    <span className={cx('size-1.5 rounded-full', online ? 'bg-green-500' : 'bg-ink-3')} />
+                    <span className="pii max-w-32 truncate">{n ? n.name : c.cross.thisNumber}</span>
+                  </button>
+                );
+              })}
+              {viaNumber && <span className="pii shrink-0 text-amber-500">· {c.cross.via(viaNumber.name)}</span>}
+            </div>
+          ) : (
+            <p className="text-[11.5px] text-muted">{c.cross.onlyDirect}</p>
+          )}
+        </div>
+      )}
+
+      <Composer
+        sessionId={sessionId}
+        jid={chat.jid}
+        connected={viaNumber ? viaNumber.status === 'connected' : connected}
+        title={title}
+        reply={viaNumber ? null : reply}
+        onCancelReply={cancelReply}
+        onSend={onSend}
+      />
+
+      {forwardOpen && (
+        <ForwardChat
+          sessionId={sessionId}
+          chat={chat}
+          numbers={numbers.data ?? []}
+          onClose={() => setForwardOpen(false)}
+          onOpen={
+            onOpenIn
+              ? (sid, jid) => {
+                  setForwardOpen(false);
+                  onOpenIn(sid, jid);
+                }
+              : undefined
+          }
+        />
+      )}
 
       {lightbox !== null && lightbox >= 0 && <Lightbox items={images} index={lightbox} onIndex={setLightbox} onClose={() => setLightbox(null)} />}
 
       {wallOpen && (
         <Modal title={c.wall.title} description={c.wall.text} onClose={() => setWallOpen(false)}>
-          <div className="grid grid-cols-5 gap-2">
+          <div role="radiogroup" aria-label={c.wall.scope} className="grid grid-cols-2 gap-1.5">
+            {WALL_SCOPES.map((scope) => {
+              const Icon = WALL_ICONS[scope];
+              const active = scope === wallScope;
+              return (
+                <button
+                  key={scope}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => setWallScope(scope)}
+                  className={cx(
+                    'flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-2 text-start text-sm transition-colors',
+                    active ? 'border-brand/50 bg-brand/10 text-ink' : 'border-line text-ink-2 hover:border-line-strong hover:text-ink',
+                  )}
+                >
+                  <Icon className={cx('size-4 shrink-0', active ? 'text-brand' : 'text-muted')} />
+                  <span className="min-w-0 flex-1 truncate">{c.wall.scopes[scope]}</span>
+                  {wallOwn[scope] && <span aria-hidden className="wall-swatch size-3.5 shrink-0 overflow-hidden rounded-full ring-1 ring-line-strong" style={wallStyle(wallOwn[scope])} />}
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-xs text-muted">{wallFrom ? c.wall.using(c.wall.scopes[wallFrom]) : c.wall.usingTheme}</p>
+          <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-8">
             <button
               type="button"
-              onClick={() => setChatWall(null)}
-              title={c.wall.default}
-              aria-pressed={wall === null}
+              onClick={() => setChatWall(wallScope, null, chat.jid)}
+              title={wallScope === 'all' ? c.wall.default : c.wall.inherit}
+              aria-pressed={wallOwn[wallScope] === null}
               className={cx(
                 'wall-swatch flex aspect-square items-center justify-center rounded-lg text-muted outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-ring',
-                wall === null ? 'ring-2 ring-brand' : 'ring-1 ring-line hover:ring-line-strong',
+                wallOwn[wallScope] === null ? 'ring-2 ring-brand' : 'ring-1 ring-line hover:ring-line-strong',
               )}
-              style={{ background: 'var(--chat-wall)' }}
             >
-              <Undo2 className="size-4" />
+              <Undo2 className="relative size-4" />
             </button>
-            {CHAT_WALLS.map((hex) => (
+            {CHAT_WALLS.map((w) => (
               <button
-                key={hex}
+                key={w.id}
                 type="button"
-                onClick={() => setChatWall(hex)}
-                title={hex}
-                aria-pressed={wall === hex}
+                onClick={() => setChatWall(wallScope, w.id, chat.jid)}
+                title={w.id}
+                aria-pressed={wallOwn[wallScope] === w.id}
                 className={cx(
-                  'wall-swatch aspect-square rounded-lg outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-ring',
-                  wall === hex ? 'ring-2 ring-brand' : 'ring-1 ring-line hover:ring-line-strong',
+                  'wall-swatch aspect-square overflow-hidden rounded-lg outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-ring',
+                  wallOwn[wallScope] === w.id ? 'ring-2 ring-brand ring-offset-2 ring-offset-card' : 'ring-1 ring-line hover:ring-line-strong',
                 )}
-                style={{ background: hex }}
+                style={wallStyle(w.id)}
               />
             ))}
           </div>
         </Modal>
       )}
+    </div>
+  );
+}
+
+
+/**
+ * Messages written here but sent through another number (send between numbers): their progress, since
+ * they land in that number's chat, not in this one. Sent ones can be dismissed or opened there.
+ */
+function ViaStatus({ number, jid, onOpen }: { number: ChatNumber; jid: string; onOpen?: () => void }) {
+  const { t } = useI18n();
+  const x = t.chats.cross;
+  const queryClient = useQueryClient();
+  const items = usePending(number.id, jid);
+  const sending = items.filter((p) => p.state === 'sending' && p.realId === undefined).length;
+  const failed = items.filter((p) => p.state === 'failed');
+  const sent = items.filter((p) => p.realId !== undefined).length;
+  // Sent ones fade from here after a while (that chat, when opened, shows them for real).
+  useEffect(() => {
+    if (sent === 0 || sending > 0) return;
+    const timer = setTimeout(() => settle(number.id, jid, () => true), 8_000);
+    return () => clearTimeout(timer);
+  }, [sent, sending, number.id, jid]);
+  if (items.length === 0) return null;
+  return (
+    <div className="animate-fade-in mb-1 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg bg-raised/70 px-2 py-1 text-[11.5px]">
+      {sending > 0 ? (
+        <span className="pii flex items-center gap-1.5 text-ink-2">
+          <Loader2 className="size-3.5 animate-spin" /> {x.sending(number.name)}
+        </span>
+      ) : failed.length > 0 ? (
+        <span className="pii text-red-400">{x.failed(number.name)}</span>
+      ) : (
+        <span className="pii text-green-500">✓ {x.sent(number.name)}</span>
+      )}
+      <span className="ms-auto flex items-center gap-1">
+        {failed.length > 0 && (
+          <button type="button" onClick={() => failed.forEach((p) => retry(queryClient, number.id, jid, p.ref))} className="flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 text-brand hover:bg-brand/10">
+            <RotateCw className="size-3" /> {x.retry}
+          </button>
+        )}
+        {onOpen && sent > 0 && (
+          <button type="button" onClick={onOpen} className="cursor-pointer rounded px-1.5 py-0.5 text-brand hover:bg-brand/10">
+            {x.openThere}
+          </button>
+        )}
+        {sending === 0 && (
+          <button
+            type="button"
+            onClick={() => {
+              failed.forEach((p) => discard(number.id, jid, p.ref));
+              settle(number.id, jid, () => true);
+            }}
+            className="cursor-pointer rounded px-1.5 py-0.5 text-muted hover:bg-raised hover:text-ink"
+          >
+            {x.dismiss}
+          </button>
+        )}
+      </span>
     </div>
   );
 }

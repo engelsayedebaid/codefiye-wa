@@ -1,15 +1,18 @@
 import { pgError, PG_ERRORS, type Sql, type TxSql, type UserRole, type UserStatus, type workspaces } from '@wa/db';
 import { getPlan, normalizePhone, ok, REQUESTABLE_PLANS, SESSION_STATUSES, successSchema, TRIAL_DAYS } from '@wa/shared';
-import type { FastifyRequest } from 'fastify';
+import { randomBytes } from 'node:crypto';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
+import QRCode from 'qrcode';
 import { z } from 'zod';
 import type { Deps } from '../deps';
 import { clearSessionCookie, CONSOLE_TTL_SEC, requirePat, SESSION_COOKIE, setSessionCookie, suspendedError } from '../lib/auth';
-import { badRequest, conflict, forbidden, notFound, unprocessable } from '../lib/errors';
+import { ApiError, badRequest, conflict, forbidden, notFound, tooMany, unprocessable } from '../lib/errors';
 import { getFeatures } from '../lib/features';
 import { generateKey, hashKey } from '../lib/keys';
 import { hashPassword, needsRehash, passwordProblems, verifyPassword } from '../lib/passwords';
-import { createVerifications, type Lang } from '../lib/verification';
+import { generateRecoveryCodes, generateTotpSecret, hashRecoveryCode, looksLikeRecoveryCode, matchTotp, otpauthUrl, totpCipher, type TotpCipher } from '../lib/totp';
+import { createVerifications, type Lang, normalizeCode, type VerificationTicket } from '../lib/verification';
 
 const tags = ['Account'];
 
@@ -23,6 +26,8 @@ const userDto = z.object({
   status: z.enum(['active', 'suspended']),
   phone: z.string().nullable(),
   phoneVerified: z.boolean(),
+  /** An authenticator app is set up. Dashboard sessions of a user without one can only set it up (`two_factor_required`). */
+  twoFactorEnabled: z.boolean(),
 });
 const workspaceDto = z.object({
   id: z.uuid(),
@@ -71,6 +76,7 @@ type UserRow = {
   suspended_reason: string | null;
   phone: string | null;
   phone_verified_at: Date | null;
+  totp_enabled_at: Date | null;
 };
 type WorkspaceRow = { id: string; name: string; plan_id: string; trial_ends_at: Date | null; plan_expires_at: Date | null };
 
@@ -83,6 +89,7 @@ const toUserDto = (u: UserRow): z.infer<typeof userDto> => ({
   status: u.status,
   phone: u.phone,
   phoneVerified: u.phone_verified_at !== null,
+  twoFactorEnabled: u.totp_enabled_at !== null,
 });
 const workspaceRowDto = (w: WorkspaceRow): z.infer<typeof workspaceDto> => ({
   id: w.id,
@@ -124,7 +131,7 @@ export const toPlanRequestDto = (r: { id: string; planId: string; status: PlanRe
 const planRequestRowDto = (r: PlanRequestRow) =>
   toPlanRequestDto({ id: r.id, planId: r.plan_id, status: r.status, note: r.note, adminNote: r.admin_note, createdAt: r.created_at, decidedAt: r.decided_at });
 
-const USER_COLUMNS = (sql: Sql | TxSql) => sql`id, name, email, password_hash, role, status, suspended_reason, phone, phone_verified_at`;
+const USER_COLUMNS = (sql: Sql | TxSql) => sql`id, name, email, password_hash, role, status, suspended_reason, phone, phone_verified_at, totp_enabled_at`;
 
 /** A dashboard login token: a workspace token with scope `console` that expires; it lives in the session cookie. */
 async function issueConsoleToken(sql: Sql | TxSql, workspaceId: string, remember: boolean) {
@@ -172,13 +179,194 @@ function takenError(err: unknown) {
   return null;
 }
 
+/** Name shown in authenticator apps next to the account. */
+const TOTP_ISSUER = 'WA CodeFiye';
+/** A login must be finished (codes typed, other device answered) within this. */
+const LOGIN_TTL_SEC = 15 * 60;
+/** Authenticator codes allowed per login attempt (a recovery code counts too). */
+const LOGIN_TOTP_ATTEMPTS = 5;
+/**
+ * A dashboard session counts as "signed in on another device" (and must approve a new login) when it
+ * was used within this window. Older ones would leave a user who lost that device waiting for an
+ * answer that never comes; a recovery code skips the approval in that case.
+ */
+const APPROVER_ACTIVE_SEC = 3 * 86_400;
+
+type LoginStep = 'phone' | 'totp' | 'approval' | 'done';
+
+const loginResponse = z.object({
+  step: z.enum(['phone', 'totp', 'approval', 'done']).describe('What the client does next; `done` = the session cookie is set'),
+  loginId: z.uuid(),
+  /** Returned once, by `/api/auth/login`: send it with every later step of this login. */
+  loginToken: z.string().optional(),
+  expiresAt: z.string(),
+  /** `phone` step: where the code went. */
+  ticket: ticketDto.nullable(),
+  /** `done`: the signed-in account. */
+  session: sessionResponse.nullable(),
+});
+const loginRef = { loginId: z.uuid(), loginToken: z.string().min(16).max(128) };
+
+type AttemptRow = {
+  id: string;
+  user_id: string;
+  workspace_id: string;
+  remember: boolean;
+  phone_verification_id: string | null;
+  phone_verified_at: Date | null;
+  totp_verified_at: Date | null;
+  totp_attempts: number;
+  approval: 'pending' | 'approved' | 'denied' | null;
+  expires_at: Date;
+};
+
+type FactorUser = UserRow & { totp_secret: string | null; totp_last_step: number | null };
+
+const loginGone = () => notFound('This login has expired. Log in again.', 'login_expired');
+const codeWrong = (attemptsLeft: number) => unprocessable('The code is incorrect', { code: ['Incorrect code'] }, { code: 'code_invalid', details: { attemptsLeft } });
+
+/**
+ * Checks an authenticator code for a user and records its step (replay guard; the conditional
+ * update also settles two requests racing with the same code). Returns false when it doesn't match.
+ */
+async function acceptTotp(sql: Sql | TxSql, cipher: TotpCipher, user: { id: string; totp_secret: string | null; totp_last_step: number | null }, code: string) {
+  if (!user.totp_secret) return false;
+  let secret: string;
+  try {
+    secret = cipher.open(user.totp_secret, user.id);
+  } catch {
+    throw new ApiError(500, 'Two-factor secret could not be read (the OTP key changed?)', undefined, { code: 'totp_unreadable' });
+  }
+  const step = matchTotp(secret, normalizeCode(code), user.totp_last_step === null ? null : Number(user.totp_last_step));
+  if (step === null) return false;
+  const [won] = await sql`
+    update users set totp_last_step = ${step}
+    where id = ${user.id} and (totp_last_step is null or totp_last_step < ${step}) returning id`;
+  return Boolean(won);
+}
+
+/** Spends a recovery code (each works once). Returns false when it isn't one of the user's. */
+async function spendRecoveryCode(sql: Sql | TxSql, userId: string, code: string) {
+  if (!looksLikeRecoveryCode(code)) return false;
+  const hash = hashRecoveryCode(code);
+  const [row] = await sql`
+    update users set recovery_codes = array_remove(recovery_codes, ${hash})
+    where id = ${userId} and ${hash} = any(recovery_codes) returning id`;
+  return Boolean(row);
+}
+
 /**
  * Sign-up (email + phone + password, confirmed by a code sent to the phone) and login. The account,
  * its workspace and the trial are created only once the phone is confirmed.
+ *
+ * Login is a sequence of steps on a `login_attempts` row: password → code sent to the verified phone
+ * → authenticator code (once two-factor is set up) → approval from another signed-in device, when
+ * there is one. The session cookie is set only when every step passed.
  */
 export function publicAccountRoutes(deps: Deps): FastifyPluginAsyncZod {
   const { sql, throttle, auth } = deps;
   const verifications = createVerifications(deps);
+  const cipher = totpCipher(deps.otp.key);
+
+  const loadUser = async (id: string) => {
+    const [user] = await sql<FactorUser[]>`select ${USER_COLUMNS(sql)}, totp_secret, totp_last_step from users where id = ${id}`;
+    if (!user) throw loginGone();
+    if (user.status === 'suspended') throw suspendedError(user.suspended_reason);
+    return user;
+  };
+
+  /** The open login the client holds (id + secret token). */
+  async function loadAttempt(id: string, token: string) {
+    const [attempt] = await sql<AttemptRow[]>`
+      select id, user_id, workspace_id, remember, phone_verification_id, phone_verified_at, totp_verified_at, totp_attempts, approval, expires_at
+      from login_attempts
+      where id = ${id} and token_hash = ${hashKey(token)} and completed_at is null and expires_at > now()`;
+    if (!attempt) throw loginGone();
+    return attempt;
+  }
+
+  const phonePending = (a: AttemptRow) => a.phone_verification_id !== null && a.phone_verified_at === null;
+
+  const stepResponse = (a: AttemptRow, step: LoginStep, extra: Partial<z.infer<typeof loginResponse>> = {}): z.infer<typeof loginResponse> => ({
+    step,
+    loginId: a.id,
+    expiresAt: a.expires_at.toISOString(),
+    ticket: null,
+    session: null,
+    ...extra,
+  });
+
+  /**
+   * Moves a login as far as it can go: the next factor it needs, the other device's answer, or — when
+   * everything passed — the session cookie.
+   */
+  async function advance(attempt: AttemptRow, req: FastifyRequest, reply: FastifyReply) {
+    const user = await loadUser(attempt.user_id);
+    if (phonePending(attempt)) return stepResponse(attempt, 'phone');
+    if (user.totp_enabled_at && !attempt.totp_verified_at) return stepResponse(attempt, 'totp');
+
+    let approval = attempt.approval;
+    if (approval === null) {
+      // Signed in elsewhere (a dashboard session used recently) → that device decides.
+      const [other] = await sql`
+        select 1 from api_keys k join workspaces w on w.id = k.workspace_id
+        where w.owner_id = ${user.id} and 'console' = any(k.scopes) and k.revoked_at is null
+          and (k.expires_at is null or k.expires_at > now())
+          and coalesce(k.last_used_at, k.created_at) > now() - make_interval(secs => ${APPROVER_ACTIVE_SEC})
+        limit 1`;
+      const [row] = await sql<{ approval: AttemptRow['approval'] }[]>`
+        update login_attempts set approval = ${other ? 'pending' : 'approved'}, decided_at = ${other ? null : sql`now()`}
+        where id = ${attempt.id} and approval is null
+        returning approval`;
+      // Lost a race with a concurrent request of the same login: take what it decided.
+      approval = row ? row.approval : ((await sql<{ approval: AttemptRow['approval'] }[]>`select approval from login_attempts where id = ${attempt.id}`)[0]?.approval ?? null);
+    }
+    if (approval === 'pending') return stepResponse({ ...attempt, approval }, 'approval');
+    if (approval === 'denied') throw forbidden('This login was declined from your signed-in device.', 'login_denied');
+
+    const [done] = await sql`update login_attempts set completed_at = now() where id = ${attempt.id} and completed_at is null returning id`;
+    if (!done) throw loginGone();
+    const workspace = await primaryWorkspace(sql, user.id);
+    if (!workspace) throw unprocessable('This account has no workspace', undefined, { code: 'no_workspace' });
+    setSessionCookie(reply, await issueConsoleToken(sql, workspace.id, attempt.remember), { remember: attempt.remember, secure: req.secureCookies });
+    return stepResponse(attempt, 'done', { session: { user: toUserDto(user), workspace: workspaceRowDto(workspace) } });
+  }
+
+  /**
+   * One guess at the authenticator/recovery step, spent up front (parallel guesses can't exceed the
+   * budget). Returns the guesses left after this one; past the budget the login must start over.
+   */
+  async function spendFactorAttempt(attemptId: string) {
+    const [row] = await sql<{ totp_attempts: number }[]>`
+      update login_attempts set totp_attempts = totp_attempts + 1
+      where id = ${attemptId} and totp_attempts < ${LOGIN_TOTP_ATTEMPTS} returning totp_attempts`;
+    if (!row) {
+      await sql`update login_attempts set expires_at = now() where id = ${attemptId}`;
+      throw tooMany('Too many incorrect codes. Log in again.', 60, 'too_many_codes');
+    }
+    return LOGIN_TOTP_ATTEMPTS - row.totp_attempts;
+  }
+
+  /** A recovery code stands in for the authenticator and the other device, and signs that device (and every other session) out. */
+  async function recover(attempt: AttemptRow, code: string, req: FastifyRequest, reply: FastifyReply) {
+    const user = await loadUser(attempt.user_id);
+    if (!user.totp_enabled_at) throw badRequest('Two-factor authentication is not set up on this account', 'two_factor_off');
+    const left = await spendFactorAttempt(attempt.id);
+    const ended = await sql.begin(async (tx) => {
+      if (!(await spendRecoveryCode(tx, user.id, code))) return null;
+      await tx`
+        update login_attempts set totp_verified_at = coalesce(totp_verified_at, now()), approval = 'approved', decided_at = now(), decided_by = null
+        where id = ${attempt.id}`;
+      return tx<{ id: string }[]>`
+        update api_keys set revoked_at = now()
+        where workspace_id in (select id from workspaces where owner_id = ${user.id}) and 'console' = any(scopes) and revoked_at is null
+        returning id`;
+    });
+    if (!ended) throw codeWrong(left);
+    if (ended.length) await auth.revoke({ keyIds: ended.map((k) => k.id) });
+    req.log.info({ userId: user.id, sessionsEnded: ended.length }, 'login with a recovery code');
+    return advance({ ...attempt, totp_verified_at: new Date(), approval: 'approved' }, req, reply);
+  }
 
   return async (app) => {
     app.addHook('onRequest', async (req) => assertNotCrossSite(req));
@@ -282,10 +470,14 @@ export function publicAccountRoutes(deps: Deps): FastifyPluginAsyncZod {
         schema: {
           tags,
           summary: 'Log in',
-          description: 'Sets the dashboard session cookie. For API access, create a workspace token (`wap_…`) instead.',
+          description:
+            'Checks the password and starts a login. Next steps, as `step` says: `phone` (a code was sent to the account\'s number → ' +
+            '`/api/auth/login/phone`), `totp` (authenticator code → `/api/auth/login/totp`), `approval` (another signed-in device ' +
+            'must approve → poll `/api/auth/login/status`), `done` (the dashboard session cookie is set). ' +
+            'For API access, create a workspace token (`wap_…`) instead.',
           security: [],
-          body: z.object({ email: z.string().trim().min(3).max(254), password: z.string().min(1).max(200), remember: z.boolean().default(true) }),
-          response: { 200: successSchema(sessionResponse) },
+          body: z.object({ email: z.string().trim().min(3).max(254), password: z.string().min(1).max(200), remember: z.boolean().default(true), lang }),
+          response: { 200: successSchema(loginResponse) },
         },
       },
       async (req, reply) => {
@@ -308,8 +500,140 @@ export function publicAccountRoutes(deps: Deps): FastifyPluginAsyncZod {
         if (needsRehash(user.password_hash)) await sql`update users set password_hash = ${await hashPassword(req.body.password)} where id = ${user.id}`;
         const workspace = await primaryWorkspace(sql, user.id);
         if (!workspace) throw unprocessable('This account has no workspace', undefined, { code: 'no_workspace' });
-        setSessionCookie(reply, await issueConsoleToken(sql, workspace.id, req.body.remember), { remember: req.body.remember, secure: req.secureCookies });
-        return ok({ user: toUserDto(user), workspace: workspaceRowDto(workspace) });
+
+        // The code goes to the account's verified number. If the channel is down (or the number can no
+        // longer receive it) the step is skipped rather than locking everyone out — including the admin
+        // who would fix the channel; the authenticator code is still required.
+        let ticket: VerificationTicket | null = null;
+        if (user.phone && user.phone_verified_at) {
+          try {
+            ticket = await verifications.start({ purpose: 'login', phone: user.phone, lang: req.body.lang, ip: req.ip, userId: user.id });
+          } catch (err) {
+            if (!(err instanceof ApiError) || (err.code !== 'otp_unavailable' && err.code !== 'phone_unreachable')) throw err;
+            req.log.warn({ userId: user.id, code: err.code }, 'login phone code not sent; step skipped');
+          }
+        }
+        const loginToken = randomBytes(24).toString('base64url');
+        const [attempt] = await sql<AttemptRow[]>`
+          insert into login_attempts (user_id, workspace_id, token_hash, remember, ip, user_agent, phone_verification_id, expires_at)
+          values (${user.id}, ${workspace.id}, ${hashKey(loginToken)}, ${req.body.remember}, ${req.ip},
+                  ${req.headers['user-agent']?.slice(0, 400) ?? null}, ${ticket?.verificationId ?? null}, now() + make_interval(secs => ${LOGIN_TTL_SEC}))
+          returning id, user_id, workspace_id, remember, phone_verification_id, phone_verified_at, totp_verified_at, totp_attempts, approval, expires_at`;
+        const next = await advance(attempt!, req, reply);
+        return ok({ ...next, loginToken, ticket: next.step === 'phone' ? ticket : null });
+      },
+    );
+
+    app.post(
+      '/login/phone',
+      {
+        schema: {
+          tags,
+          summary: 'Log in: confirm the phone code',
+          security: [],
+          body: z.object({ ...loginRef, code: codeInput }),
+          response: { 200: successSchema(loginResponse) },
+        },
+      },
+      async (req, reply) => {
+        const attempt = await loadAttempt(req.body.loginId, req.body.loginToken);
+        if (phonePending(attempt)) {
+          await verifications.confirm(attempt.phone_verification_id!, req.body.code, req.ip, { purpose: 'login', userId: attempt.user_id }, async (_row, tx) => {
+            await tx`update login_attempts set phone_verified_at = now() where id = ${attempt.id}`;
+          });
+          attempt.phone_verified_at = new Date();
+        }
+        return ok(await advance(attempt, req, reply));
+      },
+    );
+
+    app.post(
+      '/login/phone/resend',
+      {
+        schema: { tags, summary: 'Log in: send a new phone code', security: [], body: z.object(loginRef), response: { 200: successSchema(ticketDto) } },
+      },
+      async (req) => {
+        const attempt = await loadAttempt(req.body.loginId, req.body.loginToken);
+        if (!phonePending(attempt)) throw badRequest('The phone step of this login is already done', 'step_done');
+        return ok(await verifications.resend(attempt.phone_verification_id!, req.ip, { purpose: 'login', userId: attempt.user_id }));
+      },
+    );
+
+    app.post(
+      '/login/totp',
+      {
+        schema: {
+          tags,
+          summary: 'Log in: authenticator code',
+          description: 'The 6-digit code from the authenticator app. A recovery code is accepted too (see `/api/auth/login/recovery`).',
+          security: [],
+          body: z.object({ ...loginRef, code: z.string().trim().min(6).max(32) }),
+          response: { 200: successSchema(loginResponse) },
+        },
+      },
+      async (req, reply) => {
+        const attempt = await loadAttempt(req.body.loginId, req.body.loginToken);
+        if (phonePending(attempt)) throw badRequest('Confirm the phone code first', 'step_order');
+        if (looksLikeRecoveryCode(req.body.code)) return ok(await recover(attempt, req.body.code, req, reply));
+        const user = await loadUser(attempt.user_id);
+        if (user.totp_enabled_at && !attempt.totp_verified_at) {
+          const left = await spendFactorAttempt(attempt.id);
+          if (!(await acceptTotp(sql, cipher, user, req.body.code))) throw codeWrong(left);
+          await sql`update login_attempts set totp_verified_at = now() where id = ${attempt.id}`;
+          attempt.totp_verified_at = new Date();
+        }
+        return ok(await advance(attempt, req, reply));
+      },
+    );
+
+    app.post(
+      '/login/recovery',
+      {
+        schema: {
+          tags,
+          summary: 'Log in: use a recovery code',
+          description:
+            'For a lost phone or authenticator, or when the other signed-in device can\'t answer: replaces the authenticator code ' +
+            'and the approval, and ends every other dashboard session of the account. Each recovery code works once.',
+          security: [],
+          body: z.object({ ...loginRef, code: z.string().trim().min(10).max(32) }),
+          response: { 200: successSchema(loginResponse) },
+        },
+      },
+      async (req, reply) => {
+        const attempt = await loadAttempt(req.body.loginId, req.body.loginToken);
+        if (phonePending(attempt)) throw badRequest('Confirm the phone code first', 'step_order');
+        return ok(await recover(attempt, req.body.code, req, reply));
+      },
+    );
+
+    app.post(
+      '/login/status',
+      {
+        // Polled every few seconds while the other device decides.
+        config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
+        schema: {
+          tags,
+          summary: 'Log in: check the approval',
+          description: 'While `step` is `approval`, poll this every few seconds. Once approved it sets the session cookie (`done`); declined → 403 `login_denied`.',
+          security: [],
+          body: z.object(loginRef),
+          response: { 200: successSchema(loginResponse) },
+        },
+      },
+      async (req, reply) => ok(await advance(await loadAttempt(req.body.loginId, req.body.loginToken), req, reply)),
+    );
+
+    app.post(
+      '/login/cancel',
+      {
+        schema: { tags, summary: 'Log in: give up this login', security: [], body: z.object(loginRef), response: { 200: successSchema(z.object({ cancelled: z.literal(true) })) } },
+      },
+      async (req) => {
+        await sql`
+          update login_attempts set expires_at = now()
+          where id = ${req.body.loginId} and token_hash = ${hashKey(req.body.loginToken)} and completed_at is null`;
+        return ok({ cancelled: true as const });
       },
     );
 
@@ -367,6 +691,7 @@ const meResponse = z.object({
 export function accountRoutes(deps: Deps): FastifyPluginAsyncZod {
   const { sql, auth, throttle } = deps;
   const verifications = createVerifications(deps);
+  const cipher = totpCipher(deps.otp.key);
 
   /** Workspace, owner and pending plan request in one round trip. */
   async function loadMe(workspaceId: string): Promise<z.infer<typeof meResponse>> {
@@ -379,11 +704,12 @@ export function accountRoutes(deps: Deps): FastifyPluginAsyncZod {
         status: UserStatus | null;
         phone: string | null;
         phone_verified_at: Date | null;
+        totp_enabled_at: Date | null;
         request: PlanRequestRow | null;
       })[]
     >`
       select w.id, w.name, w.plan_id, w.trial_ends_at, w.plan_expires_at,
-        u.id as user_id, u.name as user_name, u.email, u.role, u.status, u.phone, u.phone_verified_at,
+        u.id as user_id, u.name as user_name, u.email, u.role, u.status, u.phone, u.phone_verified_at, u.totp_enabled_at,
         (select to_jsonb(r) from plan_requests r where r.workspace_id = w.id and r.status = 'pending' limit 1) as request
       from workspaces w
       left join users u on u.id = w.owner_id
@@ -405,6 +731,7 @@ export function accountRoutes(deps: Deps): FastifyPluginAsyncZod {
               suspended_reason: null,
               phone: row.phone,
               phone_verified_at: row.phone_verified_at,
+              totp_enabled_at: row.totp_enabled_at,
             })
           : null,
       workspace: workspaceRowDto(row),
@@ -544,6 +871,171 @@ export function accountRoutes(deps: Deps): FastifyPluginAsyncZod {
           });
         await auth.revoke({ workspaceIds: await ownedWorkspaces(userId) });
         return ok(await loadMe(req.auth.workspaceId));
+      },
+    );
+
+    app.post(
+      '/account/2fa/setup',
+      {
+        schema: {
+          tags,
+          summary: 'Start setting up two-factor authentication',
+          description:
+            'Creates a new authenticator secret (replacing an unconfirmed one). Scan `qrImage` (or type `secret`) in the app, then ' +
+            'confirm a code with `/api/account/2fa/enable`.',
+          response: { 200: successSchema(z.object({ secret: z.string(), otpauthUrl: z.string(), qrImage: z.string() })) },
+        },
+      },
+      async (req) => {
+        const userId = requireUser(req);
+        const [user] = await sql<{ email: string; totp_enabled_at: Date | null; totp_secret: string | null }[]>`
+          select email, totp_enabled_at, totp_secret from users where id = ${userId}`;
+        if (!user) throw notFound('This workspace has no owner account', 'no_owner');
+        if (user.totp_enabled_at) throw conflict('Two-factor authentication is already on', 'two_factor_on');
+        // An unconfirmed secret is kept: the page asking again (a reload, a second tab, a double mount)
+        // must not replace the secret the app already scanned, or every code it shows is "incorrect".
+        const readable = (sealed: string | null) => {
+          if (!sealed) return null;
+          try {
+            return cipher.open(sealed, userId);
+          } catch {
+            return null;
+          }
+        };
+        let secret = readable(user.totp_secret);
+        if (!secret) {
+          const fresh = generateTotpSecret();
+          const sealed = cipher.seal(fresh, userId);
+          // Two first requests at once: one stores its secret, the other reads it back.
+          const [stored] = await sql<{ totp_secret: string }[]>`
+            update users set totp_secret = case when totp_secret is null or ${user.totp_secret !== null} then ${sealed} else totp_secret end, totp_last_step = null
+            where id = ${userId} and totp_enabled_at is null
+            returning totp_secret`;
+          secret = readable(stored?.totp_secret ?? sealed) ?? fresh;
+        }
+        const url = otpauthUrl(secret, user.email, TOTP_ISSUER);
+        return ok({ secret, otpauthUrl: url, qrImage: await QRCode.toDataURL(url, { margin: 1, width: 240 }) });
+      },
+    );
+
+    app.post(
+      '/account/2fa/enable',
+      {
+        schema: {
+          tags,
+          summary: 'Turn two-factor authentication on',
+          description: 'Confirms a code from the app. Returns the recovery codes — shown only now, each works once.',
+          body: z.object({ code: z.string().trim().min(6).max(16) }),
+          response: { 200: successSchema(z.object({ recoveryCodes: z.array(z.string()) })) },
+        },
+      },
+      async (req) => {
+        const userId = requireUser(req);
+        await throttle.consume([{ key: `totp-setup:user:${userId}`, limit: 15, windowSec: 900 }], 'Too many attempts. Try again later.');
+        const [user] = await sql<{ id: string; totp_secret: string | null; totp_last_step: number | null; totp_enabled_at: Date | null }[]>`
+          select id, totp_secret, totp_last_step, totp_enabled_at from users where id = ${userId}`;
+        if (!user) throw notFound('This workspace has no owner account', 'no_owner');
+        if (user.totp_enabled_at) throw conflict('Two-factor authentication is already on', 'two_factor_on');
+        if (!user.totp_secret) throw badRequest('Start the setup first', 'two_factor_not_started');
+        if (!(await acceptTotp(sql, cipher, user, req.body.code))) {
+          throw unprocessable('The code is incorrect', { code: ['Incorrect code'] }, { code: 'code_invalid' });
+        }
+        const codes = generateRecoveryCodes();
+        await sql`
+          update users set totp_enabled_at = now(), recovery_codes = ${codes.map(hashRecoveryCode)}::text[]
+          where id = ${userId} and totp_enabled_at is null`;
+        // Cached credentials carry the "two-factor required" flag; drop them so this session is let through now.
+        await auth.revoke({ workspaceIds: await ownedWorkspaces(userId) });
+        return ok({ recoveryCodes: codes });
+      },
+    );
+
+    app.post(
+      '/account/2fa/recovery-codes',
+      {
+        schema: {
+          tags,
+          summary: 'New recovery codes',
+          description: 'Replaces every recovery code (the old ones stop working). Needs a current code from the authenticator app.',
+          body: z.object({ code: z.string().trim().min(6).max(16) }),
+          response: { 200: successSchema(z.object({ recoveryCodes: z.array(z.string()) })) },
+        },
+      },
+      async (req) => {
+        const userId = requireUser(req);
+        await throttle.consume([{ key: `totp-setup:user:${userId}`, limit: 15, windowSec: 900 }], 'Too many attempts. Try again later.');
+        const [user] = await sql<{ id: string; totp_secret: string | null; totp_last_step: number | null; totp_enabled_at: Date | null }[]>`
+          select id, totp_secret, totp_last_step, totp_enabled_at from users where id = ${userId}`;
+        if (!user?.totp_enabled_at) throw badRequest('Two-factor authentication is not set up', 'two_factor_off');
+        if (!(await acceptTotp(sql, cipher, user, req.body.code))) {
+          throw unprocessable('The code is incorrect', { code: ['Incorrect code'] }, { code: 'code_invalid' });
+        }
+        const codes = generateRecoveryCodes();
+        await sql`update users set recovery_codes = ${codes.map(hashRecoveryCode)}::text[] where id = ${userId}`;
+        return ok({ recoveryCodes: codes });
+      },
+    );
+
+    app.get(
+      '/account/2fa',
+      {
+        schema: {
+          tags,
+          summary: 'Two-factor status',
+          response: { 200: successSchema(z.object({ enabled: z.boolean(), recoveryCodesLeft: z.number() })) },
+        },
+      },
+      async (req) => {
+        const userId = requireUser(req);
+        const [row] = await sql<{ enabled: boolean; left: number }[]>`
+          select totp_enabled_at is not null as enabled, cardinality(recovery_codes)::int as left from users where id = ${userId}`;
+        return ok({ enabled: row?.enabled ?? false, recoveryCodesLeft: row?.left ?? 0 });
+      },
+    );
+
+    const loginRequestDto = z.object({ id: z.uuid(), ip: z.string().nullable(), userAgent: z.string().nullable(), createdAt: z.string(), expiresAt: z.string() });
+
+    app.get(
+      '/account/login-requests',
+      {
+        schema: {
+          tags,
+          summary: 'Logins waiting for this device\'s approval',
+          description: 'Someone passed every login step on another device while this account is signed in here: approve or decline it.',
+          response: { 200: successSchema(z.array(loginRequestDto)) },
+        },
+      },
+      async (req) => {
+        const userId = requireUser(req);
+        const rows = await sql<{ id: string; ip: string | null; user_agent: string | null; created_at: Date; expires_at: Date }[]>`
+          select id, ip, user_agent, created_at, expires_at from login_attempts
+          where user_id = ${userId} and approval = 'pending' and completed_at is null and expires_at > now()
+          order by created_at desc limit 10`;
+        return ok(rows.map((r) => ({ id: r.id, ip: r.ip, userAgent: r.user_agent, createdAt: r.created_at.toISOString(), expiresAt: r.expires_at.toISOString() })));
+      },
+    );
+
+    app.post(
+      '/account/login-requests/:id/:decision',
+      {
+        schema: {
+          tags,
+          summary: 'Approve or decline a login',
+          description: 'Only from a signed-in dashboard (not with an API token).',
+          params: z.object({ id: z.uuid(), decision: z.enum(['approve', 'deny']) }),
+          response: { 200: successSchema(z.object({ approval: z.enum(['approved', 'denied']) })) },
+        },
+      },
+      async (req) => {
+        const userId = requireUser(req);
+        if (!req.auth.console) throw forbidden('Approve logins from the dashboard', 'console_required');
+        const approval = req.params.decision === 'approve' ? 'approved' : 'denied';
+        const [row] = await sql`
+          update login_attempts set approval = ${approval}, decided_by = ${req.auth.keyId}, decided_at = now()
+          where id = ${req.params.id} and user_id = ${userId} and approval = 'pending' and completed_at is null and expires_at > now()
+          returning id`;
+        if (!row) throw notFound('This login request has expired or was already answered', 'login_request_not_found');
+        return ok({ approval: approval as 'approved' | 'denied' });
       },
     );
 

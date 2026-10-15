@@ -72,6 +72,17 @@ export function buildRpcServer(supervisor: Supervisor, secret: string, logger: L
     return { ok: true };
   });
 
+  app.post('/sessions/:id/react', async (req) => {
+    const body = z
+      .object({
+        jid,
+        target: z.object({ id: z.string().min(1).max(128), fromMe: z.boolean(), participant: z.string().max(128).optional() }),
+        emoji: z.string().max(32),
+      })
+      .parse(req.body);
+    return { id: await runnerFor(req.params).react(body.jid, body.target, body.emoji) };
+  });
+
   app.post('/sessions/:id/chat-state', async (req) => {
     const body = z.object({ jid, state: z.enum(['composing', 'recording', 'paused']) }).parse(req.body);
     await runnerFor(req.params).chatState(body.jid, body.state);

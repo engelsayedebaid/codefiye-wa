@@ -22,6 +22,8 @@ export type AuthContext = {
   suspendedReason: string | null;
   /** The owner confirmed a phone number by code. Required to request a plan (admins are exempt). */
   phoneVerified: boolean;
+  /** The owner set up an authenticator app. Until then a dashboard session may only set it up (see app.ts). */
+  twoFactorEnabled: boolean;
   /** Dashboard login token (scope `console`): expires and is revoked on logout. */
   console: boolean;
   expiresAt: Date | null;
@@ -97,10 +99,12 @@ export function createAuth(sql: Sql) {
         status: UserStatus | null;
         suspended_reason: string | null;
         phone_verified: boolean | null;
+        two_factor: boolean | null;
       }[]
     >`
       select k.id, k.workspace_id, k.session_id, k.scopes, k.expires_at, w.plan_id, w.trial_ends_at, w.plan_expires_at,
-        u.id as user_id, u.role, u.status, u.suspended_reason, u.phone_verified_at is not null as phone_verified
+        u.id as user_id, u.role, u.status, u.suspended_reason, u.phone_verified_at is not null as phone_verified,
+        u.totp_enabled_at is not null as two_factor
       from api_keys k
       join workspaces w on w.id = k.workspace_id
       left join users u on u.id = w.owner_id
@@ -119,6 +123,7 @@ export function createAuth(sql: Sql) {
           userStatus: row.status,
           suspendedReason: row.suspended_reason,
           phoneVerified: row.phone_verified === true,
+          twoFactorEnabled: row.two_factor === true,
           console: row.scopes.includes('console'),
           expiresAt: row.expires_at,
         }

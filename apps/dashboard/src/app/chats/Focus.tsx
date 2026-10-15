@@ -1,4 +1,4 @@
-import { Columns2, Focus, Maximize2, MessageSquareText, Minimize2, PanelLeft } from 'lucide-react';
+import { Columns2, Columns3, Focus, Maximize2, MessageSquareText, Minimize2, PanelLeft, Search, Sparkles } from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { useI18n } from '../../i18n';
 import { cx, flip, LangSwitch, ThemeSwitch } from '../../ui';
@@ -6,12 +6,13 @@ import { cx, flip, LangSwitch, ThemeSwitch } from '../../ui';
 /**
  * Focus mode of the chats page: `full` = the whole page over the dashboard chrome, `single` = the open
  * conversation alone (the list as a drawer), `split` = two conversations side by side (the open one,
- * and a second picked from a list in the other half). Purely a layout: the page's state (number, open chat, drafts) is untouched.
+ * and a second picked from a list in the other half), `accounts` = several numbers side by side, each a column with its own
+ * chats (see AccountsSplit.tsx). Purely a layout: the page's state (number, open chat, drafts) is untouched.
  */
-export const FOCUS_MODES = ['full', 'single', 'split'] as const;
+export const FOCUS_MODES = ['full', 'single', 'split', 'accounts'] as const;
 export type FocusMode = (typeof FOCUS_MODES)[number];
 
-const ICONS = { full: Maximize2, single: MessageSquareText, split: Columns2 } satisfies Record<FocusMode, unknown>;
+const ICONS = { full: Maximize2, single: MessageSquareText, split: Columns2, accounts: Columns3 } satisfies Record<FocusMode, unknown>;
 
 const MODE_KEY = 'wa.chats.focusMode';
 /** How long the exit animation runs before the page goes back into the dashboard. */
@@ -76,7 +77,7 @@ export function useFocusMode() {
   return { mode, last, exiting, enter, exit };
 }
 
-/** The Focus button of the chats header and its menu of the three layouts. */
+/** The Focus button of the chats header and its menu of the layouts. */
 export function FocusMenu({ last, onPick, renderButton }: { last: FocusMode; onPick: (mode: FocusMode) => void; renderButton: (props: { onClick: () => void; open: boolean; label: string }) => ReactNode }) {
   const { t } = useI18n();
   const f = t.chats.focus;
@@ -150,8 +151,17 @@ export function FocusMenu({ last, onPick, renderButton }: { last: FocusMode; onP
   );
 }
 
-/** The slim bar on top of focus mode: what it is, switch layout, show the list (single), language and theme, and leave. */
-export function FocusBar({ mode, title, onMode, onExit, onShowList }: { mode: FocusMode; title: string; onMode: (mode: FocusMode) => void; onExit: () => void; onShowList?: () => void }) {
+/** The slim bar on top of focus mode: what it is, switch layout, show the list (single), search every chat, language and theme, and leave. */
+export function FocusBar({ mode, title, onMode, onExit, onShowList, onSearch, onAnalyze }: {
+  mode: FocusMode;
+  title: string;
+  onMode: (mode: FocusMode) => void;
+  onExit: () => void;
+  onShowList?: () => void;
+  onSearch: () => void;
+  /** Admins: the AI analysis. */
+  onAnalyze?: () => void;
+}) {
   const { t } = useI18n();
   const f = t.chats.focus;
   return (
@@ -199,6 +209,27 @@ export function FocusBar({ mode, title, onMode, onExit, onShowList }: { mode: Fo
           );
         })}
       </div>
+      {onAnalyze && (
+        <button
+          type="button"
+          onClick={onAnalyze}
+          title={t.chats.ai.open}
+          aria-label={t.chats.ai.open}
+          className="flex cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs text-ink-2 transition-colors hover:bg-raised hover:text-ink"
+        >
+          <Sparkles className="size-4 text-brand" />
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={onSearch}
+        title={t.chats.globalSearch.open}
+        aria-label={t.chats.globalSearch.open}
+        className="flex cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs text-ink-2 transition-colors hover:bg-raised hover:text-ink"
+      >
+        <Search className="size-4" />
+        <kbd className="ltr hidden rounded border border-line-strong bg-raised px-1 font-mono text-[10px] text-ink-3 lg:inline">Ctrl K</kbd>
+      </button>
       <div className="flex items-center">
         <ThemeSwitch />
         <LangSwitch className="px-2" />

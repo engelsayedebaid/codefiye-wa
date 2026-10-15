@@ -906,6 +906,11 @@ export class SessionRunner {
   }
 
   /** "typing…" / "recording…" shown to the contact while the chats page composes. */
+  /** A reaction from the chats page (the API stores it once this returns the reaction's id). */
+  async react(jid: string, target: { id: string; fromMe: boolean; participant?: string }, emoji: string) {
+    return withTimeout(this.live().react(jid, target, emoji), LOOKUP_TIMEOUT_MS, 'reaction timed out');
+  }
+
   async chatState(jid: string, state: 'composing' | 'recording' | 'paused') {
     await withTimeout(this.live().sendChatState(jid, state), LOOKUP_TIMEOUT_MS, 'presence update timed out');
   }

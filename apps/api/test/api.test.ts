@@ -9,6 +9,7 @@ import { EventBus } from '../src/lib/events';
 import { generateKey } from '../src/lib/keys';
 import { OtpDeliveryError, otpKey, type OtpSender } from '../src/lib/otp';
 import { createThrottle } from '../src/lib/throttle';
+import { currentStep, totpAt } from '../src/lib/totp';
 import { WorkerClient } from '../src/lib/workers';
 
 const url = process.env.TEST_DATABASE_URL;
@@ -65,21 +66,59 @@ describe.skipIf(!url)('api (integration)', () => {
 
   const sessionCookie = (res: Awaited<ReturnType<typeof call>>) => res.cookies.find((c) => c.name === 'wa_session');
 
-  /** Signs up through the real flow (code to the phone) and returns the session cookie. */
-  async function register(email: string, { phone = nextPhone(), password = 'correct horse battery', name = 'Owner' } = {}) {
+  /** Authenticator secrets of the accounts made by `register`, by email. */
+  const totpSecrets = new Map<string, string>();
+  /** The current authenticator code; forgets the replay guard first so a test can log in again within the same 30 s. */
+  const totpCode = async (email: string) => {
+    await sql`update users set totp_last_step = null where email = ${email.toLowerCase()}`;
+    return totpAt(totpSecrets.get(email.toLowerCase())!, currentStep());
+  };
+
+  /** Signs up through the real flow (code to the phone), turns two-factor on (unless told not to) and returns the session cookie. */
+  async function register(email: string, { phone = nextPhone(), password = 'correct horse battery', name = 'Owner', twoFactor = true } = {}) {
     const ip = nextIp();
     const start = await call('POST', '/api/auth/register', undefined, { name, email, phone, password }, {}, ip);
     expect(start.statusCode, start.body).toBe(202);
     const verify = await call('POST', '/api/auth/register/verify', undefined, { verificationId: start.json().data.verificationId, code: codeFor(phone) }, {}, ip);
     expect(verify.statusCode, verify.body).toBe(201);
     const { user, workspace } = verify.json().data;
-    return { cookie: { cookie: sessionCookie(verify)!.value }, user, workspace, phone, password };
+    const cookie = { cookie: sessionCookie(verify)!.value };
+    let recoveryCodes: string[] = [];
+    if (twoFactor) {
+      const setup = await call('POST', '/api/account/2fa/setup', cookie);
+      expect(setup.statusCode, setup.body).toBe(200);
+      totpSecrets.set(email.toLowerCase(), setup.json().data.secret);
+      const enabled = await call('POST', '/api/account/2fa/enable', cookie, { code: await totpCode(email) });
+      expect(enabled.statusCode, enabled.body).toBe(200);
+      recoveryCodes = enabled.json().data.recoveryCodes;
+    }
+    return { cookie, user, workspace, phone, password, recoveryCodes };
   }
 
+  /**
+   * Logs in through every step: password, the code sent to the phone, the authenticator code, and —
+   * when another session is open — an approval (granted here directly in the database; the approval
+   * flow itself has its own test). `res` is the last response.
+   */
   const login = async (email: string, password: string, ip = nextIp()) => {
-    const res = await call('POST', '/api/auth/login', undefined, { email, password }, {}, ip);
-    return { res, cookie: sessionCookie(res) ? { cookie: sessionCookie(res)!.value } : undefined };
+    // Tests log the same account in many times; the per-number code budget isn't what they check.
+    await sql`delete from throttles where key like 'otp:%'`;
+    let res = await call('POST', '/api/auth/login', undefined, { email, password }, {}, ip);
+    const ref = res.statusCode === 200 ? { loginId: res.json().data.loginId, loginToken: res.json().data.loginToken } : null;
+    for (let i = 0; ref && res.statusCode === 200 && i < 5; i++) {
+      const { step } = res.json().data;
+      if (step === 'done') break;
+      if (step === 'phone') res = await call('POST', '/api/auth/login/phone', undefined, { ...ref, code: codeFor(await phoneOf(email)) }, {}, ip);
+      else if (step === 'totp') res = await call('POST', '/api/auth/login/totp', undefined, { ...ref, code: await totpCode(email) }, {}, ip);
+      else {
+        await sql`update login_attempts set approval = 'approved' where id = ${ref.loginId} and approval = 'pending'`;
+        res = await call('POST', '/api/auth/login/status', undefined, ref, {}, ip);
+      }
+    }
+    return { res, cookie: sessionCookie(res)?.value ? { cookie: sessionCookie(res)!.value } : undefined };
   };
+  /** The verified number of an account (its login codes go there). */
+  const phoneOf = async (email: string) => (await sql<{ phone: string }[]>`select phone from users where email = ${email.toLowerCase()}`)[0]?.phone ?? 'missing';
 
   beforeAll(async () => {
     await runMigrations(url!);
@@ -576,7 +615,7 @@ describe.skipIf(!url)('api (integration)', () => {
       expect(wrong.cookie).toBeUndefined();
       const good = await login(email.toUpperCase(), account.password);
       expect(good.res.statusCode).toBe(200);
-      expect(good.res.json().data.workspace.id).toBe(account.workspace.id);
+      expect(good.res.json().data).toMatchObject({ step: 'done', session: { workspace: { id: account.workspace.id } } });
       expect(good.cookie).toBeDefined();
     });
 
@@ -685,6 +724,82 @@ describe.skipIf(!url)('api (integration)', () => {
       await sql`update api_keys set expires_at = now() - interval '1 minute' where workspace_id = ${account.workspace.id} and revoked_at is null and 'console' = any(scopes)`;
       expect((await call('GET', '/api/me', cookie)).statusCode).toBe(401);
     });
+
+    it('opens nothing but the two-factor setup until it is on', async () => {
+      const fresh = await register(`no2fa-${stamp}@test.local`, { twoFactor: false });
+      expect((await call('GET', '/api/api-keys', fresh.cookie)).json()).toMatchObject({ code: 'two_factor_required' });
+      expect((await call('GET', '/api/me', fresh.cookie)).json().data.user).toMatchObject({ twoFactorEnabled: false });
+      const setup = (await call('POST', '/api/account/2fa/setup', fresh.cookie)).json().data;
+      expect(setup.otpauthUrl).toContain(`secret=${setup.secret}`);
+      expect(setup.qrImage).toMatch(/^data:image\/png;base64,/);
+      const wrong = totpAt(setup.secret, currentStep() + 5);
+      expect((await call('POST', '/api/account/2fa/enable', fresh.cookie, { code: wrong })).json()).toMatchObject({ code: 'code_invalid' });
+      const enabled = await call('POST', '/api/account/2fa/enable', fresh.cookie, { code: totpAt(setup.secret, currentStep()) });
+      expect(enabled.json().data.recoveryCodes).toHaveLength(10);
+      expect((await call('GET', '/api/api-keys', fresh.cookie)).statusCode).toBe(200);
+      expect((await call('POST', '/api/account/2fa/setup', fresh.cookie)).json()).toMatchObject({ code: 'two_factor_on' });
+      // The secret is stored encrypted.
+      const [stored] = await sql<{ totp_secret: string }[]>`select totp_secret from users where id = ${fresh.user.id}`;
+      expect(stored!.totp_secret).not.toContain(setup.secret);
+    });
+
+    it('logs in step by step: phone code, authenticator, then the signed-in device approves', async () => {
+      const owner = await register(`steps-${stamp}@test.local`);
+      const ownerEmail = owner.user.email;
+      const ip = nextIp();
+      const start = async () => {
+        await sql`delete from throttles where key like 'otp:%'`;
+        const res = await call('POST', '/api/auth/login', undefined, { email: ownerEmail, password: owner.password }, {}, ip);
+        expect(res.json().data).toMatchObject({ step: 'phone', ticket: { phone: expect.any(String) } });
+        expect(sessionCookie(res)).toBeUndefined();
+        return { loginId: res.json().data.loginId as string, loginToken: res.json().data.loginToken as string };
+      };
+      const toApproval = async (ref: { loginId: string; loginToken: string }) => {
+        const phoneStep = await call('POST', '/api/auth/login/phone', undefined, { ...ref, code: codeFor(owner.phone) }, {}, ip);
+        expect(phoneStep.json().data.step).toBe('totp');
+        const totpStep = await call('POST', '/api/auth/login/totp', undefined, { ...ref, code: await totpCode(ownerEmail) }, {}, ip);
+        expect(totpStep.json().data.step).toBe('approval');
+      };
+
+      // Approved from the open session.
+      const ref = await start();
+      expect((await call('POST', '/api/auth/login/totp', undefined, { ...ref, code: '123456' }, {}, ip)).json()).toMatchObject({ code: 'step_order' });
+      expect((await call('POST', '/api/auth/login/status', undefined, { ...ref, loginToken: 'x'.repeat(32) }, {}, ip)).json()).toMatchObject({ code: 'login_expired' });
+      const phoneStep = await call('POST', '/api/auth/login/phone', undefined, { ...ref, code: codeFor(owner.phone) }, {}, ip);
+      expect(phoneStep.json().data.step).toBe('totp');
+      const badTotp = await call('POST', '/api/auth/login/totp', undefined, { ...ref, code: totpAt(totpSecrets.get(ownerEmail)!, currentStep() + 5) }, {}, ip);
+      expect(badTotp.json()).toMatchObject({ code: 'code_invalid', details: { attemptsLeft: 4 } });
+      expect((await call('POST', '/api/auth/login/totp', undefined, { ...ref, code: await totpCode(ownerEmail) }, {}, ip)).json().data.step).toBe('approval');
+      const pending = (await call('GET', '/api/account/login-requests', owner.cookie)).json().data;
+      expect(pending).toEqual([expect.objectContaining({ id: ref.loginId })]);
+      expect((await call('POST', '/api/auth/login/status', undefined, ref, {}, ip)).json().data.step).toBe('approval');
+      expect((await call('POST', `/api/account/login-requests/${ref.loginId}/approve`, owner.cookie)).json().data).toEqual({ approval: 'approved' });
+      const done = await call('POST', '/api/auth/login/status', undefined, ref, {}, ip);
+      expect(done.json().data).toMatchObject({ step: 'done', session: { user: { email: ownerEmail, twoFactorEnabled: true } } });
+      const second = { cookie: sessionCookie(done)!.value };
+      expect((await call('GET', '/api/api-keys', second)).statusCode).toBe(200);
+      // Finished logins can't be replayed.
+      expect((await call('POST', '/api/auth/login/status', undefined, ref, {}, ip)).json()).toMatchObject({ code: 'login_expired' });
+
+      // Declined.
+      const denied = await start();
+      await toApproval(denied);
+      expect((await call('POST', `/api/account/login-requests/${denied.loginId}/deny`, second)).statusCode).toBe(200);
+      expect((await call('POST', '/api/auth/login/status', undefined, denied, {}, ip)).json()).toMatchObject({ code: 'login_denied' });
+
+      // Other device out of reach: a recovery code finishes the login and signs every other session out.
+      const lost = await start();
+      await toApproval(lost);
+      const recovered = await call('POST', '/api/auth/login/recovery', undefined, { ...lost, code: owner.recoveryCodes[0] }, {}, ip);
+      expect(recovered.json().data.step).toBe('done');
+      expect((await call('GET', '/api/me', owner.cookie)).statusCode).toBe(401);
+      expect((await call('GET', '/api/me', second)).statusCode).toBe(401);
+      expect((await call('GET', '/api/me', { cookie: sessionCookie(recovered)!.value })).statusCode).toBe(200);
+      // Each recovery code works once.
+      const again = await start();
+      await call('POST', '/api/auth/login/phone', undefined, { ...again, code: codeFor(owner.phone) }, {}, ip);
+      expect((await call('POST', '/api/auth/login/recovery', undefined, { ...again, code: owner.recoveryCodes[0] }, {}, ip)).json()).toMatchObject({ code: 'code_invalid' });
+    }, 180_000);
   });
 
   describe('plans, admins and user management', () => {

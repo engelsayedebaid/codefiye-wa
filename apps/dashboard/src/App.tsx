@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ban, CloudOff, RefreshCw } from 'lucide-react';
-import { Component, lazy, type ReactNode, Suspense, useCallback, useEffect, useSyncExternalStore } from 'react';
+import { Component, lazy, type ReactNode, Suspense, useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { api, ApiRequestError, errorMessage, onSessionProblem, sessionHint } from './api';
 import type { Account } from './app/account';
 import { BRAND } from './brand';
@@ -29,6 +29,8 @@ function loadChunk<T>(load: () => Promise<T>, attempts = 3): Promise<T> {
 const Landing = lazy(() => loadChunk(() => import('./site/Landing')).then((m) => ({ default: m.Landing })));
 const LoginPage = lazy(() => loadChunk(() => import('./auth/AuthPages')).then((m) => ({ default: m.LoginPage })));
 const RegisterPage = lazy(() => loadChunk(() => import('./auth/AuthPages')).then((m) => ({ default: m.RegisterPage })));
+const TwoFactorSetup = lazy(() => loadChunk(() => import('./auth/TwoFactor')).then((m) => ({ default: m.TwoFactorSetup })));
+const RecoveryCodes = lazy(() => loadChunk(() => import('./auth/TwoFactor')).then((m) => ({ default: m.RecoveryCodes })));
 const AppShell = lazy(() => loadChunk(() => import('./app/AppShell')).then((m) => ({ default: m.AppShell })));
 const DashboardPage = lazy(() => loadChunk(() => import('./pages/Dashboard')).then((m) => ({ default: m.DashboardPage })));
 const SessionsPage = lazy(() => loadChunk(() => import('./pages/Sessions')).then((m) => ({ default: m.SessionsPage })));
@@ -215,10 +217,15 @@ const loginRedirect = () => `/login?next=${encodeURIComponent(location.pathname 
 /** App pages need a session: the account decides between the dashboard, the login page, or a clear explanation. */
 function AuthGate({ path }: { path: string }) {
   const me = useQuery({ queryKey: qk.me, queryFn: ({ signal }) => api<Account>('/api/me', { signal }) });
+  // Kept here, not in the setup screen: once two-factor is on, the account reloads and the setup
+  // screen goes away, but the recovery codes must stay until the user says they saved them.
+  const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
   const error = me.error instanceof ApiRequestError ? me.error : null;
   if (error?.status === 401) return <Redirect to={loginRedirect()} />;
   if (error?.code === 'account_suspended') return <SuspendedScreen reason={typeof error.details?.reason === 'string' ? error.details.reason : null} />;
   if (!me.data) return me.isError ? <OfflineScreen error={me.error} onRetry={() => void me.refetch()} retrying={me.isFetching} /> : <PageLoading />;
+  if (recoveryCodes) return <RecoveryCodes codes={recoveryCodes} onDone={() => setRecoveryCodes(null)} />;
+  if (me.data.user && !me.data.user.twoFactorEnabled) return <TwoFactorSetup onEnabled={setRecoveryCodes} />;
   return (
     <AppShell account={me.data}>
       <Suspense fallback={<Loading className="py-24" />}>

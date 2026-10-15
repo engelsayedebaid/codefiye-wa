@@ -19,10 +19,11 @@ import {
 } from 'fastify-type-provider-zod';
 import type { Logger } from 'pino';
 import type { Deps } from './deps';
-import { ApiError, codeForStatus, notFound, tooMany } from './lib/errors';
+import { ApiError, codeForStatus, forbidden, notFound, tooMany } from './lib/errors';
 import { accountRoutes, publicAccountRoutes } from './routes/account';
 import { adminRoutes } from './routes/admin';
 import { broadcastRoutes } from './routes/broadcasts';
+import { adLibraryRoutes } from './routes/ad-library';
 import { chatRoutes } from './routes/chats';
 import { eventRoutes } from './routes/events';
 import { keyRoutes } from './routes/keys';
@@ -32,6 +33,8 @@ import { templateRoutes } from './routes/templates';
 
 /** Floor for dashboard sessions, so browsing the console on a small plan doesn't trip the API limit. */
 const CONSOLE_RPM = 240;
+/** What a dashboard session may still reach before its user sets up two-factor authentication. */
+const TWO_FACTOR_EXEMPT = /^\/api\/(me|account\/2fa(\/[^?]*)?|account\/login-requests(\/[^?]*)?|events)(\?.*)?$/;
 /** No request may hang: anything still running after this gets a 503 (SSE streams excepted). */
 const HANDLER_TIMEOUT_MS = 60_000;
 const REQUEST_ID_RE = /^[A-Za-z0-9._-]{8,64}$/;
@@ -216,7 +219,13 @@ export async function buildApp(deps: Deps, options: AppOptions) {
 
   await app.register(
     async (api) => {
-      api.addHook('onRequest', (req) => deps.auth.authenticate(req));
+      api.addHook('onRequest', async (req) => {
+        await deps.auth.authenticate(req);
+        // Two-factor is mandatory: a dashboard session of a user without it can only set it up.
+        if (req.auth.console && req.auth.userId && !req.auth.twoFactorEnabled && !TWO_FACTOR_EXEMPT.test(req.url)) {
+          throw forbidden('Set up two-factor authentication first', 'two_factor_required');
+        }
+      });
       // README §6: per plan, per session (session keys) or per workspace (workspace tokens) — not per
       // token, or minting more tokens would multiply the limit. The dashboard has its own bucket.
       await api.register(rateLimit, {
@@ -236,6 +245,7 @@ export async function buildApp(deps: Deps, options: AppOptions) {
       await api.register(adminRoutes(deps), { prefix: '/admin' });
       await api.register(broadcastRoutes(deps), { prefix: '/broadcasts' });
       await api.register(chatRoutes(deps), { prefix: '/chats' });
+      await api.register(adLibraryRoutes(deps), { prefix: '/ads' });
       api.setNotFoundHandler(() => {
         throw notFound('Route not found', 'route_not_found');
       });

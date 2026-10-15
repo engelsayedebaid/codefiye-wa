@@ -24,6 +24,11 @@ export const qk = {
     profile: (sessionId: string, jid: string) => ['chats', sessionId, 'profile', jid] as const,
     /** One loaded page of the list: its chats' small pictures. */
     pictures: (sessionId: string, jids: string) => ['chats', sessionId, 'pictures', jids] as const,
+    /** Search across every chat (`sessionId` '' = all the numbers). */
+    search: (sessionId: string, kind: string, q: string) => ['chats', 'search', sessionId, kind, q] as const,
+    /** AI analysis jobs: the latest of the workspace, and one by id (polled while it runs). */
+    analysisLatest: ['chats', 'analysis', 'latest'] as const,
+    analysis: (id: string) => ['chats', 'analysis', id] as const,
     insights: (sessionId: string, days: number) => ['chats', sessionId, 'insights', days] as const,
     /** The number's latest sync job and its log (kept live by events). */
     syncJob: (sessionId: string) => ['chats', sessionId, 'sync-job'] as const,

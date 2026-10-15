@@ -1,28 +1,29 @@
-import { normalizePhone } from '@wa/shared/phone';
-import { KeyRound } from 'lucide-react';
-import { type FormEvent, type ReactNode, useState } from 'react';
+import { asciiDigits, normalizePhone } from '@wa/shared/phone';
+import { KeyRound, LifeBuoy, Loader2, MonitorSmartphone } from 'lucide-react';
+import { type FormEvent, type ReactNode, useEffect, useEffectEvent, useState } from 'react';
 import { api, ApiRequestError, errorMessage } from '../api';
-import { useI18n } from '../i18n';
+import { getDict, useI18n } from '../i18n';
 import type { Dict } from '../i18n/ar';
 import { Link } from '../router';
-import { Button, Checkbox, delay, ErrorNote, Field, LangSwitch, LogoMark, ThemeSwitch } from '../ui';
-import { CodeStep, type Ticket } from './Otp';
+import { Button, Checkbox, cx, delay, ErrorNote, Field, LangSwitch, LogoMark, ThemeSwitch } from '../ui';
+import { CodeStep, codeError, type Ticket } from './Otp';
 
 const linkClass = 'text-ink underline decoration-neutral-500 underline-offset-4 transition-colors hover:decoration-current';
 
-function AuthLayout({ title, subtitle, children, footer }: { title: string; subtitle: ReactNode; children: ReactNode; footer: ReactNode }) {
+/** `wide`: a two-column screen (two-factor setup) that should fit without scrolling. */
+export function AuthLayout({ title, subtitle, children, footer, wide }: { title: string; subtitle: ReactNode; children: ReactNode; footer: ReactNode; wide?: boolean }) {
   const { t } = useI18n();
   return (
-    <main className="page-wash relative flex min-h-svh flex-col items-center justify-center gap-6 overflow-hidden bg-bg p-6 md:p-10">
+    <main className={cx('page-wash relative flex min-h-svh flex-col items-center justify-center gap-6 overflow-hidden bg-bg p-6 md:p-10', wide && 'px-4 pt-16 pb-6 md:p-8')}>
       <div aria-hidden className="animate-glow pointer-events-none absolute -top-40 left-1/2 size-[480px] -translate-x-1/2 rounded-full bg-brand/[0.07] blur-[110px]" />
       <div className="absolute top-4 end-4 flex items-center gap-1">
         <ThemeSwitch />
         <LangSwitch />
       </div>
-      <div className="relative flex w-full max-w-sm flex-col gap-8">
-        <div className="animate-fade-up flex flex-col items-center gap-4">
+      <div className={cx('relative flex w-full flex-col', wide ? 'max-w-4xl gap-6' : 'max-w-sm gap-8')}>
+        <div className={cx('animate-fade-up flex flex-col items-center', wide ? 'gap-3' : 'gap-4')}>
           <Link href="/" aria-label={t.common.home} className="transition-transform duration-500 hover:scale-105 hover:-rotate-6">
-            <LogoMark className="size-11" />
+            <LogoMark className={wide ? 'size-10' : 'size-11'} />
           </Link>
           <div className="space-y-2 text-center">
             <h1 className="text-xl font-medium">{title}</h1>
@@ -76,9 +77,168 @@ function authError(err: unknown, flow: 'login' | 'register', t: Dict): { message
   return { message: errorMessage(err), fields: {} };
 }
 
+/** A login in progress (see `/api/auth/login`): the client holds it by id + secret token. */
+type LoginRef = { loginId: string; loginToken: string };
+type LoginStep = 'phone' | 'totp' | 'approval' | 'done';
+type LoginResponse = { step: LoginStep; loginId: string; loginToken?: string; expiresAt: string; ticket: Ticket | null };
+type Stage = { kind: 'credentials' } | { kind: 'phone'; ticket: Ticket } | { kind: 'totp'; recovery: boolean } | { kind: 'approval' };
+
+/** The authenticator step; `recoveryOnly` when coming from the approval wait ("can't reach the other device"). */
+function TotpStep({
+  login,
+  recoveryOnly,
+  onNext,
+  onRestart,
+}: {
+  login: LoginRef;
+  recoveryOnly: boolean;
+  onNext: (res: LoginResponse) => void;
+  onRestart: (message?: string) => void;
+}) {
+  const { t } = useI18n();
+  const s = t.auth.totp;
+  const [recovery, setRecovery] = useState(recoveryOnly);
+  const [code, setCode] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const ready = recovery ? code.replace(/[\s-]/g, '').length >= 10 : code.length === 6;
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!ready || loading) return;
+    setLoading(true);
+    setError(null);
+    try {
+      onNext(await api<LoginResponse>(recovery ? '/api/auth/login/recovery' : '/api/auth/login/totp', { method: 'POST', body: { ...login, code } }));
+    } catch (err) {
+      setCode('');
+      const { message, restart } = codeError(err, t);
+      if (restart) return onRestart(message);
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <form onSubmit={submit} className="grid gap-5">
+      {recovery ? (
+        <Field
+          key="recovery"
+          label={s.recovery}
+          value={code}
+          onChange={(e) => setCode(e.target.value.toLowerCase().slice(0, 16))}
+          autoComplete="off"
+          dir="ltr"
+          placeholder="xxxxx-xxxxx"
+          className="text-center font-mono text-lg tracking-widest"
+          hint={s.recoveryHint}
+          autoFocus
+          required
+        />
+      ) : (
+        <Field
+          key="app"
+          label={s.code}
+          value={code}
+          onChange={(e) => setCode(asciiDigits(e.target.value).replace(/\D/g, '').slice(0, 6))}
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          dir="ltr"
+          placeholder="••••••"
+          className="text-center font-mono text-xl tracking-[0.5em]"
+          autoFocus
+          required
+        />
+      )}
+      <ErrorNote>{error}</ErrorNote>
+      <Button type="submit" loading={loading} disabled={!ready} className="w-full">
+        {s.submit}
+      </Button>
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <button type="button" onClick={() => onRestart()} className="text-muted underline-offset-4 transition-colors hover:text-ink hover:underline">
+          {t.auth.loginPhone.back}
+        </button>
+        {!recoveryOnly && (
+          <button
+            type="button"
+            onClick={() => {
+              setRecovery((r) => !r);
+              setCode('');
+              setError(null);
+            }}
+            className="flex items-center gap-1.5 text-muted transition-colors hover:text-ink"
+          >
+            <LifeBuoy className="size-3.5" />
+            {recovery ? s.useApp : s.useRecovery}
+          </button>
+        )}
+      </div>
+    </form>
+  );
+}
+
+/** Polls the login while the signed-in device decides. */
+function ApprovalStep({ login, onNext, onRestart, onRecovery }: { login: LoginRef; onNext: (res: LoginResponse) => void; onRestart: (message?: string) => void; onRecovery: () => void }) {
+  const { t } = useI18n();
+  const a = t.auth.approval;
+  const next = useEffectEvent(onNext);
+  const restart = useEffectEvent((err: unknown) => onRestart(codeError(err, getDict()).message));
+
+  useEffect(() => {
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const res = await api<LoginResponse>('/api/auth/login/status', { method: 'POST', body: login, timeoutMs: 10_000 });
+        if (stopped) return;
+        if (res.step !== 'approval') return next(res);
+      } catch (err) {
+        if (stopped) return;
+        // Network blips and rate limits just wait for the next round; an ended login goes back to the start.
+        if (err instanceof ApiRequestError && (err.status === 403 || err.status === 404)) return restart(err);
+      }
+      timer = setTimeout(() => void poll(), 3_000);
+    };
+    timer = setTimeout(() => void poll(), 3_000);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, [login]);
+
+  const cancel = () => {
+    void api('/api/auth/login/cancel', { method: 'POST', body: login }).catch(() => {});
+    onRestart();
+  };
+
+  return (
+    <div className="grid gap-5">
+      <div className="flex flex-col items-center gap-4 rounded-lg border border-line bg-raised/30 p-5 text-center">
+        <span className="relative flex size-14 items-center justify-center rounded-full bg-brand/15 text-brand">
+          <span aria-hidden className="absolute inset-0 animate-ping rounded-full bg-brand/20 motion-reduce:animate-none" />
+          <MonitorSmartphone className="size-7" />
+        </span>
+        <p className="text-sm text-ink-2">{a.text}</p>
+        <p className="flex items-center gap-2 text-sm text-muted">
+          <Loader2 className="size-4 animate-spin motion-reduce:animate-none" />
+          {a.waiting}
+        </p>
+      </div>
+      <button type="button" onClick={onRecovery} className="mx-auto flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-ink">
+        <LifeBuoy className="size-3.5" />
+        {a.lost}
+      </button>
+      <Button variant="outline" className="w-full" onClick={cancel}>
+        {a.cancel}
+      </Button>
+    </div>
+  );
+}
+
 /** `onAuthed` runs once the session cookie is set (it clears the previous user's cached data and moves on). */
 export function LoginPage({ onAuthed }: { onAuthed: () => void }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const l = t.auth.login;
   const [mode, setMode] = useState<'password' | 'token'>('password');
   const [email, setEmail] = useState('');
@@ -88,6 +248,24 @@ export function LoginPage({ onAuthed }: { onAuthed: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(false);
+  const [login, setLogin] = useState<LoginRef | null>(null);
+  const [stage, setStage] = useState<Stage>({ kind: 'credentials' });
+
+  /** Where the server says this login goes next. */
+  const proceed = (res: LoginResponse, ref: LoginRef) => {
+    if (res.step === 'done') return onAuthed();
+    setLogin(ref);
+    if (res.step === 'phone' && res.ticket) setStage({ kind: 'phone', ticket: res.ticket });
+    else if (res.step === 'totp') setStage({ kind: 'totp', recovery: false });
+    else if (res.step === 'approval') setStage({ kind: 'approval' });
+  };
+
+  const restart = (message?: string) => {
+    setStage({ kind: 'credentials' });
+    setLogin(null);
+    setPassword('');
+    setError(message ?? null);
+  };
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -96,7 +274,8 @@ export function LoginPage({ onAuthed }: { onAuthed: () => void }) {
     setErrors({});
     try {
       if (mode === 'password') {
-        await api('/api/auth/login', { method: 'POST', body: { email, password, remember } });
+        const res = await api<LoginResponse>('/api/auth/login', { method: 'POST', body: { email, password, remember, lang } });
+        return proceed(res, { loginId: res.loginId, loginToken: res.loginToken ?? '' });
       } else {
         const value = token.trim();
         if (!value.startsWith('wap_')) throw new Error(l.tokenPrefixError);
@@ -112,6 +291,32 @@ export function LoginPage({ onAuthed }: { onAuthed: () => void }) {
       setLoading(false);
     }
   };
+
+  if (login && stage.kind !== 'credentials') {
+    const step =
+      stage.kind === 'phone'
+        ? { title: t.auth.loginPhone.title, subtitle: t.auth.loginPhone.subtitle }
+        : stage.kind === 'totp'
+          ? { title: t.auth.totp.title, subtitle: stage.recovery ? t.auth.totp.recoveryHint : t.auth.totp.subtitle }
+          : { title: t.auth.approval.title, subtitle: email };
+    return (
+      <AuthLayout title={step.title} subtitle={step.subtitle} footer={null}>
+        {stage.kind === 'phone' ? (
+          <CodeStep
+            ticket={stage.ticket}
+            submitLabel={t.auth.loginPhone.submit}
+            onVerify={async (_verificationId, code) => proceed(await api<LoginResponse>('/api/auth/login/phone', { method: 'POST', body: { ...login, code } }), login)}
+            onResend={() => api<Ticket>('/api/auth/login/phone/resend', { method: 'POST', body: login })}
+            onRestart={restart}
+          />
+        ) : stage.kind === 'totp' ? (
+          <TotpStep key={String(stage.recovery)} login={login} recoveryOnly={stage.recovery} onNext={(res) => proceed(res, login)} onRestart={restart} />
+        ) : (
+          <ApprovalStep login={login} onNext={(res) => proceed(res, login)} onRestart={restart} onRecovery={() => setStage({ kind: 'totp', recovery: true })} />
+        )}
+      </AuthLayout>
+    );
+  }
 
   return (
     <AuthLayout

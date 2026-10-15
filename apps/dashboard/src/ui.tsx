@@ -7,6 +7,8 @@ import {
   CircleDashed,
   Clock,
   Copy,
+  Eye,
+  EyeOff,
   Globe,
   Inbox,
   Loader2,
@@ -322,18 +324,44 @@ export function Field({
   aside,
   ...input
 }: InputHTMLAttributes<HTMLInputElement> & { label: string; hint?: string; error?: string[]; aside?: ReactNode }) {
-  const { lang } = useI18n();
+  const { t, lang } = useI18n();
+  // Password fields get an eye button to show what was typed.
+  const secret = input.type === 'password';
+  const [shown, setShown] = useState(false);
+  const field = (
+    <input
+      {...input}
+      type={secret && shown ? 'text' : input.type}
+      aria-invalid={error ? true : undefined}
+      className={cx(inputClass, error && 'border-destructive-ink ring-destructive-ink/30', secret && 'pe-10', input.className)}
+    />
+  );
   return (
     <label className="grid gap-2">
       <span className="flex items-center justify-between text-sm leading-none font-medium">
         {label}
         {aside}
       </span>
-      <input
-        {...input}
-        aria-invalid={error ? true : undefined}
-        className={cx(inputClass, error && 'border-destructive-ink ring-destructive-ink/30', input.className)}
-      />
+      {secret ? (
+        <span className="relative block">
+          {field}
+          <button
+            type="button"
+            onClick={() => setShown((s) => !s)}
+            // Keeps the caret in the field.
+            onMouseDown={(e) => e.preventDefault()}
+            disabled={input.disabled}
+            aria-label={shown ? t.common.hidePassword : t.common.showPassword}
+            aria-pressed={shown}
+            title={shown ? t.common.hidePassword : t.common.showPassword}
+            className="absolute inset-y-0 end-0 flex w-10 items-center justify-center rounded-e-md text-muted transition-colors hover:text-ink focus-visible:text-ink focus-visible:outline-none disabled:opacity-50"
+          >
+            {shown ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+          </button>
+        </span>
+      ) : (
+        field
+      )}
       {error ? (
         <span className="block text-sm text-destructive-ink">{error.join(lang === 'ar' ? '، ' : ', ')}</span>
       ) : (

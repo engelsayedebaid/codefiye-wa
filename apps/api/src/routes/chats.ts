@@ -23,6 +23,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { Deps } from '../deps';
 import { ownedSession, requirePat } from '../lib/auth';
+import { chatAnalysisRoutes } from './chat-analysis';
 import { chatSyncRoutes } from './chat-sync';
 import { ApiError, conflict, notFound, paymentRequired, unprocessable } from '../lib/errors';
 import { assertActive } from '../lib/limits';
@@ -90,6 +91,25 @@ const chatMessageDto = z.object({
   sentAt: z.string().nullable(),
   createdAt: z.string(),
 });
+
+/** What the search across all chats looks for: every message, or one kind (`audio` = voice notes and audio files). */
+const SEARCH_KINDS = ['all', 'text', 'images', 'videos', 'audio', 'documents', 'links'] as const;
+const SEARCH_TYPES: Record<(typeof SEARCH_KINDS)[number], string[] | null> = {
+  all: null,
+  text: ['text'],
+  images: ['image'],
+  videos: ['video'],
+  audio: ['audio'],
+  documents: ['document'],
+  links: null,
+};
+const searchHitDto = chatMessageDto.extend({
+  sessionId: z.uuid(),
+  chat: z.object({ jid: z.string(), name: z.string().nullable(), phone: z.string().nullable(), isGroup: z.boolean() }),
+  /** Groups: who wrote it (incoming). */
+  sender: z.string().nullable(),
+});
+const searchChatDto = z.object({ sessionId: z.uuid(), jid: z.string(), name: z.string().nullable(), phone: z.string().nullable(), isGroup: z.boolean(), lastMessageAt: z.string() });
 
 /** Someone in a group: a name to show (null = none known) and their number (null for a hidden LID). */
 const personDto = z.object({ name: z.string().nullable(), phone: z.string().nullable() });
@@ -235,6 +255,8 @@ export function chatRoutes(deps: Deps): FastifyPluginAsyncZod {
 
     // Conversation sync jobs: a child plugin, so the plan gate above applies to it too.
     await app.register(chatSyncRoutes(deps));
+    // AI analysis of the conversations (admins).
+    await app.register(chatAnalysisRoutes(deps));
 
     // Uploads are raw bytes (no multipart): the file name and type travel in headers.
     app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer', bodyLimit: UPLOAD_MAX_BYTES }, (_req, body, done) => done(null, body));
@@ -265,6 +287,74 @@ export function chatRoutes(deps: Deps): FastifyPluginAsyncZod {
           group by s.id
           order by s.created_at`;
         return ok(rows.map((r) => ({ id: r.id, name: r.name, phone: r.phone, status: r.status, chats: r.chats, unreadChats: r.unread_chats, unread: r.unread })));
+      },
+    );
+
+    app.get(
+      '/search',
+      {
+        schema: {
+          ...schemaBase,
+          summary: 'Messages of every number (or one) matching a text, by kind, newest first; and the chats whose name or number matches',
+          querystring: z.object({
+            q: z.string().trim().max(100).default(''),
+            kind: z.enum(SEARCH_KINDS).default('all'),
+            sessionId: z.uuid().optional(),
+            before: z.coerce.number().int().positive().optional().describe('Older than this message (by time)'),
+            limit: z.coerce.number().int().min(1).max(60).default(30),
+          }),
+          response: { 200: successSchema(z.object({ results: z.array(searchHitDto), chats: z.array(searchChatDto), nextBefore: z.number().nullable() })) },
+        },
+      },
+      async (req) => {
+        const { q, kind, sessionId, before, limit } = req.query;
+        if (sessionId) await ownedSession(sql, req, sessionId);
+        // Every message, unfiltered, is not a search: text and "all" need words. A kind alone lists that kind.
+        if (!q && (kind === 'all' || kind === 'text')) return ok({ results: [], chats: [], nextBefore: null });
+        const like = `%${q.replace(/[\\%_]/g, '\\$&')}%`;
+        const types = SEARCH_TYPES[kind];
+        const text = sql`coalesce(m.content->>'text', m.content->>'caption', m.content->>'name', m.content->'media'->>'fileName', m.content->>'fileName', m.content->'poll'->>'name', '')`;
+        const rows = await sql<(MessageRow & { session_id: string; remote_jid: string; chat_jid: string | null; chat_name: string | null; sender: string | null })[]>`
+          select m.id, m.session_id, m.remote_jid, m.direction, m.type, m.status, m.content, m.error, m.wa_message_id, m.raw is not null as has_raw, m.broadcast_id, m.sent_at, m.created_at,
+            c.jid as chat_jid, case when c.jid is not null then chat_display_name(c.session_id, c.jid, c.alt_jid, c.name) end as chat_name,
+            case when m.direction = 'in' and m.remote_jid like '%@g.us' then coalesce(m.content->>'pushName', m.content->>'fromPhone') end as sender
+          from messages m
+          left join lateral (
+            select session_id, jid, alt_jid, name from chats
+            where session_id = m.session_id and (jid = m.remote_jid or alt_jid = m.remote_jid) limit 1) c on true
+          where m.workspace_id = ${req.auth.workspaceId}
+            ${sessionId ? sql`and m.session_id = ${sessionId}` : sql``}
+            and m.type <> all(${['reaction', 'unknown']}) and m.remote_jid <> 'status@broadcast'
+            and coalesce((m.content->>'revoked')::boolean, false) = false
+            ${types ? sql`and m.type = any(${types})` : sql``}
+            ${q ? sql`and ${text} ilike ${like}` : sql``}
+            ${kind === 'links' ? sql`and ${text} ~* ${'(https?://|www\\.)'}` : sql``}
+            ${before ? sql`and (m.created_at, m.id) < (select created_at, id from messages where id = ${before})` : sql``}
+          order by m.created_at desc, m.id desc
+          limit ${limit}`;
+
+        // Chats by name or number: on the first page of a worded search only.
+        let chats: z.infer<typeof searchChatDto>[] = [];
+        if (q && !before && kind === 'all') {
+          const digits = q.replace(/\D/g, '');
+          const found = await sql<{ session_id: string; jid: string; name: string | null; last_message_at: Date }[]>`
+            select c.session_id, c.jid, chat_display_name(c.session_id, c.jid, c.alt_jid, c.name) as name, c.last_message_at
+            from chats c join sessions s on s.id = c.session_id
+            where s.workspace_id = ${req.auth.workspaceId} ${sessionId ? sql`and c.session_id = ${sessionId}` : sql``}
+              and (chat_display_name(c.session_id, c.jid, c.alt_jid, c.name) ilike ${like} ${digits.length >= 3 ? sql`or c.jid like ${`%${digits}%`}` : sql``})
+            order by c.last_message_at desc
+            limit 8`;
+          chats = found.map((c) => ({ sessionId: c.session_id, jid: c.jid, name: c.name, phone: jidToPhone(c.jid), isGroup: c.jid.endsWith('@g.us'), lastMessageAt: c.last_message_at.toISOString() }));
+        }
+
+        return ok({
+          results: rows.map((r) => {
+            const jid = r.chat_jid ?? r.remote_jid;
+            return { ...toMessageDto(r), sessionId: r.session_id, chat: { jid, name: r.chat_name, phone: jidToPhone(jid), isGroup: jid.endsWith('@g.us') }, sender: r.sender };
+          }),
+          chats,
+          nextBefore: rows.length === limit ? rows.at(-1)!.id : null,
+        });
       },
     );
 
@@ -705,6 +795,53 @@ export function chatRoutes(deps: Deps): FastifyPluginAsyncZod {
           .then(() => true)
           .catch(() => false);
         return ok({ ok: sent });
+      },
+    );
+
+    app.post(
+      '/:sessionId/react',
+      {
+        schema: {
+          ...schemaBase,
+          summary: 'React to a message with an emoji (empty takes the reaction back)',
+          params: sessionParams,
+          body: z.object({ messageId: z.number().int().positive(), emoji: z.string().max(32) }),
+          response: { 200: successSchema(z.object({ id: z.number() })) },
+        },
+      },
+      async (req) => {
+        const session = await ownedSession(sql, req, req.params.sessionId);
+        if (session.status !== 'connected') throw conflict(`Session is not connected (status: ${session.status})`, 'session_not_connected');
+        const [target] = await sql<{ remote_jid: string; direction: MessageDirection; wa_message_id: string | null; participant: string | null; from: string | null }[]>`
+          select remote_jid, direction, wa_message_id, raw->'key'->>'participant' as participant, content->>'from' as "from"
+          from messages where id = ${req.body.messageId} and session_id = ${session.id}`;
+        if (!target) throw notFound('Message not found');
+        if (!target.wa_message_id) throw conflict('This message has no WhatsApp id yet', 'not_sent');
+        const group = target.remote_jid.endsWith('@g.us');
+        // In a group, an incoming message is named by who sent it.
+        const participant = group && target.direction === 'in' ? (target.participant ?? target.from ?? undefined) : undefined;
+        const { id: waId } = await workers.call<{ id: string | null }>(
+          session.id,
+          'react',
+          { jid: target.remote_jid, target: { id: target.wa_message_id, fromMe: target.direction === 'out', ...(participant ? { participant } : {}) }, emoji: req.body.emoji },
+          { timeoutMs: 15_000 },
+        );
+        // Stored as our reaction (the page folds reactions onto their messages); not a message the chat list shows.
+        const content = { text: req.body.emoji, reactTo: target.wa_message_id, sentFrom: 'chats' as const };
+        const [row] = await sql<{ id: number }[]>`
+          insert into messages (workspace_id, session_id, direction, remote_jid, wa_message_id, type, content, status, sent_at)
+          values (${req.auth.workspaceId}, ${session.id}, 'out', ${target.remote_jid}, ${waId}, 'reaction', ${sql.json(content as never)}, 'sent', now())
+          on conflict (session_id, wa_message_id) do nothing
+          returning id`;
+        if (row) {
+          await publish({
+            type: 'messages.created',
+            workspaceId: req.auth.workspaceId,
+            sessionId: session.id,
+            data: { id: row.id, chatJid: target.remote_jid, direction: 'out', type: 'reaction' },
+          });
+        }
+        return ok({ id: row?.id ?? 0 });
       },
     );
 

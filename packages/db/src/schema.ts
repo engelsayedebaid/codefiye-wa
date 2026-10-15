@@ -60,6 +60,16 @@ export const users = pgTable(
     /** E.164 (`+201012345678`). Unique among verified numbers only, so an unverified claim can't block the owner. */
     phone: text(),
     phoneVerifiedAt: timestamp({ withTimezone: true }),
+    /**
+     * Authenticator-app (TOTP) secret, AES-256-GCM encrypted (apps/api/src/lib/totp.ts). Set by the
+     * setup step; two-factor is on only once `totpEnabledAt` is set (a code was confirmed).
+     */
+    totpSecret: text(),
+    totpEnabledAt: timestamp({ withTimezone: true }),
+    /** Last accepted 30 s step, so a code can't be replayed within its window. */
+    totpLastStep: bigint({ mode: 'number' }),
+    /** SHA-256 of the unused single-use recovery codes. */
+    recoveryCodes: text().array().notNull().default(sql`'{}'::text[]`),
     createdAt: createdAt(),
   },
   (t) => [
@@ -85,12 +95,13 @@ export const workspaces = pgTable(
   (t) => [index().on(t.ownerId)],
 );
 
-export type VerificationPurpose = 'register' | 'phone';
+export type VerificationPurpose = 'register' | 'phone' | 'login';
 
 /**
  * Pending phone verifications. `register` holds a signup until its code is confirmed (the user,
  * workspace and trial are created only then); `phone` adds or changes the number of an existing
- * user. Only an HMAC of the code is stored (apps/api/src/lib/otp.ts).
+ * user; `login` is the phone step of a login (`login_attempts`). Only an HMAC of the code is
+ * stored (apps/api/src/lib/otp.ts).
  */
 export const phoneVerifications = pgTable(
   'phone_verifications',
@@ -114,9 +125,52 @@ export const phoneVerifications = pgTable(
     createdAt: createdAt(),
   },
   (t) => [
-    check('phone_verifications_purpose_check', sql`${t.purpose} in ('register', 'phone')`),
+    check('phone_verifications_purpose_check', sql`${t.purpose} in ('register', 'phone', 'login')`),
     index().on(t.expiresAt),
     index().on(t.userId),
+  ],
+);
+
+export type LoginApproval = 'pending' | 'approved' | 'denied';
+
+/**
+ * A dashboard login in progress (apps/api/src/routes/account.ts): password checked, then the code
+ * sent to the phone, then the authenticator code, then — when the account is already signed in on
+ * another device — that device's approval. The session cookie is issued only at the end. The client
+ * holds the attempt by a secret token (only its SHA-256 is stored).
+ */
+export const loginAttempts = pgTable(
+  'login_attempts',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    userId: uuid()
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    workspaceId: uuid()
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    tokenHash: text().notNull(),
+    remember: boolean().notNull().default(true),
+    ip: text(),
+    userAgent: text(),
+    /** Null when the phone step was skipped (no verified number, or the code channel is down). */
+    phoneVerificationId: uuid().references(() => phoneVerifications.id, { onDelete: 'set null' }),
+    phoneVerifiedAt: timestamp({ withTimezone: true }),
+    totpVerifiedAt: timestamp({ withTimezone: true }),
+    totpAttempts: integer().notNull().default(0),
+    /** Null until the factors pass; then `pending` while another signed-in device decides (or `approved` straight away when there is none). */
+    approval: text().$type<LoginApproval>(),
+    /** The dashboard session (api_keys row) that approved or denied; null for a recovery code. */
+    decidedBy: uuid(),
+    decidedAt: timestamp({ withTimezone: true }),
+    completedAt: timestamp({ withTimezone: true }),
+    expiresAt: timestamp({ withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check('login_attempts_approval_check', sql`${t.approval} in ('pending', 'approved', 'denied')`),
+    index().on(t.userId, t.approval),
+    index().on(t.expiresAt),
   ],
 );
 
@@ -579,6 +633,39 @@ export const syncJobLogs = pgTable(
   },
   (t) => [index().on(t.jobId, t.id)],
 );
+
+/**
+ * Ads saved from the ad library (/ads, "ideas board"): a copy of the ad as it was shown, so it stays
+ * even after the platform stops serving it. One per workspace × platform × ad.
+ */
+export const adLibrarySaves = pgTable(
+  'ad_library_saves',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    workspaceId: uuid()
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    platform: text().notNull(),
+    externalId: text().notNull(),
+    ad: jsonb().$type<Record<string, unknown>>().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex().on(t.workspaceId, t.platform, t.externalId), index().on(t.workspaceId, t.createdAt)],
+);
+
+/**
+ * The ad library's searches at its data providers (Apify, SerpApi), kept a day: the same search is
+ * not paid twice. A provider that answers slowly (an Apify run) is `running` until its results land.
+ */
+export const adLibraryCache = pgTable('ad_library_cache', {
+  key: text().primaryKey(),
+  provider: text().notNull(),
+  status: text().$type<'running' | 'ready' | 'failed'>().notNull(),
+  runId: text(),
+  ads: jsonb().$type<Record<string, unknown>[]>().notNull().default([]),
+  error: text(),
+  fetchedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});
 
 export type Chat = typeof chats.$inferSelect;
 export type MediaUpload = typeof mediaUploads.$inferSelect;

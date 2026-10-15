@@ -1,6 +1,31 @@
 import { CHAT_FILTERS, type ChatFilter } from '@wa/shared/chats';
-import { useInfiniteQuery, useQueries } from '@tanstack/react-query';
-import { Archive, ChevronDown, ChevronLeft, ChevronRight, CircleDot, Inbox, Loader2, MessageSquareReply, MessagesSquare, Pin, Search, Send, User, Users, X } from 'lucide-react';
+import { useInfiniteQuery, useQueries, useQueryClient } from '@tanstack/react-query';
+import {
+  Archive,
+  ArchiveRestore,
+  Check,
+  CheckCheck,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  CircleDot,
+  Copy,
+  EllipsisVertical,
+  ExternalLink,
+  Inbox,
+  Loader2,
+  MailOpen,
+  MessageSquareReply,
+  MessageSquareText,
+  MessagesSquare,
+  Pin,
+  PinOff,
+  Search,
+  Send,
+  User,
+  Users,
+  X,
+} from 'lucide-react';
 import { forwardRef, useEffect, useEffectEvent, useRef, useState } from 'react';
 import { api } from '../../api';
 import { useI18n } from '../../i18n';
@@ -8,6 +33,8 @@ import { qk } from '../../queries';
 import { cx, flip, LoadError } from '../../ui';
 import { StatusTick } from '../MessageFeed';
 import { Avatar, TypeLabel } from './Bubble';
+import { Floating } from './Floating';
+import { PeekButton } from './Peek';
 import { type ChatPage, type ChatSummary, chatTitle, livePresence, type PresenceState } from './model';
 
 const FILTER_ICONS: Record<ChatFilter, typeof Inbox> = {
@@ -49,6 +76,133 @@ export function TypingDots({ className }: { className?: string }) {
   );
 }
 
+const ROW_MENU_WIDTH = 224;
+
+/**
+ * The ⋮ of a row (shows on hover, always on touch screens): what can be done to a chat without opening
+ * it — read/unread, pin, archive, copy the number, WhatsApp. Opens as a fixed menu, so the list's
+ * scrolling box can't clip it.
+ */
+function RowMenu({ sessionId, chat, onOpen }: { sessionId: string; chat: ChatSummary; onOpen: () => void }) {
+  const { t } = useI18n();
+  const c = t.chats;
+  const queryClient = useQueryClient();
+  const [at, setAt] = useState<{ top: number; left: number } | null>(null);
+  const [copied, setCopied] = useState(false);
+  const button = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  const open = at !== null;
+
+  const toggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (open) return setAt(null);
+    const rect = button.current!.getBoundingClientRect();
+    // Below the button, or above it near the bottom of the window; kept inside the window sideways.
+    const height = 260;
+    const top = rect.bottom + height > window.innerHeight - 8 ? Math.max(8, rect.top - height - 4) : rect.bottom + 4;
+    const left = Math.min(Math.max(8, rect.right - ROW_MENU_WIDTH), window.innerWidth - ROW_MENU_WIDTH - 8);
+    setAt({ top, left });
+  };
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setAt(null);
+    const onDown = (e: PointerEvent) => !menu.current?.contains(e.target as Node) && !button.current?.contains(e.target as Node) && close();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      close();
+    };
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey, true);
+    // The list scrolls under a fixed menu: close rather than float away from its row.
+    document.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      document.removeEventListener('pointerdown', onDown);
+      document.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [open]);
+
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: qk.chats.lists(sessionId) });
+    void queryClient.invalidateQueries({ queryKey: qk.chats.numbers });
+  };
+  const flags = (body: { pinned?: boolean; archived?: boolean; unread?: boolean }) => void api(`/api/chats/${sessionId}/flags`, { method: 'POST', body: { jid: chat.jid, ...body } }).finally(refresh);
+  const read = () => void api(`/api/chats/${sessionId}/read`, { method: 'POST', body: { jid: chat.jid } }).finally(refresh);
+  const copy = async () => {
+    if (!chat.phone) return;
+    await navigator.clipboard.writeText(chat.phone).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1_200);
+  };
+
+  const items = [
+    { icon: MessageSquareText, label: t.chats.ai.openChat, run: onOpen },
+    chat.unread > 0 ? { icon: CheckCheck, label: c.actions.markRead, run: read } : { icon: MailOpen, label: c.actions.markUnread, run: () => flags({ unread: true }) },
+    { icon: chat.pinned ? PinOff : Pin, label: chat.pinned ? c.actions.unpin : c.actions.pin, run: () => flags({ pinned: !chat.pinned }) },
+    { icon: chat.archived ? ArchiveRestore : Archive, label: chat.archived ? c.actions.unarchive : c.actions.archive, run: () => flags({ archived: !chat.archived }) },
+    ...(chat.phone ? [{ icon: copied ? Check : Copy, label: copied ? c.actions.copied : c.actions.copyNumber, run: () => void copy(), keep: true }] : []),
+  ];
+
+  return (
+    <>
+      <button
+        ref={button}
+        type="button"
+        onClick={toggle}
+        aria-label={c.actions.chatMenu}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title={c.actions.chatMenu}
+        className={cx('grid size-7 cursor-pointer place-items-center rounded-full transition-colors', open ? 'bg-raised text-ink' : 'text-muted hover:bg-raised hover:text-ink')}
+      >
+        <EllipsisVertical className="size-[15px]" />
+      </button>
+      {at && (
+        <Floating>
+        <div
+          ref={menu}
+          role="menu"
+          aria-label={c.actions.chatMenu}
+          className="animate-scale-in fixed z-[70] rounded-xl border border-line bg-card p-1 shadow-xl"
+          style={{ top: at.top, left: at.left, width: ROW_MENU_WIDTH }}
+        >
+          {items.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              role="menuitem"
+              onClick={(e) => {
+                e.stopPropagation();
+                item.run();
+                if (!('keep' in item)) setAt(null);
+              }}
+              className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-start text-sm transition-colors hover:bg-raised"
+            >
+              <item.icon className="size-4 shrink-0 text-muted" /> {item.label}
+            </button>
+          ))}
+          {chat.phone && (
+            <a
+              role="menuitem"
+              href={`https://wa.me/${chat.phone.slice(1)}`}
+              target="_blank"
+              rel="noreferrer"
+              onClick={() => setAt(null)}
+              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors hover:bg-raised"
+            >
+              <ExternalLink className="size-4 shrink-0 text-muted" /> {c.actions.openWhatsApp}
+            </a>
+          )}
+        </div>
+        </Floating>
+      )}
+    </>
+  );
+}
+
 function Row({ chat, active, presence, picture, onSelect }: { chat: ChatSummary; active: boolean; presence?: PresenceState; picture?: string | null; onSelect: () => void }) {
   const { t } = useI18n();
   const c = t.chats;
@@ -75,9 +229,11 @@ function Row({ chat, active, presence, picture, onSelect }: { chat: ChatSummary;
           <p className={cx('min-w-0 flex-1 truncate text-start text-[15px]', chat.unread > 0 ? 'font-semibold' : 'font-medium')}>
             {chat.name ? <span dir="auto">{title}</span> : <span className="ltr font-mono text-sm">{title}</span>}
           </p>
-          <span className={cx('shrink-0 text-[11px] tabular-nums', chat.unread > 0 ? 'font-semibold text-brand' : 'text-faint')}>{stamp(chat.lastMessageAt)}</span>
+          <span className={cx('shrink-0 text-[11px] tabular-nums transition-[margin] group-hover:me-16 [@media(hover:none)]:me-16', chat.unread > 0 ? 'font-semibold text-brand' : 'text-faint')}>
+            {stamp(chat.lastMessageAt)}
+          </span>
         </div>
-        <div className="mt-0.5 flex items-center gap-1.5">
+        <div className="mt-0.5 flex items-center gap-1.5 transition-[padding] group-hover:pe-16 [@media(hover:none)]:pe-16">
           <p className={cx('flex min-w-0 flex-1 items-center gap-1 truncate text-[13px]', chat.unread > 0 ? 'text-ink-2' : 'text-muted')}>
             {typing ? (
               <span className="flex items-center gap-1.5 font-medium text-brand">
@@ -396,8 +552,15 @@ export const ChatList = forwardRef<HTMLInputElement, Props>(function ChatList({ 
         ) : (
           <ul className="chat-rows space-y-0.5 px-2">
             {chats.map((chat) => (
-              <li key={chat.jid} data-jid={chat.jid} className="group">
+              <li key={chat.jid} data-jid={chat.jid} className="group relative">
                 <Row chat={chat} active={selected === chat.jid} presence={presence.get(chat.jid)} picture={pictures.get(chat.jid)} onSelect={() => onSelect(chat)} />
+                {/* Hover actions: one small toolbar, kept visible while one of its menus is open. */}
+                <div className="pointer-events-none absolute inset-y-0 end-2 z-10 flex items-center">
+                  <div className="pointer-events-auto flex items-center gap-0.5 rounded-full border border-line bg-card p-0.5 opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100 has-[[aria-expanded=true]]:opacity-100 [@media(hover:none)]:opacity-100">
+                    <PeekButton sessionId={sessionId} chat={chat} onOpen={() => onSelect(chat)} />
+                    <RowMenu sessionId={sessionId} chat={chat} onOpen={() => onSelect(chat)} />
+                  </div>
+                </div>
               </li>
             ))}
           </ul>

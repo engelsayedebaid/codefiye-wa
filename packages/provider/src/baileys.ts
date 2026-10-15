@@ -741,6 +741,18 @@ export class BaileysProvider implements Provider {
     await this.requireOpen().sendPresenceUpdate(state, jid);
   }
 
+  /**
+   * Reacts to a message of the chat with an emoji ('' takes our reaction back). In a group the target
+   * names its sender (`participant`). Returns the reaction's own message id; kept in `recent` like any
+   * send, so a retry receipt can be answered and it never comes back as an echo.
+   */
+  async react(chatJid: string, target: { id: string; fromMe: boolean; participant?: string }, emoji: string): Promise<string | null> {
+    const key = { remoteJid: chatJid, id: target.id, fromMe: target.fromMe, ...(target.participant ? { participant: target.participant } : {}) };
+    const sent = await this.requireOpen().sendMessage(chatJid, { react: { text: emoji, key } });
+    if (sent?.key.id && sent.message) this.recent.set(sent.key.id, sent.message);
+    return sent?.key.id ?? null;
+  }
+
   /** Profile picture (a temporary URL) and "about" text, as far as the contact's privacy allows. */
   async profile(jid: string): Promise<ContactProfile> {
     const sock = this.requireOpen();

@@ -25,6 +25,7 @@ import {
 import { getPlan, planHasFeature } from '@wa/shared/plans';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { api, ApiRequestError, errorMessage } from '../api';
 import { PhoneVerifyModal } from '../auth/Otp';
 import { useLiveEvents } from '../events';
@@ -35,6 +36,7 @@ import { BRAND } from '../brand';
 import { useI18n } from '../i18n';
 import { Link, usePath } from '../router';
 import { Badge, Button, buttonClass, cx, ErrorNote, Field, flip, LangSwitch, Logo, LogoMark, Modal, SuccessNote, ThemeSwitch, usePlanName } from '../ui';
+import { LoginRequests } from '../auth/TwoFactor';
 import { type Account, AccountContext, isUnlimitedPlan, planState, useAccount } from './account';
 
 const COLLAPSE_KEY = 'wa.sidebar.collapsed';
@@ -256,7 +258,8 @@ function UserMenu({ account, collapsed, onLogout }: { account: Account | null; c
           </>
         )}
       </button>
-      {password && <ChangePassword onClose={() => setPassword(false)} />}
+      {/* Out to <body>: inside the sticky sidebar the dialog would sit under the page column (its own stacking context). */}
+      {password && createPortal(<ChangePassword onClose={() => setPassword(false)} />, document.body)}
     </div>
   );
 }
@@ -524,6 +527,7 @@ export function AppShell({ children, account }: { children: ReactNode; account: 
 
   return (
     <AccountContext.Provider value={context}>
+      <LoginRequests />
       <div className="flex min-h-svh bg-surface">
         <aside className={cx('sticky top-0 hidden h-svh shrink-0 px-2 py-2 transition-[width] duration-300 ease-out md:block', collapsed ? 'w-[72px]' : 'w-[272px]')}>
           <div className="h-full overflow-hidden rounded-2xl border border-line bg-card shadow-lg">

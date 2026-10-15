@@ -1,6 +1,6 @@
 import type { ChatFilter } from '@wa/shared/chats';
 import { planHasFeature } from '@wa/shared/plans';
-import { type InfiniteData, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { type InfiniteData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -10,7 +10,6 @@ import {
   Check,
   CheckCheck,
   Columns2,
-  ChevronsUpDown,
   CircleCheck,
   CircleX,
   EllipsisVertical,
@@ -23,10 +22,11 @@ import {
   Minimize2,
   Phone,
   PhoneCall,
-  Plus,
   RefreshCw,
   Search,
   Settings2,
+  Sparkles,
+  Split,
   WifiOff,
 } from 'lucide-react';
 import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -38,14 +38,19 @@ import { Conversation } from '../app/chats/Conversation';
 import { Insights } from '../app/chats/Insights';
 import { type InboxNote, type NoteMessage, NoteStack, noteText, playPing, pushNote, unlockAudio } from '../app/chats/Notifier';
 import { setPrivacyMode, usePrivacyMode } from '../app/chats/privacy';
-import { type ChatInfo, type ChatNumber, type ChatPage, type ChatSummary, gradientFor, initials, isChat, type PresenceState, type Profile } from '../app/chats/model';
+import { type ChatInfo, type ChatNumber, type ChatPage, type ChatSummary, isChat, placeholderChat, type PresenceState, type Profile } from '../app/chats/model';
 import { SyncButton, SyncCard, SyncModal } from '../app/chats/SyncPanel';
-import { FocusBar, FocusMenu, useFocusMode } from '../app/chats/Focus';
+import { FocusBar, FocusMenu, type FocusMode, useFocusMode } from '../app/chats/Focus';
+import { AiReport } from '../app/chats/AiReport';
+import { setCrossSend, useCrossSend } from '../app/chats/crossSend';
+import { GlobalSearch } from '../app/chats/GlobalSearch';
+import { NumberSwitcher } from '../app/chats/NumberSwitcher';
+import { AccountsSplit, type OpenChats, type OpenRequest } from '../app/chats/AccountsSplit';
 import { useBackgroundLiveEvents, useLiveEvents } from '../events';
 import { useI18n } from '../i18n';
 import { debouncedInvalidate, qk } from '../queries';
 import { Link } from '../router';
-import { Button, buttonClass, cx, delay, EmptyState, ErrorNote, flip, LoadError, Loading, Modal, PageHeader, SESSION_STATUS, TONES } from '../ui';
+import { Button, buttonClass, cx, delay, EmptyState, ErrorNote, flip, LoadError, Loading, Modal, PageHeader } from '../ui';
 
 const SESSION_KEY = 'wa.chats.session';
 const RECEIPTS_KEY = 'wa.chats.receipts';
@@ -74,139 +79,6 @@ function setUrl(sessionId: string | null, jid: string | null) {
   if (jid) params.set('chat', jid);
   const next = `/chats${params.size ? `?${params}` : ''}`;
   if (location.pathname + location.search !== next) history.replaceState(null, '', next);
-}
-
-/** The open number as a card; opens a list of all numbers with their state and unread counts. */
-/** `compact` (focus mode): a slimmer card, so the chat list starts higher. */
-function NumberSwitcher({ numbers, value, onChange, compact = false }: { numbers: ChatNumber[]; value: string; onChange: (id: string) => void; compact?: boolean }) {
-  const { t, fmt } = useI18n();
-  const c = t.chats;
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const current = numbers.find((n) => n.id === value);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
-
-  const state = (n: ChatNumber) => {
-    const online = n.status === 'connected';
-    return (
-      <span className={cx('inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold', online ? 'bg-green-500/10 text-green-500' : TONES[SESSION_STATUS[n.status].tone].chip)}>
-        <span className="relative flex size-1.5">
-          {online && <span className="absolute inset-0 animate-ping rounded-full bg-green-500 opacity-60 motion-reduce:animate-none" />}
-          <span className={cx('relative size-1.5 rounded-full', online ? 'bg-green-500' : TONES[SESSION_STATUS[n.status].tone].dot)} />
-        </span>
-        {online ? c.online : t.status.session[n.status].label}
-      </span>
-    );
-  };
-  // Each number's own WhatsApp profile picture (only a connected number can look it up).
-  const selfJid = (n: ChatNumber) => (n.phone ? `${n.phone.replace(/\D/g, '')}@s.whatsapp.net` : null);
-  const pictureQueries = useQueries({
-    queries: numbers.map((n) => {
-      const jid = selfJid(n);
-      return {
-        queryKey: qk.chats.pictures(n.id, jid ?? ''),
-        queryFn: ({ signal }: { signal: AbortSignal }) => api<Record<string, string | null>>(`/api/chats/${n.id}/pictures?${new URLSearchParams({ jids: jid! })}`, { signal, timeoutMs: 35_000 }),
-        enabled: Boolean(jid) && n.status === 'connected',
-        staleTime: 3 * 3_600_000,
-        gcTime: 6 * 3_600_000,
-        retry: false,
-      };
-    }),
-  });
-  const pictureOf = (n: ChatNumber) => {
-    const jid = selfJid(n);
-    return jid ? (pictureQueries[numbers.indexOf(n)]?.data?.[jid] ?? null) : null;
-  };
-  const mark = (n: ChatNumber, size = 'size-10') => {
-    const picture = pictureOf(n);
-    const online = n.status === 'connected';
-    return (
-      <span className={cx('pii relative inline-flex shrink-0', size)}>
-        {picture ? (
-          <img src={picture} alt="" referrerPolicy="no-referrer" className="size-full rounded-full object-cover ring-1 ring-white/10" />
-        ) : (
-          <span className={cx('flex size-full items-center justify-center rounded-full bg-gradient-to-br text-sm font-semibold text-white ring-1 ring-white/10', gradientFor(n.id))}>
-            {initials(n.name) || n.name.slice(0, 1)}
-          </span>
-        )}
-        <span className={cx('absolute -end-0.5 -bottom-0.5 size-3 rounded-full ring-2 ring-card', online ? 'bg-green-500' : TONES[SESSION_STATUS[n.status].tone].dot)} />
-      </span>
-    );
-  };
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-label={c.switchNumber}
-        className={cx(
-          'flex w-full items-center gap-3 border border-line bg-card text-start shadow-xs transition-[border-color,box-shadow] hover:border-line-strong',
-          compact ? 'rounded-xl px-2 py-1.5' : 'rounded-2xl p-2.5',
-          open && 'border-ring ring-[3px] ring-ring/30',
-        )}
-      >
-        {current && mark(current, compact ? 'size-8' : undefined)}
-        {current && (
-          <span className="min-w-0 flex-1 pii">
-            <span className="flex items-center gap-2">
-              <span className="truncate text-sm font-semibold">{current.name}</span>
-              {state(current)}
-            </span>
-            <span className="ltr mt-0.5 block truncate font-mono text-xs text-muted">{current.phone ?? '—'}</span>
-          </span>
-        )}
-        <ChevronsUpDown className="size-4 shrink-0 text-muted" />
-      </button>
-      {open && (
-        <ul role="listbox" className="animate-scale-in absolute inset-x-0 top-full z-50 mt-2 max-h-80 origin-top overflow-auto rounded-2xl border border-line bg-bg p-1.5 shadow-2xl">
-          {numbers.map((n) => (
-            <li key={n.id} role="option" aria-selected={n.id === value}>
-              <button
-                type="button"
-                onClick={() => {
-                  onChange(n.id);
-                  setOpen(false);
-                }}
-                className={cx('flex w-full items-center gap-3 rounded-xl p-2 text-start transition-colors hover:bg-raised', n.id === value && 'bg-raised')}
-              >
-                {mark(n, 'size-9')}
-                <span className="min-w-0 flex-1 pii">
-                  <span className="flex items-center gap-2">
-                    <span className="truncate text-sm font-medium">{n.name}</span>
-                    {state(n)}
-                  </span>
-                  <span className="ltr block truncate font-mono text-[11px] text-muted">{n.phone ?? '—'}</span>
-                </span>
-                {n.unread > 0 ? (
-                  <span className="rounded-full bg-brand px-1.5 py-0.5 text-[10px] font-bold text-on-brand tabular-nums">{fmt.number.format(n.unread)}</span>
-                ) : (
-                  n.id === value && <Check className="size-4 shrink-0 text-brand" />
-                )}
-              </button>
-            </li>
-          ))}
-          <li className="mt-1 border-t border-line pt-1">
-            <Link href="/sessions" className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-sm text-muted transition-colors hover:bg-raised hover:text-ink">
-              <Plus className="size-4" /> {c.addNumber}
-            </Link>
-          </li>
-        </ul>
-      )}
-    </div>
-  );
 }
 
 /** Start a chat with any number: checks it's on WhatsApp first (a live lookup through the number). */
@@ -297,7 +169,7 @@ function IconAction({ label, active, onClick, disabled, children }: { label: str
       aria-pressed={active}
       title={label}
       className={cx(
-        'flex size-9 items-center justify-center rounded-xl transition-colors disabled:opacity-40',
+        'flex size-8 items-center justify-center rounded-lg transition-colors disabled:opacity-40',
         active ? 'bg-brand/15 text-brand' : 'text-muted hover:bg-raised hover:text-ink',
       )}
     >
@@ -306,7 +178,7 @@ function IconAction({ label, active, onClick, disabled, children }: { label: str
   );
 }
 
-/** The ⋯ menu of the column header: the quiet toggles (receipts, notifications, private mode). */
+/** The ⋯ menu of the column header: the quiet toggles (receipts, notifications, private mode, and for admins sending between numbers). */
 const PREFS_MENU_WIDTH = 264;
 function PrefsMenu({
   receipts,
@@ -315,6 +187,7 @@ function PrefsMenu({
   onNotify,
   privacy,
   onPrivacy,
+  cross,
 }: {
   receipts: boolean;
   onReceipts: () => void;
@@ -322,6 +195,8 @@ function PrefsMenu({
   onNotify: () => void;
   privacy: boolean;
   onPrivacy: () => void;
+  /** Admins only. */
+  cross?: { on: boolean; onToggle: () => void };
 }) {
   const { t } = useI18n();
   const p = t.chats.prefs;
@@ -370,6 +245,7 @@ function PrefsMenu({
           <PrefItem icon={CheckCheck} label={p.receipts} on={receipts} onClick={onReceipts} />
           <PrefItem icon={notifyOn ? Bell : BellOff} label={p.notify} on={notifyOn} onClick={onNotify} />
           <PrefItem icon={privacy ? EyeOff : Eye} label={p.privacy} on={privacy} onClick={onPrivacy} />
+          {cross && <PrefItem icon={Split} label={p.cross} on={cross.on} onClick={cross.onToggle} />}
         </div>
       )}
     </div>
@@ -500,6 +376,13 @@ export function ChatsPage() {
   const [debounced, setDebounced] = useState('');
   const [infoOpen, setInfoOpen] = useState(false);
   const [newChat, setNewChat] = useState(false);
+  // Search across every chat; a result opens its chat already searched for the words.
+  const [globalSearch, setGlobalSearch] = useState(false);
+  // AI analysis of the conversations, and sending between numbers: admins only.
+  const isAdmin = account?.user?.isAdmin === true;
+  const [aiOpen, setAiOpen] = useState(false);
+  const crossSend = useCrossSend();
+  const [chatSearch, setChatSearch] = useState<{ jid: string; q: string; seq: number } | null>(null);
   const [receipts, setReceipts] = useState(() => read(RECEIPTS_KEY) !== '0');
   const privacy = usePrivacyMode();
   const [presence, setPresence] = useState(() => new Map<string, PresenceState>());
@@ -511,17 +394,29 @@ export function ChatsPage() {
 
   // --- focus mode: the same page, laid out over the dashboard chrome (see Focus.tsx) ---
   const focus = useFocusMode();
-  const leaveFocus = focus.exit;
+  const { exit: leaveFocus, enter: enterFocus } = focus;
   const [listDrawer, setListDrawer] = useState(false);
   // Split view: a second conversation beside the open one, picked from a list in the other half.
   const [second, setSecond] = useState<ChatSummary | null>(null);
   const [secondInfo, setSecondInfo] = useState(false);
+  // Split accounts: a chat to open in its number's column (a notification clicked), and the chats open there.
+  const [openRequest, setOpenRequest] = useState<OpenRequest | null>(null);
+  const [paneChats] = useState<OpenChats>(() => new Map());
   const exitFocus = useCallback(() => {
     setListDrawer(false);
     setSecond(null);
     setSecondInfo(false);
+    setOpenRequest(null);
     leaveFocus();
   }, [leaveFocus]);
+  const switchFocus = useCallback(
+    (next: FocusMode) => {
+      // Back in split accounts later, the columns must not reopen an old notification's chat.
+      setOpenRequest(null);
+      enterFocus(next);
+    },
+    [enterFocus],
+  );
   const [toast, setToast] = useState<{ text: string; tone: 'ok' | 'error' } | null>(null);
   const synced = useRef(0);
   const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -584,24 +479,7 @@ export function ChatsPage() {
           queryKey: qk.chats.chat(activeId, jid),
           queryFn: ({ signal }) => api<ChatInfo>(`/api/chats/${activeId}/chat?${new URLSearchParams({ jid })}`, { signal }),
         });
-        const isGroup = jid.endsWith('@g.us');
-        setSelected(
-          info.chat ?? {
-            jid,
-            altJid: null,
-            name: null,
-            phone: isGroup ? null : `+${jid.split('@')[0]}`,
-            isGroup,
-            unread: 0,
-            pinned: false,
-            archived: false,
-            inbound: 0,
-            outbound: 0,
-            lastMessageAt: new Date().toISOString(),
-            lastInboundAt: null,
-            last: null,
-          },
-        );
+        setSelected(info.chat ?? placeholderChat(jid));
       } catch {
         // not found / offline: stay on the list
       }
@@ -656,9 +534,18 @@ export function ChatsPage() {
   const dismissNote = useCallback((key: number) => setNotes((ns) => ns.filter((n) => n.key !== key)), []);
   const openNote = (note: Pick<InboxNote, 'key' | 'sessionId' | 'jid'>) => {
     dismissNote(note.key);
+    if (focus.mode === 'accounts') return setOpenRequest((r) => ({ sessionId: note.sessionId, jid: note.jid, seq: (r?.seq ?? 0) + 1 }));
     if (note.sessionId !== activeId) switchNumber(note.sessionId);
     setView('chats');
     setPendingJid(note.jid);
+  };
+  const openHit = (sessionId: string, jid: string, q: string) => {
+    setGlobalSearch(false);
+    if (focus.mode === 'accounts') return setOpenRequest((r) => ({ sessionId, jid, q, seq: (r?.seq ?? 0) + 1 }));
+    if (sessionId !== activeId) switchNumber(sessionId);
+    setView('chats');
+    setPendingJid(jid);
+    setChatSearch(q ? { jid, q, seq: Date.now() } : null);
   };
   const toggleNotify = async () => {
     const next = !notifyOn;
@@ -690,7 +577,11 @@ export function ChatsPage() {
     if (!notifyOn || type === 'reaction') return;
     const visible = document.visibilityState === 'visible';
     // Already looking at it: just a quiet chime, no card.
-    if (visible && event.sessionId === activeId && view === 'chats' && isChat(selected, jid)) return playPing(0.4);
+    const looking =
+      focus.mode === 'accounts'
+        ? [...paneChats.values()].some((o) => o.sessionId === event.sessionId && isChat(o.chat, jid))
+        : event.sessionId === activeId && view === 'chats' && isChat(selected, jid);
+    if (visible && looking) return playPing(0.4);
     const chat = cachedChat(event.sessionId, jid);
     const isGroup = jid.endsWith('@g.us');
     const phone = (j: string) => (j.endsWith('@s.whatsapp.net') ? `+${j.split('@')[0]}` : null);
@@ -798,8 +689,9 @@ export function ChatsPage() {
   const secondJid = focus.mode === 'split' ? (second?.jid ?? null) : null;
   watched.current = [...new Set([...(watchJid ? [watchJid] : []), ...(secondJid ? [secondJid] : []), ...topJids])].slice(0, 40);
   const hasWatched = watched.current.length > 0;
+  const accountsMode = focus.mode === 'accounts';
   useEffect(() => {
-    if (!activeId || !hasWatched || !connected) return;
+    if (!activeId || !hasWatched || !connected || accountsMode) return;
     const watch = () =>
       document.visibilityState === 'visible' && watched.current.length > 0 && void api(`/api/chats/${activeId}/watch`, { method: 'POST', body: { jids: watched.current } }).catch(() => {});
     watch();
@@ -809,7 +701,7 @@ export function ChatsPage() {
       clearInterval(timer);
       document.removeEventListener('visibilitychange', watch);
     };
-  }, [activeId, watchJid, secondJid, hasWatched, connected]);
+  }, [activeId, watchJid, secondJid, hasWatched, connected, accountsMode]);
 
   const profile = useQuery({
     queryKey: qk.chats.profile(activeId ?? '', watchJid ?? ''),
@@ -877,10 +769,15 @@ export function ChatsPage() {
     };
   }, [unreadTotal]);
 
-  // "/" searches; Esc closes, in order: the contact panel, the list drawer, focus mode, the open chat.
+  // "/" searches the list, Ctrl+K every chat; Esc closes, in order: the contact panel, the list drawer, focus mode, the open chat.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const typing = e.target instanceof HTMLElement && (e.target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName));
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setGlobalSearch(true);
+        return;
+      }
       if (e.key === '/' && !typing) {
         e.preventDefault();
         setView('chats');
@@ -936,7 +833,10 @@ export function ChatsPage() {
           : 'relative -m-1 h-[calc(100svh-6.5rem)] min-h-[540px] overflow-hidden rounded-2xl border border-line bg-card shadow-sm md:m-0 md:h-[calc(100svh-8rem)]',
       )}
     >
-      {mode && <FocusBar mode={mode} title={current.name} onMode={focus.enter} onExit={exitFocus} onShowList={mode === 'single' && listAside ? () => setListDrawer(true) : undefined} />}
+      {mode && <FocusBar mode={mode} title={mode === 'accounts' ? c.focus.modes.accounts.label : current.name} onMode={switchFocus} onExit={exitFocus} onShowList={mode === 'single' && listAside ? () => setListDrawer(true) : undefined} onSearch={() => setGlobalSearch(true)} onAnalyze={isAdmin ? () => setAiOpen(true) : undefined} />}
+      {mode === 'accounts' ? (
+        <AccountsSplit numbers={list} initial={current.id} receipts={receipts} request={openRequest} openChats={paneChats} onToast={showToast} onOpenIn={(sid, jid) => openHit(sid, jid, '')} />
+      ) : (
       <div className={cx('relative flex min-h-0 flex-1 overflow-hidden', mode && 'bg-card')}>
       {drawer && <div className="animate-fade-in absolute inset-0 z-20 bg-black/45" onClick={() => setListDrawer(false)} />}
       {/* chats column */}
@@ -981,6 +881,14 @@ export function ChatsPage() {
                   )}
                 />
               )}
+              <IconAction label={c.globalSearch.open} active={globalSearch} onClick={() => setGlobalSearch(true)}>
+                <Search className="size-[18px]" />
+              </IconAction>
+              {isAdmin && (
+                <IconAction label={c.ai.open} active={aiOpen} onClick={() => setAiOpen(true)}>
+                  <Sparkles className="size-[18px]" />
+                </IconAction>
+              )}
               <IconAction label={c.tabs.insights} active={view === 'insights'} onClick={() => setView((v) => (v === 'insights' ? 'chats' : 'insights'))}>
                 <BarChart3 className="size-[18px]" />
               </IconAction>
@@ -996,6 +904,7 @@ export function ChatsPage() {
                 onNotify={() => void toggleNotify()}
                 privacy={privacy}
                 onPrivacy={() => setPrivacyMode(!privacy)}
+                cross={isAdmin ? { on: crossSend, onToggle: () => setCrossSend(!crossSend) } : undefined}
               />
             </div>
           </div>
@@ -1084,7 +993,9 @@ export function ChatsPage() {
               onFlags={setFlags}
               onOpenPhone={openPhone}
               onSync={() => void startSync(selected.jid)}
+              onOpenIn={(sid, jid) => openHit(sid, jid, '')}
               syncing={sync?.scope === selected.jid}
+              search={chatSearch && isChat(selected, chatSearch.jid) ? chatSearch : undefined}
             />
           </div>
         ) : (
@@ -1187,6 +1098,7 @@ export function ChatsPage() {
                 onFlags={(body) => void setSecondFlags(body)}
                 onOpenPhone={openPhone}
                 onSync={() => void startSync(second.jid)}
+                onOpenIn={(sid, jid) => openHit(sid, jid, '')}
                 syncing={sync?.scope === second.jid}
               />
             </div>
@@ -1217,6 +1129,7 @@ export function ChatsPage() {
         </section>
       )}
       </div>
+      )}
 
       {newChat && (
         <NewChatDialog
@@ -1229,6 +1142,19 @@ export function ChatsPage() {
           }}
         />
       )}
+
+      {aiOpen && (
+        <AiReport
+          numbers={list}
+          onClose={() => setAiOpen(false)}
+          onOpenChat={(sid, jid) => {
+            setAiOpen(false);
+            openHit(sid, jid, '');
+          }}
+        />
+      )}
+
+      {globalSearch && <GlobalSearch numbers={list} initialSession={current.id} onOpen={openHit} onClose={() => setGlobalSearch(false)} />}
 
       {syncOpen && <SyncModal sessionId={current.id} connected={connected} onClose={() => setSyncOpen(false)} />}
 

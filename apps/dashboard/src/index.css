@@ -590,9 +590,16 @@ body {
   background-image: radial-gradient(var(--chat-dots) 1px, transparent 1px);
   background-size: 14px 14px;
 }
+/* A chosen wall (walls.ts) is a pair; each theme takes its own shade. No pair = the theme's wall. */
+.chat-wall,
+.wall-swatch {
+  background-color: var(--wall-dark, var(--chat-wall));
+}
+:root[data-theme='light'] :is(.chat-wall, .wall-swatch) {
+  background-color: var(--wall-light, var(--chat-wall));
+}
 .chat-wall {
   position: relative;
-  background-color: var(--chat-wall);
 }
 /*
  * The WhatsApp doodle, done the way WhatsApp itself does it: the SVG tile is an

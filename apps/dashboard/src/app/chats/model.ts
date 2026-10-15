@@ -20,6 +20,14 @@ export type ChatSummary = {
   last: { id: number; direction: 'in' | 'out'; type: MessageType; status: MessageStatus; text: string | null; sender: string | null; createdAt: string; revoked?: boolean } | null;
 };
 
+/** Search across every chat (`GET /api/chats/search`): what it looks for. */
+export const SEARCH_KINDS = ['all', 'text', 'images', 'videos', 'audio', 'documents', 'links'] as const;
+export type SearchKind = (typeof SEARCH_KINDS)[number];
+/** A message found, with the number and chat it belongs to. */
+export type SearchHit = ChatMessage & { sessionId: string; chat: { jid: string; name: string | null; phone: string | null; isGroup: boolean }; sender: string | null };
+export type SearchChat = { sessionId: string; jid: string; name: string | null; phone: string | null; isGroup: boolean; lastMessageAt: string };
+export type SearchPage = { results: SearchHit[]; chats: SearchChat[]; nextBefore: number | null };
+
 export type ChatPage = { chats: ChatSummary[]; next: string | null; counts: Record<ChatFilter, number> | null };
 
 export type ChatMessage = {
@@ -134,6 +142,26 @@ export const chatTitle = (c: Pick<ChatSummary, 'name' | 'phone' | 'jid'>) => c.n
 /** True when an event about `jid` concerns this chat (it may arrive under either address). */
 export const isChat = (c: Pick<ChatSummary, 'jid' | 'altJid'> | null | undefined, jid: string) => Boolean(c && (c.jid === jid || c.altJid === jid));
 
+/** A chat with no row yet (a new number, a deep link): enough to open it. */
+export function placeholderChat(jid: string): ChatSummary {
+  const isGroup = jid.endsWith('@g.us');
+  return {
+    jid,
+    altJid: null,
+    name: null,
+    phone: isGroup ? null : `+${jid.split('@')[0]}`,
+    isGroup,
+    unread: 0,
+    pinned: false,
+    archived: false,
+    inbound: 0,
+    outbound: 0,
+    lastMessageAt: new Date().toISOString(),
+    lastInboundAt: null,
+    last: null,
+  };
+}
+
 export function initials(name: string) {
   const letters = name
     .replace(/[^\p{L}\s]/gu, '')
@@ -187,3 +215,56 @@ export function livePresence(p: PresenceState | undefined): PresenceState | unde
   if ((p.presence === 'composing' || p.presence === 'recording') && age > 25_000) return { ...p, presence: 'available' };
   return p;
 }
+
+// --- AI analysis (`/api/chats/analysis`, admins) ---
+
+export type CustomerStatus = 'hot' | 'interested' | 'waiting' | 'complaint' | 'done' | 'cold';
+export type Mood = 'positive' | 'neutral' | 'negative';
+export type AnalysisReport = {
+  summary: string;
+  highlights: string[];
+  sentiment: Record<Mood, number>;
+  topics: { topic: string; count: number; note: string }[];
+  customers: { ref: string; status: CustomerStatus; mood: Mood; summary: string; need: string; nextAction: string }[];
+  employees: { ref: string; score: number; verdict: string; strengths: string[]; weaknesses: string[]; tone: string; examples: string[] }[];
+  risks: string[];
+  recommendations: { title: string; detail: string; priority: 'high' | 'medium' | 'low' }[];
+};
+/** Exact figures of one number (employee) over the period, from the database. */
+export type NumberStats = {
+  sessionId: string;
+  name: string;
+  phone: string | null;
+  status: string;
+  customers: number;
+  newCustomers: number;
+  inbound: number;
+  outbound: number;
+  fromPhone: number;
+  fromDashboard: number;
+  fromApi: number;
+  campaign: number;
+  turns: number;
+  answered: number;
+  medianReplySeconds: number | null;
+  avgReplySeconds: number | null;
+  waiting: number;
+  groups: number;
+};
+export type AnalysisResult = {
+  stats: NumberStats[];
+  unanswered: { sessionId: string; jid: string; name: string | null; phone: string | null; lastText: string | null; lastType: string; since: string }[];
+  report: AnalysisReport | null;
+  chats: Record<string, { sessionId: string; jid: string; name: string | null; phone: string | null }>;
+  numbers: Record<string, string>;
+  meta: { days: number; since: string; chatsAnalyzed: number; messagesAnalyzed: number; model: string; inputTokens: number; outputTokens: number; generatedAt: string | null };
+};
+export type AnalysisJob = {
+  id: string;
+  status: 'running' | 'done' | 'failed';
+  phase: 'collecting' | 'analyzing' | 'done';
+  startedAt: string;
+  finishedAt: string | null;
+  error: string | null;
+  result: AnalysisResult | null;
+};

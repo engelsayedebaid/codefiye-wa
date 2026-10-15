@@ -2,8 +2,10 @@
  * Creates (or promotes) a platform admin (`users.role = admin`, active), and a workspace on the internal
  * `unlimited` plan with no expiry. Prints a generated password for new users, or with
  * `--reset-password`; set ADMIN_PASSWORD to choose it instead.
+ * `--reset-2fa` turns two-factor off (lost phone and recovery codes): the next login asks to set it up again.
  *
  *   pnpm admin:create admin@example.com "Admin name" [--reset-password]
+ *   pnpm admin:create admin@example.com --reset-2fa
  */
 import { randomBytes } from 'node:crypto';
 import { createDb, databaseUrls, eq, runMigrations, users, workspaces } from '@wa/db';
@@ -12,9 +14,10 @@ import { hashPassword } from '../apps/api/src/lib/passwords';
 
 const args = process.argv.slice(2);
 const resetPassword = args.includes('--reset-password');
+const resetTwoFactor = args.includes('--reset-2fa');
 const [rawEmail, name = 'Admin'] = args.filter((a) => !a.startsWith('--'));
 if (!rawEmail?.includes('@')) {
-  console.error('Usage: pnpm admin:create <email> ["Name"] [--reset-password]');
+  console.error('Usage: pnpm admin:create <email> ["Name"] [--reset-password] [--reset-2fa]');
   process.exit(1);
 }
 const email = rawEmail.toLowerCase();
@@ -29,7 +32,14 @@ const passwordHash = password ? await hashPassword(password) : undefined;
 const [user] = existing
   ? await db
       .update(users)
-      .set({ role: 'admin', status: 'active', suspendedAt: null, suspendedReason: null, ...(passwordHash ? { passwordHash } : {}) })
+      .set({
+        role: 'admin',
+        status: 'active',
+        suspendedAt: null,
+        suspendedReason: null,
+        ...(passwordHash ? { passwordHash } : {}),
+        ...(resetTwoFactor ? { totpSecret: null, totpEnabledAt: null, totpLastStep: null, recoveryCodes: [] } : {}),
+      })
       .where(eq(users.id, existing.id))
       .returning()
   : await db.insert(users).values({ email, name, passwordHash, role: 'admin' }).returning();
@@ -48,5 +58,5 @@ console.log(`
 Admin ready: ${user!.email}
 Workspace "${workspace!.name}" (${workspace!.id}) on the ${PLANS.unlimited.name} plan, no expiry.
 ${password ? `\nPassword (shown once — store it now, then change it):\n  ${password}\n` : '\nPassword unchanged (pass --reset-password to generate a new one).\n'}
-Log in at /login, then open /admin.
+${resetTwoFactor && existing ? 'Two-factor turned off: set it up again right after logging in.\n' : ''}Log in at /login, then open /admin.
 `);
