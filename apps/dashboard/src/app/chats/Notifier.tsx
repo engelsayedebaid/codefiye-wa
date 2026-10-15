@@ -1,8 +1,23 @@
+import { type InfiniteData, useQueryClient } from '@tanstack/react-query';
 import { ChevronUp, X } from 'lucide-react';
-import { type CSSProperties, useState } from 'react';
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
+import { useBackgroundLiveEvents, useLiveEvents } from '../../events';
 import { useI18n } from '../../i18n';
+import { qk } from '../../queries';
 import { cx } from '../../ui';
 import { Avatar, TypeLabel } from './Bubble';
+import type { ChatNumber, ChatPage } from './model';
+
+export const NOTIFY_KEY = 'wa.chats.notify';
+
+/** Message notifications are on unless turned off on the chats page. */
+export function notificationsOn() {
+  try {
+    return localStorage.getItem(NOTIFY_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
 
 export type NoteMessage = {
   id: number;
@@ -94,41 +109,40 @@ function NoteCard({ note, peek, onOpen, onDismiss }: { note: InboxNote; peek: bo
   const c = t.chats.notify;
   const last = note.messages.length - 1;
   return (
-    <div className="group/note relative h-full overflow-hidden rounded-[1.25rem] border border-white/[0.07] light:border-line bg-gradient-to-b from-raised/95 to-card/95 shadow-[0_24px_60px_-20px] shadow-black/90 light:shadow-black/15 backdrop-blur-xl">
-      {/* soft brand glow behind the avatar */}
-      <span aria-hidden className="pointer-events-none absolute -top-10 -start-10 size-32 rounded-full bg-brand/15 blur-2xl" />
+    <div className="group/note relative h-full overflow-hidden rounded-2xl border border-white/[0.08] light:border-line bg-card/95 shadow-[0_18px_50px_-18px] shadow-black/80 light:shadow-black/20 ring-1 ring-black/5 backdrop-blur-xl">
       <div className={cx('relative transition-opacity duration-200', peek && 'opacity-0')}>
-        <div className="flex items-center gap-1.5 px-3.5 pt-3 text-[11px] text-faint">
-          <span className="flex size-4 items-center justify-center rounded-[5px] bg-brand text-on-brand">
-            <ChatGlyph className="size-2.5" />
+        <button type="button" onClick={onOpen} tabIndex={peek ? -1 : 0} className="flex w-full items-start gap-3 p-3.5 pb-4 text-start outline-none transition-colors hover:bg-ink/[0.025] focus-visible:bg-ink/[0.04]">
+          <span className="relative shrink-0">
+            <Avatar name={note.title} id={note.jid} picture={note.picture} group={note.isGroup} size="lg" />
+            <span className="absolute -end-0.5 -bottom-0.5 flex size-5 items-center justify-center rounded-full bg-brand text-on-brand ring-2 ring-card">
+              <ChatGlyph className="size-2.5" />
+            </span>
           </span>
-          <span className="pii truncate font-medium text-muted">{note.number ?? c.newMessage}</span>
-          <span aria-hidden>·</span>
-          <span className="shrink-0 text-brand">{c.now}</span>
-          {note.count > 1 && (
-            <span key={note.count} className="animate-scale-in ms-auto shrink-0 rounded-full bg-brand/15 px-2 py-0.5 text-[10px] font-semibold text-brand tabular-nums">
-              {c.messages(note.count)}
+          <span className="pii min-w-0 flex-1">
+            <span className="flex items-baseline gap-2 pe-5">
+              <span className="min-w-0 flex-1 truncate text-start text-[14.5px] font-semibold text-ink">
+                {note.title.startsWith('+') ? <span className="ltr">{note.title}</span> : <span dir="auto">{note.title}</span>}
+              </span>
+              <span className="shrink-0 text-[11px] font-medium text-brand">{c.now}</span>
             </span>
-          )}
-        </div>
-        <button type="button" onClick={onOpen} tabIndex={peek ? -1 : 0} className="flex w-full items-start gap-3 px-3.5 pt-2 pb-3.5 text-start outline-none focus-visible:bg-ink/[0.03]">
-          <Avatar name={note.title} id={note.jid} picture={note.picture} group={note.isGroup} size="lg" />
-          <span className="min-w-0 flex-1 pii">
-            <span className="block truncate text-start text-[15px] font-semibold text-ink">
-              {note.title.startsWith('+') ? <span className="ltr">{note.title}</span> : <span dir="auto">{note.title}</span>}
-            </span>
-            <span className="mt-1 block space-y-0.5">
+            {note.number && <span className="mt-0.5 block truncate text-[11.5px] text-faint">{note.number}</span>}
+            <span className="mt-2 block space-y-1 rounded-xl rounded-ss-[4px] bg-ink/[0.045] px-3 py-2">
               {note.messages.map((m, i) => (
                 <span
                   key={m.id}
                   dir="auto"
-                  className={cx('block truncate text-[13px] leading-snug', i === last ? 'animate-fade-in text-ink-2' : 'text-muted/80')}
+                  className={cx('block truncate text-[13px] leading-normal', i === last ? 'animate-fade-in text-ink' : 'text-muted')}
                 >
-                  {m.sender && <span className="font-medium text-muted">{m.sender}: </span>}
+                  {m.sender && <span className="font-medium text-ink-2">{m.sender}: </span>}
                   {m.text || <TypeLabel type={m.type} />}
                 </span>
               ))}
             </span>
+            {note.count > SHOWN_MESSAGES && (
+              <span key={note.count} className="animate-scale-in mt-1.5 block text-[11px] font-medium text-brand tabular-nums">
+                {c.messages(note.count)}
+              </span>
+            )}
           </span>
         </button>
       </div>
@@ -137,17 +151,17 @@ function NoteCard({ note, peek, onOpen, onDismiss }: { note: InboxNote; peek: bo
           type="button"
           onClick={onDismiss}
           aria-label={t.common.close}
-          className="absolute end-2.5 top-2.5 rounded-full bg-card/80 p-1 text-faint opacity-0 transition-opacity group-hover/note:opacity-100 hover:text-ink focus-visible:opacity-100"
+          className="absolute end-2 top-2 rounded-full p-1 text-faint opacity-0 transition-[opacity,background-color] group-hover/note:opacity-100 hover:bg-raised hover:text-ink focus-visible:opacity-100"
         >
           <X className="size-3.5" />
         </button>
       )}
-      <span aria-hidden className="absolute inset-x-0 bottom-0 h-[3px] bg-ink/[0.06]">
+      <span aria-hidden className="absolute inset-x-0 bottom-0 h-[2px] bg-ink/[0.05]">
         <span
           key={note.rev}
           onAnimationEnd={onDismiss}
           style={{ '--note-ms': `${NOTE_MS}ms` } as CSSProperties}
-          className="note-drain block h-full origin-left bg-gradient-to-r from-brand/60 to-brand rtl:origin-right"
+          className="note-drain block h-full origin-left bg-brand/80 rtl:origin-right"
         />
       </span>
     </div>
@@ -222,4 +236,95 @@ export function noteText(t: ReturnType<typeof useI18n>['t'], message: NoteMessag
   const label = message.type === 'location' ? t.chats.location : message.type === 'contact' ? t.chats.contactCard : message.type === 'poll' ? t.chats.poll : m[message.type];
   const body = message.text || (typeof label === 'string' ? label : message.type);
   return message.sender ? `${message.sender}: ${body}` : body;
+}
+
+/**
+ * Incoming messages as notification cards + chime (the browser's own notification when the tab is
+ * hidden). `isLooking`: that chat is open on screen, so only a quiet chime. `onOpen`: show the chat.
+ */
+export function useInboxNotes({
+  enabled,
+  numbers,
+  isLooking = () => false,
+  onOpen,
+}: {
+  enabled: boolean;
+  numbers: ChatNumber[];
+  isLooking?: (sessionId: string, jid: string) => boolean;
+  onOpen: (note: InboxNote) => void;
+}) {
+  const { t } = useI18n();
+  const queryClient = useQueryClient();
+  const [notes, setNotes] = useState<InboxNote[]>([]);
+  const seq = useRef(0);
+  useBackgroundLiveEvents(enabled);
+
+  // Any click on the page unlocks audio, so the chime can play later from a background tab.
+  useEffect(() => {
+    const unlock = () => unlockAudio();
+    document.addEventListener('pointerdown', unlock, { once: true });
+    document.addEventListener('keydown', unlock, { once: true });
+    return () => {
+      document.removeEventListener('pointerdown', unlock);
+      document.removeEventListener('keydown', unlock);
+    };
+  }, []);
+
+  const dismiss = useCallback((key: number) => setNotes((ns) => ns.filter((n) => n.key !== key)), []);
+  const open = (note: InboxNote) => {
+    dismiss(note.key);
+    onOpen(note);
+  };
+
+  /** Name and picture from what the chats page already loaded — no request. */
+  const cachedChat = (sid: string, jid: string) => {
+    for (const [, data] of queryClient.getQueriesData<InfiniteData<ChatPage>>({ queryKey: qk.chats.lists(sid) }))
+      for (const page of data?.pages ?? []) {
+        const hit = page.chats.find((ch) => ch.jid === jid || ch.altJid === jid);
+        if (hit) return hit;
+      }
+    return null;
+  };
+  const cachedPicture = (sid: string, jid: string) => {
+    for (const [, data] of queryClient.getQueriesData<Record<string, string | null>>({ queryKey: ['chats', sid, 'pictures'] })) if (data?.[jid]) return data[jid];
+    return null;
+  };
+
+  useLiveEvents((event) => {
+    if (event.type !== 'messages.received' || !enabled) return;
+    const { chatJid, from, type, text, pushName } = event.data;
+    if (type === 'reaction') return;
+    const jid = chatJid ?? from;
+    const visible = document.visibilityState === 'visible';
+    if (visible && isLooking(event.sessionId, jid)) return playPing(0.4);
+    const chat = cachedChat(event.sessionId, jid);
+    const isGroup = jid.endsWith('@g.us');
+    const phone = (j: string) => (j.endsWith('@s.whatsapp.net') ? `+${j.split('@')[0]}` : null);
+    const title = chat?.name || (isGroup ? null : pushName) || chat?.phone || phone(jid) || jid.split('@')[0]!;
+    const key = ++seq.current;
+    const message: NoteMessage = { id: event.data.id, sender: isGroup ? pushName || phone(from) : null, text, type };
+    const note = {
+      key,
+      rev: key,
+      sessionId: event.sessionId,
+      jid: chat?.jid ?? jid,
+      title,
+      picture: cachedPicture(event.sessionId, chat?.jid ?? jid),
+      isGroup,
+      number: numbers.length > 1 ? (numbers.find((n) => n.id === event.sessionId)?.name ?? null) : null,
+    };
+    if (!visible && 'Notification' in window && Notification.permission === 'granted') {
+      const n = new Notification(note.number ? `${title} · ${note.number}` : title, { body: noteText(t, message), icon: note.picture ?? '/favicon.svg', tag: `${note.sessionId}:${note.jid}` });
+      n.onclick = () => {
+        window.focus();
+        open({ ...note, messages: [message], count: 1 });
+        n.close();
+      };
+    }
+    // The chime plays in a background tab too (audio unlocked by an earlier click); the card waits there for the return.
+    playPing();
+    setNotes((ns) => pushNote(ns, note, message));
+  });
+
+  return { notes, dismiss, open };
 }

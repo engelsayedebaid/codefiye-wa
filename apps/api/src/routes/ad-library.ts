@@ -62,39 +62,49 @@ const CATEGORY_WORDS: Record<Category, { ar: string; en: string }> = {
   electronics: { ar: 'موبايل', en: 'headphones' },
 };
 
+/**
+ * A link the page puts in an href or src: web addresses only. A saved ad comes back from the browser, so
+ * a `javascript:` or `data:` value must never be stored (it would run when the ad is opened).
+ */
+const webUrl = z
+  .string()
+  .max(2000)
+  .refine((u) => /^https?:\/\/[^\s]+$/i.test(u), { message: 'Must be an http(s) link' });
+const shortText = (max: number) => z.string().max(max);
+
 const adDto = z.object({
-  id: z.string(),
+  id: shortText(200),
   platform: z.enum(LIBRARY_PLATFORMS.filter((p) => p !== 'all') as [Platform, ...Platform[]]),
-  placements: z.array(z.string()),
-  externalId: z.string(),
-  advertiser: z.string(),
-  advertiserId: z.string().nullable(),
-  text: z.string().nullable(),
-  title: z.string().nullable(),
-  description: z.string().nullable(),
-  domain: z.string().nullable(),
-  startedAt: z.string().nullable(),
-  stoppedAt: z.string().nullable(),
+  placements: z.array(shortText(40)).max(10),
+  externalId: shortText(200),
+  advertiser: shortText(300),
+  advertiserId: shortText(200).nullable(),
+  text: shortText(5000).nullable(),
+  title: shortText(1000).nullable(),
+  description: shortText(2000).nullable(),
+  domain: shortText(300).nullable(),
+  startedAt: shortText(40).nullable(),
+  stoppedAt: shortText(40).nullable(),
   active: z.boolean(),
-  days: z.number(),
-  variants: z.number(),
-  countries: z.array(z.string()),
-  languages: z.array(z.string()),
+  days: z.number().int().min(0).max(100_000),
+  variants: z.number().int().min(0).max(100_000),
+  countries: z.array(shortText(80)).max(300),
+  languages: z.array(shortText(20)).max(50),
   reach: z.number().nullable(),
-  category: z.string().nullable(),
-  score: z.number(),
-  url: z.string(),
+  category: shortText(40).nullable(),
+  score: z.number().min(0).max(100),
+  url: webUrl,
   /** The creative, when the source gives it: a picture (or a video's still) and the video itself. */
-  image: z.string().max(2000).optional(),
-  video: z.string().max(2000).optional(),
-  format: z.string().max(40).optional(),
+  image: webUrl.optional(),
+  video: webUrl.optional(),
+  format: shortText(40).optional(),
   /** The advertiser's picture. */
-  avatar: z.string().max(2000).optional(),
+  avatar: webUrl.optional(),
   /** Added by hand to the ideas board (a link pasted from a platform's own library), with a note. */
   manual: z.boolean().optional(),
-  note: z.string().max(2000).optional(),
-  handle: z.string().max(100).optional(),
-  cta: z.string().max(60).optional(),
+  note: shortText(2000).optional(),
+  handle: shortText(100).optional(),
+  cta: shortText(60).optional(),
 });
 export type LibraryAd = z.infer<typeof adDto>;
 

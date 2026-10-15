@@ -60,8 +60,10 @@ function dashboardCsp(indexHtml: string) {
     `script-src 'self' ${inline.join(' ')}`.trim(),
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
-    // Template previews show customer image URLs; QR codes are data: URLs.
-    "img-src 'self' data: https:",
+    // Template previews show customer image URLs; QR codes are data: URLs; attachments preview from blob: URLs.
+    "img-src 'self' data: blob: https:",
+    // Ad-library videos play from the networks' CDNs; files about to be sent preview from blob: URLs.
+    "media-src 'self' blob: https:",
     "connect-src 'self'",
     "frame-ancestors 'none'",
     "base-uri 'self'",

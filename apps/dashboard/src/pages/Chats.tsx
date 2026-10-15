@@ -1,6 +1,6 @@
 import type { ChatFilter } from '@wa/shared/chats';
 import { planHasFeature } from '@wa/shared/plans';
-import { type InfiniteData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -36,9 +36,9 @@ import { ChatList, TypingDots } from '../app/chats/ChatList';
 import { ContactPanel } from '../app/chats/ContactPanel';
 import { Conversation } from '../app/chats/Conversation';
 import { Insights } from '../app/chats/Insights';
-import { type InboxNote, type NoteMessage, NoteStack, noteText, playPing, pushNote, unlockAudio } from '../app/chats/Notifier';
+import { type InboxNote, NOTIFY_KEY, notificationsOn, NoteStack, playPing, useInboxNotes } from '../app/chats/Notifier';
 import { setPrivacyMode, usePrivacyMode } from '../app/chats/privacy';
-import { type ChatInfo, type ChatNumber, type ChatPage, type ChatSummary, isChat, placeholderChat, type PresenceState, type Profile } from '../app/chats/model';
+import { type ChatInfo, type ChatNumber, type ChatSummary, isChat, placeholderChat, type PresenceState, type Profile } from '../app/chats/model';
 import { SyncButton, SyncCard, SyncModal } from '../app/chats/SyncPanel';
 import { FocusBar, FocusMenu, type FocusMode, useFocusMode } from '../app/chats/Focus';
 import { AiReport } from '../app/chats/AiReport';
@@ -46,7 +46,7 @@ import { setCrossSend, useCrossSend } from '../app/chats/crossSend';
 import { GlobalSearch } from '../app/chats/GlobalSearch';
 import { NumberSwitcher } from '../app/chats/NumberSwitcher';
 import { AccountsSplit, type OpenChats, type OpenRequest } from '../app/chats/AccountsSplit';
-import { useBackgroundLiveEvents, useLiveEvents } from '../events';
+import { useLiveEvents } from '../events';
 import { useI18n } from '../i18n';
 import { debouncedInvalidate, qk } from '../queries';
 import { Link } from '../router';
@@ -54,7 +54,6 @@ import { Button, buttonClass, cx, delay, EmptyState, ErrorNote, flip, LoadError,
 
 const SESSION_KEY = 'wa.chats.session';
 const RECEIPTS_KEY = 'wa.chats.receipts';
-const NOTIFY_KEY = 'wa.chats.notify';
 const WATCH_EVERY_MS = 60_000;
 
 const read = (key: string) => {
@@ -510,9 +509,7 @@ export function ChatsPage() {
   };
 
   // --- notifications for incoming messages: a card + chime in the page, the browser's own when the tab is hidden ---
-  const [notifyOn, setNotifyOn] = useState(() => read(NOTIFY_KEY) !== '0');
-  const [notes, setNotes] = useState<InboxNote[]>([]);
-  useBackgroundLiveEvents(notifyOn);
+  const [notifyOn, setNotifyOn] = useState(notificationsOn);
   const [permission, setPermission] = useState<NotificationPermission>(() => ('Notification' in window ? Notification.permission : 'denied'));
   const askPermission = async () => {
     if (!('Notification' in window)) return 'denied' as const;
@@ -520,20 +517,17 @@ export function ChatsPage() {
     setPermission(result);
     return result;
   };
-  // Any click on the page unlocks audio, so the chime can play later from a background tab.
-  useEffect(() => {
-    const unlock = () => unlockAudio();
-    document.addEventListener('pointerdown', unlock, { once: true });
-    document.addEventListener('keydown', unlock, { once: true });
-    return () => {
-      document.removeEventListener('pointerdown', unlock);
-      document.removeEventListener('keydown', unlock);
-    };
-  }, []);
-  const noteSeq = useRef(0);
-  const dismissNote = useCallback((key: number) => setNotes((ns) => ns.filter((n) => n.key !== key)), []);
-  const openNote = (note: Pick<InboxNote, 'key' | 'sessionId' | 'jid'>) => {
-    dismissNote(note.key);
+  const inbox = useInboxNotes({
+    enabled: notifyOn,
+    numbers: list,
+    // Already looking at it: just a quiet chime, no card.
+    isLooking: (sid, jid) =>
+      focus.mode === 'accounts'
+        ? [...paneChats.values()].some((o) => o.sessionId === sid && isChat(o.chat, jid))
+        : sid === activeId && view === 'chats' && isChat(selected, jid),
+    onOpen: (note) => openNote(note),
+  });
+  const openNote = (note: Pick<InboxNote, 'sessionId' | 'jid'>) => {
     if (focus.mode === 'accounts') return setOpenRequest((r) => ({ sessionId: note.sessionId, jid: note.jid, seq: (r?.seq ?? 0) + 1 }));
     if (note.sessionId !== activeId) switchNumber(note.sessionId);
     setView('chats');
@@ -558,61 +552,6 @@ export function ChatsPage() {
     // A sample right away: if it doesn't appear, the OS (Windows notification settings / Focus) is hiding them.
     if (permission === 'granted') new Notification(c.notify.testTitle, { body: c.notify.testBody, icon: '/favicon.svg', tag: 'wa-test' });
   };
-  /** Looks the chat up in what the list already loaded (name, picture) — no request. */
-  const cachedChat = (sid: string, jid: string) => {
-    for (const [, data] of queryClient.getQueriesData<InfiniteData<ChatPage>>({ queryKey: qk.chats.lists(sid) }))
-      for (const page of data?.pages ?? []) {
-        const hit = page.chats.find((ch) => ch.jid === jid || ch.altJid === jid);
-        if (hit) return hit;
-      }
-    return null;
-  };
-  const cachedPicture = (sid: string, jid: string) => {
-    for (const [, data] of queryClient.getQueriesData<Record<string, string | null>>({ queryKey: ['chats', sid, 'pictures'] })) if (data?.[jid]) return data[jid];
-    return null;
-  };
-  const announce = (event: Extract<Parameters<Parameters<typeof useLiveEvents>[0]>[0], { type: 'messages.received' }>) => {
-    const { chatJid, from, type, text, pushName } = event.data;
-    const jid = chatJid ?? from;
-    if (!notifyOn || type === 'reaction') return;
-    const visible = document.visibilityState === 'visible';
-    // Already looking at it: just a quiet chime, no card.
-    const looking =
-      focus.mode === 'accounts'
-        ? [...paneChats.values()].some((o) => o.sessionId === event.sessionId && isChat(o.chat, jid))
-        : event.sessionId === activeId && view === 'chats' && isChat(selected, jid);
-    if (visible && looking) return playPing(0.4);
-    const chat = cachedChat(event.sessionId, jid);
-    const isGroup = jid.endsWith('@g.us');
-    const phone = (j: string) => (j.endsWith('@s.whatsapp.net') ? `+${j.split('@')[0]}` : null);
-    const title = chat?.name || (isGroup ? null : pushName) || chat?.phone || phone(jid) || jid.split('@')[0]!;
-    const seq = ++noteSeq.current;
-    const message: NoteMessage = { id: event.data.id, sender: isGroup ? pushName || phone(from) : null, text, type };
-    const note = {
-      key: seq,
-      rev: seq,
-      sessionId: event.sessionId,
-      jid: chat?.jid ?? jid,
-      title,
-      picture: cachedPicture(event.sessionId, chat?.jid ?? jid),
-      isGroup,
-      number: list.length > 1 ? (list.find((n) => n.id === event.sessionId)?.name ?? null) : null,
-    };
-    if (!visible) {
-      if ('Notification' in window && Notification.permission === 'granted') {
-        const n = new Notification(note.number ? `${title} · ${note.number}` : title, { body: noteText(t, message), icon: note.picture ?? '/favicon.svg', tag: `${note.sessionId}:${note.jid}` });
-        n.onclick = () => {
-          window.focus();
-          openNote(note);
-          n.close();
-        };
-      }
-    }
-    // The chime plays in a background tab too (audio unlocked by an earlier click); the card waits there for the return.
-    playPing();
-    setNotes((ns) => pushNote(ns, note, message));
-  };
-
   // --- live ---
   const invalidate = useMemo(() => debouncedInvalidate(queryClient, 700), [queryClient]);
   useLiveEvents((event) => {
@@ -620,7 +559,6 @@ export function ChatsPage() {
       invalidate(qk.chats.numbers);
       return;
     }
-    if (event.type === 'messages.received') announce(event);
     if (event.sessionId !== activeId) {
       if (event.type === 'messages.received') invalidate(qk.chats.numbers);
       return;
@@ -758,16 +696,6 @@ export function ChatsPage() {
     },
   });
   const setFlags = (body: FlagsBody) => activeId && selected && flags.mutate({ sessionId: activeId, chat: selected, body });
-
-  // Unread chats in the tab title, so a background tab still says when someone wrote.
-  const unreadTotal = list.reduce((sum, n) => sum + n.unreadChats, 0);
-  useEffect(() => {
-    const base = document.title.replace(/^\(\d+\)\s/, '');
-    document.title = unreadTotal > 0 ? `(${unreadTotal}) ${base}` : base;
-    return () => {
-      document.title = document.title.replace(/^\(\d+\)\s/, '');
-    };
-  }, [unreadTotal]);
 
   // "/" searches the list, Ctrl+K every chat; Esc closes, in order: the contact panel, the list drawer, focus mode, the open chat.
   useEffect(() => {
@@ -1158,7 +1086,7 @@ export function ChatsPage() {
 
       {syncOpen && <SyncModal sessionId={current.id} connected={connected} onClose={() => setSyncOpen(false)} />}
 
-      <NoteStack notes={notes} onOpen={openNote} onDismiss={dismissNote} />
+      <NoteStack notes={inbox.notes} onOpen={inbox.open} onDismiss={inbox.dismiss} />
 
       {/* toast */}
       {(sync || toast) && (

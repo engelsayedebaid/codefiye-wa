@@ -811,6 +811,8 @@ export function chatRoutes(deps: Deps): FastifyPluginAsyncZod {
       },
       async (req) => {
         const session = await ownedSession(sql, req, req.params.sessionId);
+        // A reaction goes out on WhatsApp like a message: an expired plan can't send one.
+        assertActive(req.auth);
         if (session.status !== 'connected') throw conflict(`Session is not connected (status: ${session.status})`, 'session_not_connected');
         const [target] = await sql<{ remote_jid: string; direction: MessageDirection; wa_message_id: string | null; participant: string | null; from: string | null }[]>`
           select remote_jid, direction, wa_message_id, raw->'key'->>'participant' as participant, content->>'from' as "from"

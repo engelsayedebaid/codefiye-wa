@@ -34,7 +34,9 @@ import { signOut } from '../session';
 import type { Session } from '../types';
 import { BRAND } from '../brand';
 import { useI18n } from '../i18n';
-import { Link, usePath } from '../router';
+import { Link, navigate, usePath } from '../router';
+import type { ChatNumber } from './chats/model';
+import { notificationsOn, NoteStack, useInboxNotes } from './chats/Notifier';
 import { Badge, Button, buttonClass, cx, ErrorNote, Field, flip, LangSwitch, Logo, LogoMark, Modal, SuccessNote, ThemeSwitch, usePlanName } from '../ui';
 import { LoginRequests } from '../auth/TwoFactor';
 import { type Account, AccountContext, isUnlimitedPlan, planState, useAccount } from './account';
@@ -48,7 +50,17 @@ const readCollapsed = () => {
   }
 };
 
-type NavItem = { href: string; label: string; icon: typeof LayoutGrid; badge?: 'lock' | 'soon' };
+type NavItem = { href: string; label: string; icon: typeof LayoutGrid; badge?: 'lock' | 'soon'; count?: number };
+
+const chatsAllowed = (account: Account | null) => account?.user?.isAdmin === true || (account ? planHasFeature(account.plan.id, 'chats') : false);
+
+function useChatNumbers(account: Account | null) {
+  return useQuery({
+    queryKey: qk.chats.numbers,
+    queryFn: ({ signal }) => api<ChatNumber[]>('/api/chats/numbers', { signal }),
+    enabled: chatsAllowed(account),
+  });
+}
 
 function useNav() {
   const { t } = useI18n();
@@ -64,12 +76,13 @@ function useNav() {
         ? undefined
         : 'soon';
   // Chats likewise: shown to everyone, locked below Business.
-  const chatsBadge: NavItem['badge'] = isAdmin || (account && planHasFeature(account.plan.id, 'chats')) ? undefined : 'lock';
+  const chatsBadge: NavItem['badge'] = chatsAllowed(account) ? undefined : 'lock';
+  const unread = (useChatNumbers(account).data ?? []).reduce((sum, n) => sum + n.unreadChats, 0);
   return {
     main: [
       { href: '/dashboard', label: n.dashboard, icon: LayoutGrid },
       { href: '/sessions', label: n.sessions, icon: PhoneCall },
-      { href: '/chats', label: n.chats, icon: MessagesSquare, badge: chatsBadge },
+      { href: '/chats', label: n.chats, icon: MessagesSquare, badge: chatsBadge, count: unread },
       { href: '/templates', label: n.templates, icon: FileText },
       { href: '/keys', label: n.keys, icon: KeyRound },
       { href: '/ads', label: n.ads, icon: Megaphone, badge: adsBadge },
@@ -295,6 +308,12 @@ function NavGroup({
               >
                 <item.icon />
                 {!collapsed && <span className="truncate">{item.label}</span>}
+                {!!item.count && !collapsed && (
+                  <span className={cx('ms-auto min-w-5 shrink-0 rounded-full px-1.5 py-0.5 text-center text-[11px] leading-none font-semibold tabular-nums', active ? 'bg-on-brand/20 text-on-brand' : 'bg-brand text-on-brand')}>
+                    {item.count > 99 ? '99+' : item.count}
+                  </span>
+                )}
+                {!!item.count && collapsed && <span aria-hidden className="absolute top-1 end-3 size-2 rounded-full bg-brand ring-2 ring-card" />}
                 {!collapsed && item.badge === 'lock' && <LockKeyhole className={cx('ms-auto size-3.5 shrink-0', active ? 'text-on-brand/70' : 'text-muted')} />}
                 {!collapsed && item.badge === 'soon' && (
                   <span className={cx('ms-auto shrink-0 rounded-full px-1.5 py-0.5 text-[10px] leading-none font-medium', active ? 'bg-on-brand/15 text-on-brand' : 'bg-brand/15 text-brand')}>{t.ads.gate.soon}</span>
@@ -495,9 +514,43 @@ function useLiveCache() {
       case 'poll.vote':
         invalidate(qk.messages(event.sessionId));
         invalidate(['overview']);
+        if (event.type === 'messages.received') invalidate(qk.chats.numbers);
+        break;
+      case 'chat.read':
+      case 'chats.synced':
+        invalidate(qk.chats.numbers);
         break;
     }
   });
+}
+
+/**
+ * Incoming chat messages reach every page: unread chats in the tab title, and notification cards
+ * outside `/chats` (the chats page shows its own, aware of the open chat). A card opens its chat.
+ */
+function InboxAlerts({ account, path }: { account: Account; path: string }) {
+  const onChats = path === '/chats';
+  const list = useChatNumbers(account).data ?? [];
+  const inbox = useInboxNotes({
+    enabled: chatsAllowed(account) && !onChats && notificationsOn(),
+    numbers: list,
+    onOpen: (note) => navigate(`/chats?${new URLSearchParams({ session: note.sessionId, chat: note.jid })}`),
+  });
+
+  const unread = list.reduce((sum, n) => sum + n.unreadChats, 0);
+  useEffect(() => {
+    const base = document.title.replace(/^\(\d+\)\s/, '');
+    document.title = unread > 0 ? `(${unread}) ${base}` : base;
+  }, [unread]);
+  useEffect(
+    () => () => {
+      document.title = document.title.replace(/^\(\d+\)\s/, '');
+    },
+    [],
+  );
+
+  if (onChats) return null;
+  return <NoteStack notes={inbox.notes} onOpen={inbox.open} onDismiss={inbox.dismiss} />;
 }
 
 export function AppShell({ children, account }: { children: ReactNode; account: Account }) {
@@ -528,6 +581,7 @@ export function AppShell({ children, account }: { children: ReactNode; account: 
   return (
     <AccountContext.Provider value={context}>
       <LoginRequests />
+      <InboxAlerts account={account} path={path} />
       <div className="flex min-h-svh bg-surface">
         <aside className={cx('sticky top-0 hidden h-svh shrink-0 px-2 py-2 transition-[width] duration-300 ease-out md:block', collapsed ? 'w-[72px]' : 'w-[272px]')}>
           <div className="h-full overflow-hidden rounded-2xl border border-line bg-card shadow-lg">

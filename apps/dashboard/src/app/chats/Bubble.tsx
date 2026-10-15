@@ -90,7 +90,7 @@ function ImageMedia({ m, onOpen, localSrc }: { m: ChatMessage; onOpen: () => voi
     <button
       type="button"
       onClick={state === 'ready' ? onOpen : undefined}
-      className={cx('group/img relative block overflow-hidden', sticker ? 'size-36 bg-transparent' : 'w-72 max-w-full rounded-lg bg-black/30', state === 'ready' && 'cursor-zoom-in')}
+      className={cx('group/img relative block overflow-hidden', sticker ? 'size-36 bg-transparent' : 'w-72 max-w-full rounded-[14px] bg-black/30', state === 'ready' && 'cursor-zoom-in')}
       style={sticker ? undefined : frame(media?.width, media?.height)}
       aria-label={t.chats.media[m.type === 'sticker' ? 'sticker' : 'image']}
     >
@@ -131,7 +131,7 @@ function VideoMedia({ m, localSrc }: { m: ChatMessage; localSrc?: string }) {
   const [playing, setPlaying] = useState(false);
   const src = localSrc ?? (m.hasMedia ? mediaUrl(m.id) : null);
   return (
-    <div className="relative w-72 max-w-full overflow-hidden rounded-lg bg-black/40" style={frame(media?.width, media?.height)}>
+    <div className="relative w-72 max-w-full overflow-hidden rounded-[14px] bg-black/40" style={frame(media?.width, media?.height)}>
       {playing && src ? (
         <video src={src} controls autoPlay playsInline loop={media?.gif} muted={media?.gif} className="absolute inset-0 size-full bg-black object-contain" />
       ) : (
@@ -604,8 +604,12 @@ export const Bubble = memo(function Bubble({ m, sender, first, reactions, myReac
   else if (m.type === 'unknown') body = <p className="py-0.5 text-sm text-ink/60 italic">{c.unsupported}</p>;
 
   const caption = revoked ? null : m.type === 'poll' ? (out ? text : null) : m.type === 'text' || isMedia ? text : null;
+  // A picture or video edge to edge, the time laid over it (as WhatsApp does).
+  const framed = (m.type === 'image' || m.type === 'video') && !revoked && !m.content.viewOnce;
+  // Not over a video: it would cover the player's controls.
+  const overlaid = bare || (m.type === 'image' && framed && !caption);
   const time = (
-    <span className={cx('flex shrink-0 items-center gap-1 text-[11px] leading-none', bare ? 'rounded-full bg-black/50 px-1.5 py-1 text-white' : 'text-ink/55')}>
+    <span className={cx('inline-flex shrink-0 items-center gap-1 text-[11px] leading-none whitespace-nowrap', overlaid ? 'rounded-full bg-black/50 px-1.5 py-1 text-white backdrop-blur-sm' : 'text-ink/50')}>
       {m.broadcastId && <Megaphone className="size-3" aria-label={c.campaign} />}
       {m.content.sentFrom === 'phone' && <Smartphone className="size-3" aria-label={c.fromPhone} />}
       {m.content.edited && !revoked && <span className="italic">{c.edited}</span>}
@@ -620,20 +624,20 @@ export const Bubble = memo(function Bubble({ m, sender, first, reactions, myReac
     <div
       id={m.waMessageId ? `msg-${m.waMessageId}` : undefined}
       // Room under a bubble for its reactions badge, which hangs below it.
-      className={cx('group/msg flex w-full px-3 md:px-[6%]', out ? 'justify-end' : 'justify-start', first ? 'mt-2' : 'mt-0.5', reactions && reactions.length > 0 && 'mb-4')}
+      className={cx('group/msg flex w-full px-3 md:px-[6%]', out ? 'justify-end' : 'justify-start', first ? 'mt-3' : 'mt-[3px]', reactions && reactions.length > 0 && 'mb-3.5')}
     >
-      <div className={cx('flex max-w-[min(88%,34rem)] items-center gap-1', out && 'flex-row-reverse')}>
+      <div className="relative flex max-w-[min(85%,36rem)]">
         <div
           className={cx(
-            'pii relative min-w-0 text-sm text-ink shadow-sm',
-            bare ? '' : 'rounded-2xl px-2.5 pt-2 pb-1.5 shadow-[0_1px_1.5px_rgb(0_0_0/0.12)]',
+            'pii relative min-w-0 text-[14.5px] leading-[1.45] text-ink',
+            bare ? '' : cx('rounded-[18px] shadow-[0_1px_2px_rgb(0_0_0/0.13)]', framed ? 'p-1' : 'px-3 pt-1.5 pb-1.5'),
             !bare && (out ? 'bg-(--chat-out) ring-1 ring-(--chat-out-ring)' : 'bg-(--chat-in) ring-1 ring-line/60'),
-            !bare && first && (out ? 'rounded-se-sm' : 'rounded-ss-sm'),
+            !bare && first && (out ? 'rounded-se-[6px]' : 'rounded-ss-[6px]'),
             m.status === 'failed' && 'ring-red-500/40',
           )}
         >
           {sender && first && !out && (
-            <p className="pii mb-0.5 flex min-w-0 items-baseline gap-2 px-1 text-xs">
+            <p className={cx('pii mb-0.5 flex min-w-0 items-baseline gap-2 text-[12.5px]', framed ? 'px-2 pt-1' : '')}>
               <span dir="auto" className={cx('truncate', sender.unknown ? 'text-ink/45 italic' : cx('font-semibold', senderColor(sender.key)))}>
                 {sender.name}
               </span>
@@ -641,7 +645,7 @@ export const Bubble = memo(function Bubble({ m, sender, first, reactions, myReac
             </p>
           )}
           {m.content.forwarded && (
-            <p className="flex items-center gap-1 px-1 text-[11px] text-ink/55 italic">
+            <p className={cx('mb-0.5 flex items-center gap-1 text-[11.5px] text-ink/55 italic', framed && 'px-2 pt-1')}>
               <Forward className={cx('size-3', flip)} /> {c.forwarded}
             </p>
           )}
@@ -656,14 +660,20 @@ export const Bubble = memo(function Bubble({ m, sender, first, reactions, myReac
           )}
           {body}
           {caption ? (
-            <div className={cx('flex flex-wrap items-end gap-x-2 px-1', isMedia && 'pt-1.5')}>
-              <p dir="auto" className="min-w-0 flex-1 break-words whitespace-pre-wrap" style={{ overflowWrap: 'anywhere' }}>
+            // The time sits on the text's last line when it fits: an invisible copy holds its place.
+            <div dir="auto" className={cx('relative', framed ? 'px-2 pt-1.5 pb-1' : isMedia && 'pt-1.5')}>
+              <p className="break-words whitespace-pre-wrap" style={{ overflowWrap: 'anywhere' }}>
                 <ChatText text={caption} highlight={highlight} />
+                <span aria-hidden className="invisible ps-3 align-bottom select-none">
+                  {time}
+                </span>
               </p>
-              <span className="ms-auto pt-1">{time}</span>
+              <span className={cx('absolute', framed ? 'end-2 bottom-1' : 'end-0 bottom-0')}>{time}</span>
             </div>
+          ) : overlaid ? (
+            <div className={cx('pointer-events-none absolute', bare ? 'end-1 bottom-1' : 'end-2.5 bottom-2.5')}>{time}</div>
           ) : (
-            <div className={cx('flex justify-end', bare ? 'absolute end-1 bottom-1' : 'px-1 pt-1')}>{time}</div>
+            <div className={cx('flex justify-end pt-1', framed && 'px-1.5 pb-0.5')}>{time}</div>
           )}
           {m.error && m.status === 'failed' && (
             <p className="mt-1 flex items-start gap-1.5 rounded-md bg-red-500/15 px-2 py-1 text-xs text-red-300">
@@ -688,7 +698,13 @@ export const Bubble = memo(function Bubble({ m, sender, first, reactions, myReac
             </span>
           )}
         </div>
-        <div className="flex shrink-0 flex-col gap-0.5 opacity-0 transition-opacity group-hover/msg:opacity-100 focus-within:opacity-100 has-[[aria-expanded=true]]:opacity-100">
+        {/* Out of the flow: hidden until hover, it must not make the row any taller. */}
+        <div
+          className={cx(
+            'absolute top-1/2 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover/msg:opacity-100 focus-within:opacity-100 has-[[aria-expanded=true]]:opacity-100',
+            out ? 'end-full me-1 flex-row-reverse' : 'start-full ms-1',
+          )}
+        >
           {m.waMessageId && onReact && !revoked && <ReactButton mine={myReaction} onPick={(emoji) => onReact(m, emoji)} />}
           {m.waMessageId && onReply && (
             <button type="button" onClick={() => onReply(m)} className="rounded-full p-1.5 text-muted transition-colors hover:bg-raised hover:text-ink" aria-label={c.reply} title={c.reply}>

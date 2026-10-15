@@ -583,8 +583,8 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
             {reactError}
           </p>
         )}
-        <div ref={scroller} onScroll={onScroll} className="code-scroll flex h-full flex-col-reverse overflow-y-auto overscroll-contain">
-          <div className="chat-thread pt-2 pb-4">
+        <div ref={scroller} onScroll={onScroll} className="code-scroll flex h-full flex-col-reverse overflow-x-hidden overflow-y-auto overscroll-contain">
+          <div className="chat-thread pt-2 pb-5">
             <div ref={topSentinel} />
             {messages.isError && !messages.data ? (
               <div className="p-4">
@@ -609,17 +609,17 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
                 {sections.map((section) => (
                   <div key={section.key}>
                     {section.label !== null && (
-                      <div className="sticky top-2 z-[5] my-3 flex justify-center">
-                        <span className="rounded-lg bg-card/95 px-3 py-1 text-xs font-medium text-muted shadow-sm ring-1 ring-line/60 backdrop-blur">{section.label}</span>
+                      <div className="sticky top-3 z-[5] mt-5 mb-2 flex justify-center">
+                        <span className="rounded-full bg-card/90 px-3.5 py-1 text-[11.5px] font-medium tracking-wide text-ink-2 shadow-[0_1px_2px_rgb(0_0_0/0.12)] ring-1 ring-line/50 backdrop-blur-md">{section.label}</span>
                       </div>
                     )}
                     {section.items.map((item) =>
                       item.kind === 'unread' ? (
-                        <div key={item.key} className="my-3 flex justify-center bg-brand/[0.07] py-1.5">
-                          <span className="rounded-full bg-card px-3 py-0.5 text-xs font-semibold text-brand shadow-sm">{c.unreadDivider(item.n)}</span>
+                        <div key={item.key} className="my-4 flex justify-center bg-brand/[0.07] py-1.5">
+                          <span className="rounded-full bg-card px-3.5 py-1 text-[11.5px] font-semibold text-brand shadow-sm ring-1 ring-brand/20">{c.unreadDivider(item.n)}</span>
                         </div>
                       ) : (
-                        <div key={item.key} className={cx('animate-fade-in [contain-intrinsic-size:auto_72px] [content-visibility:auto]', reactions.has(item.m.waMessageId ?? '') && 'mb-3')}>
+                        <div key={item.key} className="animate-fade-in [contain-intrinsic-size:auto_72px] [content-visibility:auto]">
                           <Bubble
                             m={item.m}
                             first={item.first}
