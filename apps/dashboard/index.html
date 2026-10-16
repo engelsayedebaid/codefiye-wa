@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ar" dir="rtl" data-theme="light">
+<html lang="ar" dir="rtl" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#f8faf9" />
+    <meta name="theme-color" content="#070e0c" />
     <title>WA CodeFiye — واتساب API منخفض التكلفة للمطوّرين</title>
     <meta name="description" content="أرسل واستقبل رسائل واتساب من تطبيقك عبر REST API بسيط: جلسات متعددة، رسائل غير محدودة، وبدون رسوم على كل رسالة." />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -21,13 +21,13 @@
           document.documentElement.dir = 'ltr';
         }
       } catch {}
-      // Same for the theme (src/theme.tsx): light unless the visitor picked dark or system.
+      // Same for the theme (src/theme.tsx): dark unless the visitor picked light, or system on a light device.
       try {
         var pref = localStorage.getItem("wa.theme");
-        var dark = pref === "dark" || (pref === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
-        if (dark) {
-          document.documentElement.dataset.theme = "dark";
-          document.querySelector("meta[name=theme-color]").setAttribute("content", "#070e0c");
+        var light = pref === "light" || (pref === "system" && !matchMedia("(prefers-color-scheme: dark)").matches);
+        if (light) {
+          document.documentElement.dataset.theme = "light";
+          document.querySelector("meta[name=theme-color]").setAttribute("content", "#f8faf9");
         }
       } catch {}
     </script>
