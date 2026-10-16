@@ -240,11 +240,11 @@ function PhoneSection({ user, onEdit }: { user: User | null; onEdit: () => void 
   return (
     <Section icon={Smartphone} title={ph.title} text={ph.text} index={1}>
       <div className={cx('flex flex-wrap items-center gap-4 rounded-xl border p-4', phone ? 'border-line bg-surface/40' : 'border-dashed border-line-strong/70')}>
-        <Tile icon={Smartphone} tone={tone} className="size-11" />
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+        <div className="flex min-w-0 items-center gap-3">
+          <Tile icon={Smartphone} tone={tone} className="size-11" />
           {phone ? (
-            <p className="truncate font-mono text-lg font-semibold tracking-tight">
-              <span className="ltr">{phone}</span>
+            <p dir="ltr" className="truncate font-mono text-lg font-semibold tracking-tight">
+              {phone}
             </p>
           ) : (
             <p className="font-medium">{ph.none}</p>
@@ -261,7 +261,7 @@ function PhoneSection({ user, onEdit }: { user: User | null; onEdit: () => void 
             ))}
         </div>
         {user && (
-          <Button variant={phone ? 'outline' : 'brand'} onClick={onEdit}>
+          <Button variant={phone ? 'outline' : 'brand'} className="ms-auto shrink-0" onClick={onEdit}>
             {phone ? ph.change : ph.add}
           </Button>
         )}
