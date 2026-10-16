@@ -922,6 +922,11 @@ export class SessionRunner {
     return withTimeout(this.live().react(jid, target, emoji), LOOKUP_TIMEOUT_MS, 'reaction timed out');
   }
 
+  /** What a send to this group would address (diagnostics; nothing is sent). */
+  async groupSendCheck(jid: string) {
+    return withTimeout(this.live().groupSendCheck(jid), 60_000, 'group check timed out');
+  }
+
   /** An edit or delete from the chats page; the API applies it to the stored message once this returns. */
   async editMessage(jid: string, target: { id: string }, text: string) {
     await withTimeout(this.live().edit(jid, target, text), MESSAGE_ACTION_TIMEOUT_MS, 'WhatsApp did not confirm the edit in time');

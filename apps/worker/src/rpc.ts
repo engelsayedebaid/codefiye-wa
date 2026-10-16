@@ -91,6 +91,10 @@ export async function dispatch(supervisor: Supervisor, sessionId: string, action
       const parsed = z.object({ jid: jid.refine((j) => j.endsWith('@g.us'), 'not a group') }).parse(body);
       return { members: await runner.groupMembers(parsed.jid) };
     }
+    case 'group-send-check': {
+      const parsed = z.object({ jid: jid.refine((j) => j.endsWith('@g.us'), 'not a group') }).parse(body);
+      return runner.groupSendCheck(parsed.jid);
+    }
     case 'pictures': {
       const { jids } = z.object({ jids: z.array(jid).min(1).max(50) }).parse(body);
       return { pictures: await runner.pictures(jids) };

@@ -32,7 +32,31 @@ export type ContactProfile = { pictureUrl: string | null; about: string | null; 
 /** A group member: their address (LID or phone-number JID), number when WhatsApp shares it, and role. */
 export type GroupMember = { jid: string; phoneJid: string | null; lid: string | null; role: 'superadmin' | 'admin' | 'member' };
 
-export type CloseReason = 'logged_out' | 'restart_required' | 'connection_replaced' | 'qr_timeout' | 'error';
+/**
+ * What a send to a group would address, worked out the way Baileys does it but without sending
+ * anything: for finding why WhatsApp rejects a group's messages (error 479) when smaller groups work.
+ */
+export type GroupSendCheck = {
+  addressingMode: string | null;
+  participants: number;
+  /** Participant addresses by server (`lid`, `s.whatsapp.net`, …). */
+  participantServers: Record<string, number>;
+  duplicateParticipants: string[];
+  devices: number;
+  deviceServers: Record<string, number>;
+  /** Device addresses listed more than once (each `to` must be unique in a stanza). */
+  duplicateDevices: string[];
+  /** Devices Baileys leaves out of a group send (hosted, device 99). */
+  skippedDevices: number;
+  /** Our own sending device listed as a recipient. */
+  includesSelf: boolean;
+  /** Devices with no Signal session yet (each gets a prekey message carrying our identity). */
+  withoutSession: number;
+  /** Rough size of a first send's stanza (a key per device), in bytes. */
+  estimatedStanzaBytes: number;
+};
+
+export type CloseReason ='logged_out' | 'restart_required' | 'connection_replaced' | 'qr_timeout' | 'error';
 
 export type ReceiptStatus = 'sent' | 'delivered' | 'read' | 'failed';
 

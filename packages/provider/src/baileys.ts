@@ -42,6 +42,7 @@ import {
   type ContactProfile,
   type EchoMessage,
   type GroupMember,
+  type GroupSendCheck,
   type HistoryAnchor,
   type HistoryMessage,
   type InboundMessage,
@@ -530,6 +531,16 @@ export class BaileysProvider implements Provider {
     // Events from a socket we've since replaced or closed are dropped.
     const current = () => this.sock === sock;
 
+    // Baileys logs a rejected message's id and code only; the whole ack (any other attribute or child
+    // WhatsApp adds) is what tells why, e.g. a large group's 479.
+    sock.ws?.on('CB:ack,class:message', (node: { attrs: Record<string, string>; content?: unknown }) => {
+      if (!current() || !node.attrs.error) return;
+      const children = Array.isArray(node.content)
+        ? (node.content as { tag: string; attrs: Record<string, string> }[]).map((c) => ({ tag: c.tag, attrs: c.attrs }))
+        : undefined;
+      this.logger.warn({ ack: node.attrs, children }, 'WhatsApp rejected a message');
+    });
+
     sock.ev.on('creds.update', () => {
       saveCreds().catch((err) => this.logger.error({ err }, 'failed to persist creds'));
     });
@@ -832,6 +843,39 @@ export class BaileysProvider implements Provider {
   /** A group's name. */
   async groupSubject(jid: string): Promise<string | null> {
     return (await this.requireOpen().groupMetadata(jid)).subject || null;
+  }
+
+  /**
+   * Works out what a send to this group would address — its members, their devices, and which of
+   * those Baileys would encrypt for — the way Baileys' group send does, without sending anything.
+   */
+  async groupSendCheck(jid: string): Promise<GroupSendCheck> {
+    const sock = this.requireOpen();
+    const meta = await sock.groupMetadata(jid);
+    const ids = meta.participants.map((p) => p.id);
+    const devices = await sock.getUSyncDevices(ids, true, false);
+    const me = sock.user;
+    const own = new Set([me?.id, me?.lid].filter((j): j is string => Boolean(j)));
+    const count = (list: string[]) => list.reduce<Record<string, number>>((acc, j) => ((acc[j.split('@')[1] ?? '?'] = (acc[j.split('@')[1] ?? '?'] ?? 0) + 1), acc), {});
+    const dupes = (list: string[]) => [...new Set(list.filter((j, i) => list.indexOf(j) !== i))];
+    // As Baileys' group send: hosted devices and device 99 get no copy.
+    const sent = devices.filter((d) => !d.jid.includes('hosted') && d.device !== 99).map((d) => d.jid);
+    const sessions = await Promise.all(sent.map((j) => sock.signalRepository.validateSession(j)));
+    const withoutSession = sessions.filter((s) => !s.exists).length;
+    return {
+      addressingMode: meta.addressingMode ?? null,
+      participants: ids.length,
+      participantServers: count(ids),
+      duplicateParticipants: dupes(ids),
+      devices: sent.length,
+      deviceServers: count(sent),
+      duplicateDevices: dupes(sent),
+      skippedDevices: devices.length - sent.length,
+      includesSelf: sent.some((j) => own.has(j)),
+      withoutSession,
+      // Per device: its `to` node and a Signal message (a prekey message is larger) — rough, for scale.
+      estimatedStanzaBytes: withoutSession * 420 + (sent.length - withoutSession) * 200,
+    };
   }
 
   /** A group's members, with their phone numbers where WhatsApp shares them (LID groups may not). */

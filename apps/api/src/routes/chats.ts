@@ -986,6 +986,24 @@ export function chatRoutes(deps: Deps): FastifyPluginAsyncZod {
     );
 
     app.get(
+      '/:sessionId/group-send-check',
+      {
+        schema: {
+          ...schemaBase,
+          summary: 'Diagnostics: what a send to this group would address (members, devices, duplicates, size); sends nothing',
+          params: sessionParams,
+          querystring: z.object({ jid: jidSchema.refine((j) => j.endsWith('@g.us'), 'Not a group') }),
+          response: { 200: successSchema(z.record(z.string(), z.unknown())) },
+        },
+      },
+      async (req) => {
+        const session = await ownedSession(sql, req, req.params.sessionId);
+        if (session.status !== 'connected') throw conflict('Connect the number first', 'session_not_connected');
+        return ok(await workers.call<Record<string, unknown>>(session.id, 'group-send-check', { jid: req.query.jid }, { timeoutMs: 65_000 }));
+      },
+    );
+
+    app.get(
       '/:sessionId/group-members',
       {
         schema: {
