@@ -503,6 +503,9 @@ function PhoneAlert({ account }: { account: Account }) {
   );
 }
 
+/** Events that change what the chats page shows (its lists and conversations). */
+const CHAT_EVENTS = new Set<string>(['messages.received', 'messages.created', 'messages.update', 'message.changed', 'poll.vote', 'chat.read', 'chats.synced']);
+
 /**
  * Keeps one event stream open while inside the app and folds events into the shared cache, so
  * every page shows live state without reloading.
@@ -511,6 +514,10 @@ function useLiveCache() {
   const queryClient = useQueryClient();
   const invalidate = useMemo(() => debouncedInvalidate(queryClient), [queryClient]);
   useLiveEvents((event) => {
+    // The chats page folds these into its own cache while it is open; while it isn't, nothing does,
+    // and coming back within its stale time showed the old copy (a notified message missing until a
+    // reload). Marked stale here without fetching: the page refetches what it shows when it opens.
+    if (CHAT_EVENTS.has(event.type)) void queryClient.invalidateQueries({ queryKey: ['chats', event.sessionId], refetchType: 'none' });
     switch (event.type) {
       case 'session.status': {
         const patch = (s: Session) =>
