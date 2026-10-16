@@ -383,6 +383,22 @@ describe.skipIf(!url)('api (integration)', () => {
     expect((await call('DELETE', `/api/api-keys/${id}`, ws.b.pat)).statusCode).toBe(404);
   });
 
+  it('caps active keys per workspace; revoking one makes room', async () => {
+    // A workspace of its own, filled straight in the database: creating 20 keys through the API
+    // would spend the plan's per-minute request budget, not test the cap.
+    const w = await createWorkspace('Key cap', 'pro', null);
+    const filled = await db
+      .insert(apiKeys)
+      .values(Array.from({ length: 19 }, (_, i) => ({ workspaceId: w.id, name: `k${i}`, ...(({ hash, prefix }) => ({ keyHash: hash, prefix }))(generateKey('pat')) })))
+      .returning({ id: apiKeys.id });
+    // 19 + its own token = 20 extra keys, and it has no numbers: full.
+    const refused = await call('POST', '/api/api-keys', w.pat, { name: 'one too many' });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json().code).toBe('key_limit');
+    expect((await call('DELETE', `/api/api-keys/${filled[0]!.id}`, w.pat)).statusCode).toBe(200);
+    expect((await call('POST', '/api/api-keys', w.pat, { name: 'after revoke' })).statusCode).toBe(201);
+  });
+
   it('enforces the plan session quota with 402', async () => {
     expect((await call('POST', '/api/whatsapp-sessions', ws.b.pat, { name: 'one' })).statusCode).toBe(201);
     const res = await call('POST', '/api/whatsapp-sessions', ws.b.pat, { name: 'two' });

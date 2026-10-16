@@ -241,21 +241,24 @@ function PhoneSection({ user, onEdit }: { user: User | null; onEdit: () => void 
     <Section icon={Smartphone} title={ph.title} text={ph.text} index={1}>
       <div className={cx('flex flex-wrap items-center gap-4 rounded-xl border p-4', phone ? 'border-line bg-surface/40' : 'border-dashed border-line-strong/70')}>
         <Tile icon={Smartphone} tone={tone} className="size-11" />
-        <div className="min-w-0 flex-1">
-          {phone ? <p className="ltr truncate font-mono text-lg font-semibold tracking-tight">{phone}</p> : <p className="font-medium">{ph.none}</p>}
-          {phone && (
-            <p className="mt-1">
-              {user?.phoneVerified ? (
-                <Badge tone="good" className="gap-1">
-                  <CheckCircle2 className="size-3" /> {ph.verified}
-                </Badge>
-              ) : (
-                <Badge tone="warning" className="gap-1">
-                  <XCircle className="size-3" /> {ph.unverified}
-                </Badge>
-              )}
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+          {phone ? (
+            <p className="truncate font-mono text-lg font-semibold tracking-tight">
+              <span className="ltr">{phone}</span>
             </p>
+          ) : (
+            <p className="font-medium">{ph.none}</p>
           )}
+          {phone &&
+            (user?.phoneVerified ? (
+              <Badge tone="good" className="gap-1">
+                <CheckCircle2 className="size-3" /> {ph.verified}
+              </Badge>
+            ) : (
+              <Badge tone="warning" className="gap-1">
+                <XCircle className="size-3" /> {ph.unverified}
+              </Badge>
+            ))}
         </div>
         {user && (
           <Button variant={phone ? 'outline' : 'brand'} onClick={onEdit}>

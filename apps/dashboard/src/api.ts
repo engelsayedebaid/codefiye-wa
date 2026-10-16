@@ -142,6 +142,8 @@ function friendly(err: ApiRequestError): string | null {
       return e.unavailable;
     case 'worker_outdated':
       return e.workerOutdated;
+    case 'key_limit':
+      return e.keyLimit;
     case 'session_expired':
       return e.sessionExpired;
     case 'csrf_blocked':

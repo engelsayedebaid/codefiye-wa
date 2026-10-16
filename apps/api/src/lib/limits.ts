@@ -1,7 +1,7 @@
-import { type Db, eq, sessions, type Sql, workspaces } from '@wa/db';
+import { and, apiKeys, arrayContains, type Db, eq, isNull, not, sessions, type Sql, workspaces } from '@wa/db';
 import { getPlan } from '@wa/shared';
 import type { AuthContext } from './auth';
-import { ApiError, paymentRequired } from './errors';
+import { ApiError, conflict, paymentRequired } from './errors';
 
 type DrizzleTx = Db | Parameters<Parameters<Db['transaction']>[0]>[0];
 
@@ -25,6 +25,25 @@ export async function assertSessionQuota(tx: DrizzleTx, auth: AuthContext) {
   const used = await tx.$count(sessions, eq(sessions.workspaceId, auth.workspaceId));
   if (used >= plan.sessions) {
     throw paymentRequired(`The ${plan.name} plan allows ${plan.sessions} session(s). Upgrade to add more.`, 'session_quota');
+  }
+}
+
+/** Keys a workspace may create beyond each session's own key (revoked and dashboard login keys don't count). */
+export const EXTRA_KEYS_LIMIT = 20;
+
+/**
+ * Call inside the transaction that creates the key, like assertSessionQuota: the workspace row is
+ * locked first, so concurrent creates can't overshoot. Every session's automatic key fits on top.
+ */
+export async function assertKeyQuota(tx: DrizzleTx, auth: AuthContext) {
+  await tx.select({ id: workspaces.id }).from(workspaces).where(eq(workspaces.id, auth.workspaceId)).for('update');
+  const [keys, numbers] = await Promise.all([
+    tx.$count(apiKeys, and(eq(apiKeys.workspaceId, auth.workspaceId), isNull(apiKeys.revokedAt), not(arrayContains(apiKeys.scopes, ['console'])))),
+    tx.$count(sessions, eq(sessions.workspaceId, auth.workspaceId)),
+  ]);
+  const limit = EXTRA_KEYS_LIMIT + numbers;
+  if (keys >= limit) {
+    throw conflict(`This workspace has ${keys} active keys, the most it can have (${EXTRA_KEYS_LIMIT} plus one per number). Revoke one you no longer use first.`, 'key_limit');
   }
 }
 

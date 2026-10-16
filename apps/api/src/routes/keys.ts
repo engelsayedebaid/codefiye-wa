@@ -7,6 +7,7 @@ import { requirePat } from '../lib/auth';
 import { apiKeyDto, toApiKeyDto } from '../lib/dto';
 import { notFound } from '../lib/errors';
 import { generateKey } from '../lib/keys';
+import { assertKeyQuota } from '../lib/limits';
 
 const tags = ['API keys'];
 
@@ -34,7 +35,9 @@ export function keyRoutes({ db, auth }: Deps): FastifyPluginAsyncZod {
         schema: {
           tags,
           summary: 'Create a key',
-          description: 'Without `sessionId` creates a workspace access token (`wap_…`); with it, a key bound to that session (`was_…`). The key is shown once.',
+          description:
+            'Without `sessionId` creates a workspace access token (`wap_…`); with it, a key bound to that session (`was_…`). The key is shown once. ' +
+            'A workspace keeps at most 20 active keys plus one per number; past that, 409 `key_limit` (revoke an unused key first).',
           body: z.object({ name: z.string().trim().min(1).max(100), sessionId: z.uuid().optional() }),
           response: { 201: successSchema(apiKeyDto.extend({ key: z.string() })) },
         },
@@ -50,10 +53,14 @@ export function keyRoutes({ db, auth }: Deps): FastifyPluginAsyncZod {
           if (!owned) throw notFound('Session not found');
         }
         const key = generateKey(sessionId ? 'session' : 'pat');
-        const [row] = await db
-          .insert(apiKeys)
-          .values({ workspaceId: req.auth.workspaceId, sessionId: sessionId ?? null, name, keyHash: key.hash, prefix: key.prefix })
-          .returning();
+        const row = await db.transaction(async (tx) => {
+          await assertKeyQuota(tx, req.auth);
+          const [created] = await tx
+            .insert(apiKeys)
+            .values({ workspaceId: req.auth.workspaceId, sessionId: sessionId ?? null, name, keyHash: key.hash, prefix: key.prefix })
+            .returning();
+          return created;
+        });
         reply.code(201);
         return ok({ ...toApiKeyDto(row!), key: key.key });
       },
