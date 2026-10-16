@@ -251,7 +251,7 @@ export const en: Dict = {
       columns: [
         { title: 'Product', links: ['Features', 'How it works', 'Pricing'] },
         { title: 'Developers', links: ['API docs', 'OpenAPI file', 'Dashboard'] },
-        { title: 'Help', links: ['FAQ', 'Sign up', 'Log in'] },
+        { title: 'Help', links: ['FAQ', 'Sign up', 'Log in', 'Privacy policy'] },
       ],
       rights: 'All rights reserved.',
     },
@@ -2370,6 +2370,129 @@ export const en: Dict = {
         { code: '402 / 429', status: 'Plan or Rate Limit', desc: 'Subscription expired (402) or per-minute rate limit exceeded for your plan (429).' },
       ],
     },
+  },
+  privacy: {
+    eyebrow: 'Privacy',
+    title: 'Privacy Policy',
+    lead: `How ${BRAND.name} collects, uses and protects your data, and the choices you have.`,
+    updatedLabel: 'Last updated',
+    updated: 'October 16, 2026',
+    highlights: [
+      { title: 'Data protection', text: 'WhatsApp credentials and two-factor keys are stored encrypted; for passwords and API keys we keep only a hash.' },
+      { title: 'Transparent practices', text: 'We say plainly what we collect, why, and who we share it with.' },
+      { title: 'Secure infrastructure', text: 'All traffic is encrypted in transit (TLS), and dashboard sign-in is protected by two-factor authentication.' },
+      { title: 'We never sell your data', text: 'We don’t sell or rent your data to anyone, and we use no advertising trackers.' },
+    ],
+    tocTitle: 'On this page',
+    sections: [
+      {
+        id: 'scope',
+        title: 'Scope of this policy',
+        body: [
+          `This policy covers the ${BRAND.name} website, dashboard, API and related services (the "Service"). By using the Service you agree to the collection and use of your data as described here.`,
+          'When you use the Service to message your own customers, you are responsible for their data; we process it on your behalf and only to provide the Service to you.',
+        ],
+      },
+      {
+        id: 'collect',
+        title: 'Information we collect',
+        body: [
+          'We collect only what the Service needs to run:',
+          [
+            'Account data: your name, email, phone number (verified with a code sent over WhatsApp) and password — we store only a hash of the password, never the password itself.',
+            'Two-factor authentication: your authenticator key is stored encrypted; for recovery codes we keep only a hash.',
+            'WhatsApp sessions: the linked phone number and the session credentials WhatsApp creates when you link it, stored encrypted with AES-256-GCM.',
+            'Messages and contacts: the content of messages you send and receive through your sessions (text, media, locations, contact cards), recipient numbers, delivery and read statuses, and the contact and group names WhatsApp syncs to show your chats.',
+            'API keys: we keep a hash of each key and a short prefix to recognise it; the full key is shown only once, when it is created.',
+            'Subscription and payment: the plan you request and its length, the transfer details you enter (wallet number, sender name or account, amount) and the transfer screenshot. We never receive or store bank card data.',
+            'Technical data: IP address and browser type at sign-in and sign-in attempts, request logs for security and rate limits, and a log of account administrators’ actions.',
+          ],
+        ],
+      },
+      {
+        id: 'use',
+        title: 'How we use your information',
+        body: [
+          [
+            'Running the Service: linking your numbers to WhatsApp, sending and receiving your messages, and showing chats and statistics in the dashboard.',
+            'Securing your account: verifying who signs in, preventing abuse and fraud, and enforcing each plan’s limits.',
+            'Subscriptions: reviewing plan requests, checking transfers and activating plans.',
+            'Contacting you: verification codes, account and subscription notices, and answers to support requests.',
+            'Improving the Service: monitoring performance and errors so we can fix them.',
+          ],
+          'We don’t read your messages or use their content for anything other than providing the Service to you, unless you explicitly ask us to (for example, to look into a problem with a specific message) or the law requires it.',
+        ],
+      },
+      {
+        id: 'share',
+        title: 'Information sharing',
+        body: [
+          'We don’t sell, rent or share your personal data for marketing. We share it only with the providers we need to run the platform, and only as far as needed:',
+          [
+            'WhatsApp (Meta): your messages pass through WhatsApp by the nature of the Service and are also subject to WhatsApp’s terms and privacy policy.',
+            'Hosting and database: the application servers and the database where your data is stored.',
+            'Anthropic (Claude): only when you run an AI analysis of your chats yourself, the selected conversations are sent for analysis.',
+            'Google Fonts: the site’s fonts load from Google’s servers, which receive your IP address.',
+          ],
+          'We may also disclose data when required by law or a court, to protect our rights and our users’ safety, or as part of a transfer of the Service (a merger or acquisition), with this policy still applying.',
+        ],
+      },
+      {
+        id: 'security',
+        title: 'Data security',
+        body: [
+          'We use technical and organisational measures to protect your data: all traffic encrypted in transit, WhatsApp credentials and two-factor keys encrypted at rest, passwords, recovery codes and API keys stored as one-way hashes, and two-factor authentication required on every dashboard account.',
+          'Still, no system is 100% secure. Keep your password, API keys and recovery codes safe, and tell us right away if you suspect unauthorised access.',
+        ],
+      },
+      {
+        id: 'retention',
+        title: 'Data retention',
+        body: [
+          'We keep your data while your account is active or as long as needed to provide the Service. A WhatsApp session’s credentials are deleted when you log it out or delete it, and you can delete messages from the chats page.',
+          'When your account is deleted we delete its data, keeping only what the law requires us to keep (such as payment records) and for as long as it requires.',
+        ],
+      },
+      {
+        id: 'recipients',
+        title: 'Your responsibility to recipients',
+        body: [
+          'You are responsible for getting consent from the people you message and for following the laws that apply to you and WhatsApp’s terms. A recipient who asks to stop receiving messages is automatically left out of campaigns until they ask to resume.',
+        ],
+      },
+      {
+        id: 'rights',
+        title: 'Your rights and choices',
+        body: [
+          [
+            'Access and correction: view and edit your account details on the profile page, and change your password and two-factor settings.',
+            'WhatsApp sessions: disconnect, log out or delete any number at any time.',
+            'A copy of your data, or its deletion: email us to request a copy of your data or the deletion of your account and its data.',
+            'Promotional messages: ask us to stop any message that isn’t needed to run your account.',
+          ],
+          'Depending on where you live you may have further rights under local law. We’ll answer your request within a reasonable time after verifying your identity.',
+        ],
+      },
+      {
+        id: 'cookies',
+        title: 'Cookies and local storage',
+        body: [
+          'We use one essential cookie (HttpOnly) to keep you signed in, and save preferences such as language, theme and sidebar state in your browser. We use no advertising cookies or third-party trackers. You can clear them in your browser settings, which will sign you out.',
+        ],
+      },
+      {
+        id: 'children',
+        title: 'Children’s privacy',
+        body: ['The Service is meant for businesses and developers, not for anyone under 18, and we don’t knowingly collect their data.'],
+      },
+      {
+        id: 'changes',
+        title: 'Changes to this policy',
+        body: ['We may update this policy from time to time and will change the "Last updated" date at the top. If a change is material, we’ll notify you in the dashboard or by email before it takes effect.'],
+      },
+    ],
+    contactTitle: 'Contact us',
+    contactText: 'For any question about this policy or a request about your data, email us at:',
   },
   notFound: { text: 'Page not found.', home: 'Back to home' },
 };

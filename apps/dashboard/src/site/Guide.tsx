@@ -5,7 +5,7 @@ import { sessionHint } from '../api';
 import { BRAND } from '../brand';
 import { useI18n } from '../i18n';
 import { Link } from '../router';
-import { buttonClass, CopyField, cx, flip, LangSwitch, Logo, ThemeSwitch } from '../ui';
+import { buttonClass, CopyField, cx, flip, LangSwitch, Logo, LogoMark, ThemeSwitch } from '../ui';
 
 const origin = typeof window !== 'undefined' ? window.location.origin : 'https://api.example.com';
 
@@ -355,27 +355,34 @@ export function GuidePage() {
       {/* Simple Documentation Top Bar */}
       <header className="sticky top-0 z-30 border-b border-line bg-bg/95 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
-          <div className="flex items-center gap-3">
-            <Link href="/" aria-label={BRAND.name}>
-              <Logo />
+          <div className="flex min-w-0 items-center gap-3">
+            <Link href="/" aria-label={BRAND.name} className="shrink-0">
+              <span className="sm:hidden">
+                <LogoMark />
+              </span>
+              <span className="hidden sm:inline">
+                <Logo />
+              </span>
             </Link>
-            <span className="h-4 w-px bg-line" />
-            <span className=" flex items-center gap-1.5 text-sm font-medium text-muted">
+            {/* The page's own title says it below; the bar keeps room for the buttons on phones. */}
+            <span className="hidden h-4 w-px bg-line md:block" />
+            <span className="hidden items-center gap-1.5 text-sm font-medium text-muted md:flex">
               <BookOpen className="size-4" />
               <span>{ isAr ? 'التوثيق ودليل الربط' : 'Documentation' }</span>
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
-            <a href="/docs" target="_blank" rel="noreferrer" className={buttonClass('outline', 'sm')}>
-              <span>OpenAPI</span>
+          {/* Phones: icon-only buttons (names kept for screen readers). */}
+          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+            <a href="/docs" target="_blank" rel="noreferrer" aria-label="OpenAPI" className={buttonClass('outline', 'sm')}>
+              <span className="hidden sm:inline">OpenAPI</span>
               <ArrowUpRight className={cx('size-3.5 text-muted', flip)} />
             </a>
             <ThemeSwitch />
             <LangSwitch />
-            <Link href={signedIn ? '/dashboard' : '/login'} className={buttonClass('white', 'sm')}>
+            <Link href={signedIn ? '/dashboard' : '/login'} aria-label={signedIn ? g.backDashboard : t.landing.login} className={buttonClass('white', 'sm')}>
               <ArrowLeft className={cx('size-3.5', flip)} />
-              <span>{signedIn ? g.backDashboard : t.landing.login}</span>
+              <span className="hidden sm:inline">{signedIn ? g.backDashboard : t.landing.login}</span>
             </Link>
           </div>
         </div>

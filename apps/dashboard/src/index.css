@@ -239,6 +239,51 @@ body {
   scrollbar-color: rgb(0 0 0 / 0.18) transparent;
 }
 
+/*
+ * A data table that becomes one card per row when its box is narrow (phones, or a tablet beside
+ * the sidebar), instead of hiding columns and row buttons behind a sideways scroll. Measured on
+ * the box, not the screen. Each cell names its column with `data-label`; a cell without one
+ * (the row's actions) spans the card.
+ */
+.table-stack {
+  container-type: inline-size;
+}
+@container (max-width: 40rem) {
+  .table-stack :is(table, tbody, tr, td) {
+    display: block;
+  }
+  .table-stack thead {
+    display: none;
+  }
+  .table-stack tr {
+    padding-block: 0.75rem;
+  }
+  .table-stack td {
+    padding: 0.25rem 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .table-stack td[data-label] {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .table-stack td[data-label]::before {
+    content: attr(data-label);
+    flex-shrink: 0;
+    font-size: 0.75rem;
+    color: var(--color-muted);
+  }
+  /* The first cell is the row's title: shown alone, across the card. */
+  .table-stack td[data-label]:first-child {
+    display: block;
+  }
+  .table-stack td[data-label]:first-child::before {
+    content: none;
+  }
+}
+
 @keyframes scroll-dot {
   0% {
     transform: translateY(-6px);

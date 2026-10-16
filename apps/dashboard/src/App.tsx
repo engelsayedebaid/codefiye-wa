@@ -29,6 +29,7 @@ function loadChunk<T>(load: () => Promise<T>, attempts = 3): Promise<T> {
 // Each area loads on demand: the landing page doesn't download the dashboard, and the reverse.
 const Landing = lazy(() => loadChunk(() => import('./site/Landing')).then((m) => ({ default: m.Landing })));
 const GuidePage = lazy(() => loadChunk(() => import('./site/Guide')).then((m) => ({ default: m.GuidePage })));
+const PrivacyPage = lazy(() => loadChunk(() => import('./site/Privacy')).then((m) => ({ default: m.PrivacyPage })));
 const LoginPage = lazy(() => loadChunk(() => import('./auth/AuthPages')).then((m) => ({ default: m.LoginPage })));
 const RegisterPage = lazy(() => loadChunk(() => import('./auth/AuthPages')).then((m) => ({ default: m.RegisterPage })));
 const ForgotPasswordPage = lazy(() => loadChunk(() => import('./auth/AuthPages')).then((m) => ({ default: m.ForgotPasswordPage })));
@@ -287,6 +288,7 @@ export function App() {
   let page: ReactNode;
   if (path === '/') page = <Landing />;
   else if (path === '/guide') page = <GuidePage />;
+  else if (path === '/privacy') page = <PrivacyPage />;
   else if (path === '/login')
     page = (
       <GuestOnly>

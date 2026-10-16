@@ -2643,7 +2643,8 @@ export function AdsPage() {
         title={t.ads.title}
         description={tab === 'library' ? t.ads.library.subtitle : t.ads.description}
         actions={
-          <div role="tablist" className="inline-flex rounded-lg border border-line bg-raised/30 p-1">
+          // Phones: the tabs share the full width (a long label wraps) instead of running off the screen.
+          <div role="tablist" className="flex w-full rounded-lg border border-line bg-raised/30 p-1 lg:inline-flex lg:w-auto">
             {tabs.map((id) => {
               const Icon = TAB_ICONS[id];
               return (
@@ -2653,11 +2654,11 @@ export function AdsPage() {
                   aria-selected={tab === id}
                   href={id === 'library' ? '/ads' : id === 'compose' ? (isAdmin ? '/ads?tab=compose' : '/ads') : '/ads?tab=history'}
                   className={cx(
-                    'flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-all duration-200',
+                    'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-1.5 text-center text-sm leading-tight font-medium transition-all duration-200 lg:flex-none',
                     tab === id ? 'bg-bg text-ink shadow-sm' : 'text-muted hover:text-ink',
                   )}
                 >
-                  <Icon className="size-4" />
+                  <Icon className="hidden size-4 shrink-0 sm:block" />
                   {t.ads.tabs[id]}
                 </Link>
               );

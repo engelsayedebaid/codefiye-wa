@@ -226,8 +226,9 @@ function Row({ chat, active, presence, picture, onSelect }: { chat: ChatSummary;
       <Avatar name={title} id={chat.jid} picture={picture} group={chat.isGroup} online={live?.presence === 'available' || typing} />
       <div className="min-w-0 flex-1 pii">
         <div className="flex items-baseline gap-2">
-          <p className={cx('min-w-0 flex-1 truncate text-start text-[15px]', chat.unread > 0 ? 'font-semibold' : 'font-medium')}>
-            {chat.name ? <span dir="auto">{title}</span> : <span className="ltr font-mono text-sm">{title}</span>}
+          {/* The name truncates itself: an English name in the Arabic list loses its end, not its start. */}
+          <p className={cx('flex min-w-0 flex-1 text-start text-[15px]', chat.unread > 0 ? 'font-semibold' : 'font-medium')}>
+            {chat.name ? <span dir="auto" className="truncate">{title}</span> : <span className="ltr truncate font-mono text-sm">{title}</span>}
           </p>
           <span className={cx('shrink-0 text-[11px] tabular-nums transition-[margin] group-hover:me-16 [@media(hover:none)]:me-16', chat.unread > 0 ? 'font-semibold text-brand' : 'text-faint')}>
             {stamp(chat.lastMessageAt)}

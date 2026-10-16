@@ -50,9 +50,9 @@ export const USE_CASE_ICONS = [MessageSquare, Bell, Bot, Users, ShoppingCart, Se
 
 export type PricedPlan = OfferedPlan;
 
-// Terms of service and privacy policy pages still need writing (README §10) — add them here once they exist.
+// The terms of service page still needs writing (README §10) — add it here once it exists.
 export const FOOTER_HREFS = [
   ['/#features', '/#how', '/#pricing'],
   ['/guide', '/docs', '/dashboard'],
-  ['/#faq', '/register', '/login'],
+  ['/#faq', '/register', '/login', '/privacy'],
 ];

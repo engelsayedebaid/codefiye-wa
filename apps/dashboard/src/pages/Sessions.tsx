@@ -130,7 +130,7 @@ export function SessionsPage() {
 
       {visible === null ? (
         !list.isError && (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {[0, 1, 2].map((i) => (
               <div key={i} className="h-52 animate-pulse rounded-2xl border border-line bg-raised/30" />
             ))}
@@ -152,7 +152,7 @@ export function SessionsPage() {
       ) : visible.length === 0 ? (
         <p className="animate-fade-in py-12 text-center text-muted">{s.noMatch}</p>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {visible.map((session, i) => {
             const needsLink = session.status !== 'connected' && session.status !== 'connecting';
             const tone = SESSION_STATUS[session.status].tone;
@@ -162,7 +162,7 @@ export function SessionsPage() {
                   <span className="flex items-center justify-between gap-3">
                     <span className="flex min-w-0 items-center gap-2.5">
                       <span className={cx('size-2 shrink-0 rounded-full', TONES[tone].dot)} />
-                      <span className="truncate text-base font-semibold">{session.name}</span>
+                      <span dir="auto" className="truncate text-base font-semibold">{session.name}</span>
                     </span>
                     <SessionStatusBadge status={session.status} />
                   </span>

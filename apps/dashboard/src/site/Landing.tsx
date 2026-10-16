@@ -97,7 +97,7 @@ function SectionIntro({ eyebrow, top, accent, text, accentFirst }: { eyebrow: Re
   );
 }
 
-function Header() {
+export function SiteHeader() {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   // A UI hint only: the session itself is an HttpOnly cookie the page can't read.
@@ -106,7 +106,7 @@ function Header() {
   return (
     <header className="animate-fade-in sticky top-0 z-40 px-3 pt-3 sm:px-6">
       <div className="mx-auto max-w-7xl rounded-2xl border border-line/80 bg-card/80 px-4 py-3 shadow-[0_12px_40px_-16px_rgba(0,0,0,0.35)] backdrop-blur-xl sm:px-6">
-        <div className="relative flex items-center justify-between gap-6">
+        <div className="relative flex items-center justify-between gap-3 sm:gap-6">
           <Link href="/" aria-label={BRAND.name}>
             <Logo />
           </Link>
@@ -140,8 +140,11 @@ function Header() {
             )}
           </div>
           <div className="flex items-center gap-1 lg:hidden">
-            <ThemeSwitch />
-            <LangSwitch />
+            {/* Below 640px the logo and three buttons don't fit one row: theme and language move into the menu. */}
+            <div className="hidden items-center gap-1 sm:flex">
+              <ThemeSwitch />
+              <LangSwitch />
+            </div>
             <button className="rounded-lg p-2 text-ink-2 hover:bg-raised" onClick={() => setOpen((o) => !o)} aria-label={t.common.menu} aria-expanded={open}>
               {open ? <X className="size-5" /> : <Menu className="size-5" />}
             </button>
@@ -163,6 +166,11 @@ function Header() {
               <Link href="/register" className={buttonClass('brand', 'md', 'rounded-xl bg-gradient-to-r from-brand to-teal text-on-brand')}>
                 {t.landing.getStarted}
               </Link>
+            </div>
+            {/* Theme last: its popup opens toward the start from the button's end edge. */}
+            <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3 sm:hidden">
+              <LangSwitch />
+              <ThemeSwitch />
             </div>
           </div>
         )}
@@ -746,7 +754,7 @@ function FinalCta() {
   );
 }
 
-function Footer() {
+export function SiteFooter() {
   const { t } = useI18n();
   return (
     <footer className="border-t border-line bg-surface/30">
@@ -783,7 +791,7 @@ function Footer() {
 export function Landing() {
   return (
     <div className="overflow-x-clip">
-      <Header />
+      <SiteHeader />
       <main>
         <Hero />
         <Integration />
@@ -795,7 +803,7 @@ export function Landing() {
         <Faq />
         <FinalCta />
       </main>
-      <Footer />
+      <SiteFooter />
     </div>
   );
 }

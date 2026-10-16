@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { getPlan, planHasFeature } from '@wa/shared/plans';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { api, ApiRequestError, errorMessage } from '../api';
 import { PhoneVerifyModal } from '../auth/Otp';
@@ -43,13 +43,25 @@ import { Button, buttonClass, cx, ErrorNote, Field, flip, LangSwitch, Logo, Logo
 import { type Account, AccountContext, isUnlimitedPlan, planState, useAccount } from './account';
 
 const COLLAPSE_KEY = 'wa.sidebar.collapsed';
+/** The user's own choice (toggle button), or null when they never made one. */
 const readCollapsed = () => {
   try {
-    return localStorage.getItem(COLLAPSE_KEY) === '1';
+    const saved = localStorage.getItem(COLLAPSE_KEY);
+    return saved === null ? null : saved === '1';
   } catch {
-    return false;
+    return null;
   }
 };
+
+// Tablets (md up to lg): the full sidebar would take a third of the width, so it starts as the
+// icon rail there unless the user chose otherwise.
+const TABLET = '(min-width: 768px) and (max-width: 1023.98px)';
+const subscribeTablet = (notify: () => void) => {
+  const query = window.matchMedia(TABLET);
+  query.addEventListener('change', notify);
+  return () => query.removeEventListener('change', notify);
+};
+const isTablet = () => window.matchMedia(TABLET).matches;
 
 type NavItem = { href: string; label: string; icon: typeof LayoutGrid; badge?: 'lock' | 'soon'; count?: number };
 
@@ -109,17 +121,18 @@ function Breadcrumbs({ path }: { path: string }) {
       ? [{ label: t.profile.title }]
       : [{ label: labels[path] ?? labels['/dashboard']! }];
   return (
-    <nav aria-label={t.app.breadcrumb}>
-      <ol className="flex items-center gap-1.5 text-sm text-muted">
+    <nav aria-label={t.app.breadcrumb} className="min-w-0">
+      {/* One line on any width: the current page shortens with an ellipsis instead of wrapping. */}
+      <ol className="flex min-w-0 items-center gap-1.5 text-sm text-muted">
         {parts.map((p, i) => (
-          <li key={p.label} className="animate-fade-in flex items-center gap-1.5">
-            {i > 0 && <ChevronRight className={cx('size-3.5', flip)} />}
+          <li key={p.label} className={cx('animate-fade-in flex items-center gap-1.5 whitespace-nowrap', p.href ? 'shrink-0' : 'min-w-0')}>
+            {i > 0 && <ChevronRight className={cx('size-3.5 shrink-0', flip)} />}
             {p.href ? (
               <Link href={p.href} className="transition-colors hover:text-ink">
                 {p.label}
               </Link>
             ) : (
-              <span aria-current="page" className="text-ink">
+              <span aria-current="page" className="truncate text-ink">
                 {p.label}
               </span>
             )}
@@ -577,7 +590,9 @@ export function AppShell({ children, account }: { children: ReactNode; account: 
   const path = usePath();
   const queryClient = useQueryClient();
   const [drawer, setDrawer] = useState(false);
-  const [collapsed, setCollapsed] = useState(readCollapsed);
+  const [savedCollapsed, setSavedCollapsed] = useState(readCollapsed);
+  const tablet = useSyncExternalStore(subscribeTablet, isTablet, () => false);
+  const collapsed = savedCollapsed ?? tablet;
   // The account is cached and kept fresh by React Query; pages call reload() after changing it.
   const context = useMemo(() => ({ account, reload: () => void queryClient.invalidateQueries({ queryKey: qk.me }) }), [account, queryClient]);
   useLiveCache();
@@ -586,14 +601,13 @@ export function AppShell({ children, account }: { children: ReactNode; account: 
 
   const toggle = () => {
     if (window.matchMedia('(min-width: 768px)').matches) {
-      setCollapsed((c) => {
-        try {
-          localStorage.setItem(COLLAPSE_KEY, c ? '0' : '1');
-        } catch {
-          // per-tab only
-        }
-        return !c;
-      });
+      const next = !collapsed;
+      try {
+        localStorage.setItem(COLLAPSE_KEY, next ? '1' : '0');
+      } catch {
+        // per-tab only
+      }
+      setSavedCollapsed(next);
     } else setDrawer(true);
   };
 

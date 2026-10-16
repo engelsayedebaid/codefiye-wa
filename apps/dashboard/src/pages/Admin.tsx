@@ -140,7 +140,7 @@ function Stat({ icon: Icon, label, value, index, accent }: { icon: typeof Users;
       </span>
       <div className="min-w-0">
         <p className="truncate text-[11px] font-medium tracking-wide text-muted uppercase">{label}</p>
-        <p className="text-xl leading-tight font-semibold tabular-nums">{value}</p>
+        <p className="text-xl leading-tight font-semibold whitespace-nowrap tabular-nums">{value}</p>
       </div>
     </div>
   );
@@ -380,9 +380,9 @@ function MethodSettings({ method, enabled, complete, onToggle, children }: { met
   const look = METHOD_LOOK[method];
   return (
     <div className={cx('rounded-xl border transition-colors', enabled ? cx('bg-card', look.ring) : 'border-line bg-card/60')}>
-      <div className="flex items-center gap-3 border-b border-line/60 px-4 py-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line/60 px-4 py-3">
         <MethodGlyph method={method} />
-        <p className="min-w-0 flex-1 text-sm font-semibold">{t.subscription.payment.methods[method]}</p>
+        <p className="min-w-24 flex-1 text-sm font-semibold">{t.subscription.payment.methods[method]}</p>
         <label className="flex shrink-0 cursor-pointer items-center gap-2 text-xs font-medium text-muted">
           {t.admin.payments.enabled}
           <span className={cx('relative inline-flex h-5 w-9 items-center rounded-full transition-colors', enabled ? 'bg-brand' : 'bg-line-strong')}>
@@ -455,7 +455,8 @@ function PaymentMethodsSettings() {
         <TextArea label={a.instructions} placeholder={a.instructionsPlaceholder} value={current.instructions} onChange={(e) => patch('instructions', e.target.value)} maxLength={500} rows={3} />
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {/* As many columns as fit the content area (it narrows with the sidebar open), up to one per method. */}
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,16rem),1fr))] gap-4">
         <MethodSettings method="vodafone_cash" enabled={current.vodafone_cash.enabled} complete={enabled.includes('vodafone_cash')} onToggle={(v) => patchMethod('vodafone_cash', { enabled: v })}>
           <Field label={a.vodafone.number} value={current.vodafone_cash.number} onChange={(e) => patchMethod('vodafone_cash', { number: e.target.value })} dir="ltr" inputMode="tel" placeholder="010xxxxxxxx" />
           <Field label={a.vodafone.name} value={current.vodafone_cash.name} onChange={(e) => patchMethod('vodafone_cash', { name: e.target.value })} />
@@ -701,7 +702,7 @@ function UsersTable({ selfId }: { selfId: string | null }) {
       ) : data.items.length === 0 ? (
         <EmptyState icon={Users} title={u.empty} />
       ) : (
-        <div className={cx('overflow-x-auto transition-opacity', users.isPlaceholderData && 'opacity-60')}>
+        <div className={cx('table-stack overflow-x-auto transition-opacity', users.isPlaceholderData && 'opacity-60')}>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-line">
@@ -724,8 +725,8 @@ function UsersTable({ selfId }: { selfId: string | null }) {
                 const workspace = row.workspace;
                 return (
                   <tr key={row.id} className="animate-fade-up transition-colors hover:bg-raised/30" style={delay(Math.min(i, 12) * 35)}>
-                    <td className={td}>
-                      <p className="flex items-center gap-1.5 font-medium">
+                    <td data-label={u.cols.user} className={td}>
+                      <p className="flex flex-wrap items-center gap-1.5 font-medium">
                         {row.name ?? row.email}
                         {row.role === 'admin' && <Badge tone="good">{t.app.admin}</Badge>}
                         {isSelf && <Badge tone="neutral">{u.you}</Badge>}
@@ -738,7 +739,7 @@ function UsersTable({ selfId }: { selfId: string | null }) {
                         {row.phone && row.phoneVerified ? <span className="ltr text-muted">{row.phone}</span> : <span className="text-warning">{u.phoneUnverified}</span>}
                       </p>
                     </td>
-                    <td className={td}>
+                    <td data-label={u.cols.status} className={td}>
                       {row.status === 'suspended' ? (
                         <div className="space-y-1">
                           <Badge tone="critical">{u.statusSuspended}</Badge>
@@ -749,21 +750,21 @@ function UsersTable({ selfId }: { selfId: string | null }) {
                         <Badge tone="good">{u.statusActive}</Badge>
                       )}
                     </td>
-                    <td className={td}>
+                    <td data-label={u.cols.plan} className={td}>
                       {workspace ? (
                         <Badge tone={workspace.planId === 'trial' ? 'neutral' : workspace.planId === 'unlimited' ? 'good' : 'info'}>{planName(getPlan(workspace.planId))}</Badge>
                       ) : (
                         <span className="text-muted">{u.noWorkspace}</span>
                       )}
                     </td>
-                    <td className={td}>{ends(row)}</td>
-                    <td className={`${td} tabular-nums`}>
+                    <td data-label={u.cols.expires} className={td}>{ends(row)}</td>
+                    <td data-label={u.cols.sessions} className={`${td} tabular-nums`}>
                       {row.connected}/{row.sessions}
                     </td>
-                    <td className={`${td} tabular-nums`}>{fmt.number.format(row.messages30d)}</td>
-                    <td className={td}>{fmt.date(row.createdAt)}</td>
+                    <td data-label={u.cols.messages} className={`${td} tabular-nums`}>{fmt.number.format(row.messages30d)}</td>
+                    <td data-label={u.cols.joined} className={td}>{fmt.date(row.createdAt)}</td>
                     <td className={`${td} text-end`}>
-                      <div className="flex justify-end gap-1">
+                      <div className="flex flex-wrap justify-end gap-1">
                         {workspace && (
                           <Button variant="outline" size="sm" onClick={() => setDialog({ kind: 'plan', user: row })}>
                             {u.changePlan}
@@ -966,8 +967,10 @@ export function AdminPage() {
       <PageHeader title={a.title} description={a.description} />
       {stats.isError && <LoadError error={stats.error} onRetry={() => void stats.refetch()} retrying={stats.isFetching} />}
 
-      {/* stats strip */}
-      <div className="grid grid-cols-2 divide-line overflow-hidden rounded-xl border border-line bg-card shadow-sm sm:grid-cols-4 lg:grid-cols-7 [&>*:not(:last-child)]:border-e [&>*:not(:last-child)]:border-line/60 max-lg:[&>*:nth-child(-n+4)]:border-b max-sm:[&>*:nth-child(-n+6)]:border-b">
+      {/* stats strip: as many columns as fit the content area (it narrows with the sidebar open). Every
+          tile draws its end and bottom edge; the grid reaches 1px past the box so the outer ones are clipped. */}
+      <div className="overflow-hidden rounded-xl border border-line bg-card shadow-sm">
+        <div className="-me-px -mb-px grid grid-cols-[repeat(auto-fit,minmax(10.5rem,1fr))] [&>*]:border-e [&>*]:border-b [&>*]:border-line/60">
         <Stat index={0} icon={Users} label={a.stats.users} value={n(s?.users)} />
         <Stat index={1} icon={Activity} label={a.stats.workspaces} value={n(s?.workspaces)} />
         <Stat index={2} icon={CircleDollarSign} label={a.stats.activePaid} value={n(s?.activePaid)} accent="brand" />
@@ -975,6 +978,7 @@ export function AdminPage() {
         <Stat index={4} icon={Hourglass} label={a.stats.pending} value={n(s?.pendingRequests)} accent={pendingCount ? 'info' : undefined} />
         <Stat index={5} icon={MessageSquare} label={a.stats.messagesToday} value={n(s?.messagesToday)} />
         <Stat index={6} icon={Ban} label={a.stats.suspended} value={n(s?.suspended)} accent={s?.suspended ? 'danger' : undefined} />
+        </div>
       </div>
 
       {/* tabs */}

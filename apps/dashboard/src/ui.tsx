@@ -111,7 +111,7 @@ export function Logo({ className }: { className?: string }) {
   return (
     <span className={cx('group/logo inline-flex items-center gap-2.5', className)}>
       <LogoMark className="transition-transform duration-500 group-hover/logo:-rotate-6 group-hover/logo:scale-105" />
-      <span dir="ltr" className="text-lg font-bold tracking-tight">
+      <span dir="ltr" className="text-lg font-bold tracking-tight whitespace-nowrap">
         <span className="text-brand">{first}</span>
         {rest.length > 0 && <span> {rest.join(' ')}</span>}
       </span>
@@ -260,7 +260,7 @@ export function Card({
             <h2 className="text-lg leading-none font-semibold">{title}</h2>
             {description && <p className="text-sm text-muted">{description}</p>}
           </div>
-          {actions && <div className="flex items-center gap-2">{actions}</div>}
+          {actions && <div className="flex max-w-full flex-wrap items-center gap-2">{actions}</div>}
         </header>
       )}
       <div className={cx('px-6', bodyClassName)}>{children}</div>
@@ -275,7 +275,7 @@ export function PageHeader({ title, description, actions }: { title: string; des
         <h1 className="text-3xl font-bold tracking-tight">{title}</h1>
         {description && <p className="text-muted">{description}</p>}
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      {actions && <div className="flex max-w-full flex-wrap items-center gap-2">{actions}</div>}
     </div>
   );
 }

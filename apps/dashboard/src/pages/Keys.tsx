@@ -62,7 +62,7 @@ export function KeysPage() {
         ) : list.length === 0 ? (
           <EmptyState icon={KeyRound} title={k.empty} />
         ) : (
-          <div className="overflow-x-auto">
+          <div className="table-stack overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-line">
@@ -77,15 +77,15 @@ export function KeysPage() {
               <tbody className="[&_tr]:border-b [&_tr]:border-line [&_tr:last-child]:border-0">
                 {list.map((key, i) => (
                   <tr key={key.id} className="animate-fade-up transition-colors hover:bg-raised/30" style={delay(120 + i * 40)}>
-                    <td className={`${td} font-medium`}>{key.name}</td>
-                    <td className={td}>
+                    <td data-label={k.cols.name} className={`${td} font-medium`}>{key.name}</td>
+                    <td data-label={k.cols.key} className={td}>
                       <code className="ltr font-mono text-muted">{key.prefix}…</code>
                     </td>
-                    <td className={td}>
+                    <td data-label={k.cols.type} className={td}>
                       {key.kind === 'pat' ? <Badge tone="info">{k.workspace}</Badge> : <Badge tone="neutral">{k.session(sessionNames.get(key.sessionId!) ?? '—')}</Badge>}
                     </td>
-                    <td className={td}>{fmt.timeAgo(key.lastUsedAt)}</td>
-                    <td className={td}>{fmt.timeAgo(key.createdAt)}</td>
+                    <td data-label={k.cols.lastUsed} className={td}>{fmt.timeAgo(key.lastUsedAt)}</td>
+                    <td data-label={k.cols.created} className={td}>{fmt.timeAgo(key.createdAt)}</td>
                     <td className={`${td} text-end`}>
                       <Button
                         variant="ghost"
