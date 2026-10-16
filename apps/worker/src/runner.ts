@@ -140,6 +140,8 @@ const REJECTIONS: Record<string, string> = {
     'WhatsApp refused: this number may not start new chats right now (a new or restricted number, or the contact has never messaged it). Ask the contact to message this number first — resending makes the restriction worse.',
   '479': 'WhatsApp rejected the message (stale device session). Send it again.',
 };
+/** Ack error 479 (smax-invalid): WhatsApp found something in the stanza invalid. */
+const SMAX_INVALID = '479';
 const rejection = (code?: string) => (code ? (REJECTIONS[code] ?? `Rejected by WhatsApp (error ${code})`) : 'Rejected by WhatsApp');
 
 /** How far a receipt goes; a rejection outranks everything. */
@@ -636,8 +638,15 @@ export class SessionRunner {
   }
 
   /** True when a message row changed. */
-  private async applyReceipt({ waMessageId, status, error }: ProviderEvents['receipt']): Promise<boolean> {
+  private async applyReceipt({ waMessageId, chatJid, status, error }: ProviderEvents['receipt']): Promise<boolean> {
     const { sql } = this.ctx;
+    if (status === 'failed' && error === SMAX_INVALID && isGroupJid(chatJid)) {
+      // A large group's send can draw a 479 while WhatsApp still delivers it to the members (seen:
+      // the group got the message, the ack said rejected). Group receipts come per member and never
+      // move the message on, so a failure here would stick on a message that arrived: keep it sent.
+      this.log.warn({ waMessageId, chatJid, error }, 'group message drew error 479; kept as sent (it is still delivered)');
+      return true;
+    }
     if (status === 'failed') {
       const reason = rejection(error);
       const [row] = await sql<{ id: number }[]>`

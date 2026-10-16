@@ -105,6 +105,18 @@ describe.skipIf(!url)('db (integration)', () => {
       const [row] = await sql<{ status: string }[]>`select status from messages where id = ${id}`;
       expect(row!.status).toBe('read');
     });
+
+    it('lets a delivery receipt clear a failure recorded before it', async () => {
+      const id = await enqueue('d');
+      await claimNextOutbound(sql, sessionId);
+      await markSent(sql, id, 'WAID-2');
+      await sql`update messages set status = 'failed', error = 'Rejected by WhatsApp (error 479)' where id = ${id}`;
+      // "sent" proves nothing new; delivery does.
+      expect(await advanceStatus(sql, sessionId, 'WAID-2', 'sent')).toBeNull();
+      expect(await advanceStatus(sql, sessionId, 'WAID-2', 'delivered')).toMatchObject({ id });
+      const [row] = await sql<{ status: string; error: string | null }[]>`select status, error from messages where id = ${id}`;
+      expect(row).toEqual({ status: 'delivered', error: null });
+    });
   });
 
   describe('campaigns', () => {

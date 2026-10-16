@@ -168,10 +168,14 @@ export async function advanceStatus(
   waMessageId: string,
   status: 'sent' | 'delivered' | 'read',
 ): Promise<{ id: number; workspace_id: string } | null> {
+  // A delivery or read receipt proves the message arrived, so it also clears a failure recorded before
+  // it (a send that timed out, or an error ack, after which WhatsApp delivered it anyway).
   const [row] = await sql<{ id: number; workspace_id: string }[]>`
-    update messages set status = ${status}, updated_at = now()
+    update messages set status = ${status}, updated_at = now(),
+      error = case when status = 'failed' then null else error end
     where session_id = ${sessionId} and wa_message_id = ${waMessageId} and direction = 'out'
-      and array_position(${PROGRESS}::text[], status) < array_position(${PROGRESS}::text[], ${status})
+      and (array_position(${PROGRESS}::text[], status) < array_position(${PROGRESS}::text[], ${status})
+           or (status = 'failed' and ${status} in ('delivered', 'read')))
     returning id, workspace_id`;
   return row ?? null;
 }
