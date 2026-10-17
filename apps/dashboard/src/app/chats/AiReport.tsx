@@ -40,7 +40,7 @@ const MOOD_TONE: Record<Mood, string> = { positive: 'bg-good', neutral: 'bg-ink-
 const PRIORITY_TONE = { high: 'bg-critical/12 text-critical', medium: 'bg-warning/12 text-warning', low: 'bg-ink/8 text-ink-2' };
 
 /** While true, the AI icon opens a "coming soon" note instead of the report. */
-export const AI_REPORT_SOON = true;
+export const AI_REPORT_SOON = false;
 
 export function AiReportSoon({ onClose }: { onClose: () => void }) {
   const { t } = useI18n();
