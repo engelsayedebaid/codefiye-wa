@@ -1091,6 +1091,113 @@ describe.skipIf(!url)('api (integration)', () => {
     });
   });
 
+  describe('user activity', () => {
+    const stamp = Date.now() + 5;
+    let admin: { id: string; pat: string };
+    let person: Awaited<ReturnType<typeof register>>;
+    const eventsOf = async (userId: string) =>
+      sql<{ type: string; details: Record<string, unknown> }[]>`select type, details from user_events where user_id = ${userId} order by id`;
+
+    beforeAll(async () => {
+      person = await register(`active-${stamp}@test.local`);
+      const [owner] = await db.insert(users).values({ email: `activity-admin-${stamp}@test.local`, role: 'admin' }).returning();
+      admin = await createWorkspace('activity-admin-ws', 'unlimited', null);
+      await db.update(workspaces).set({ ownerId: owner!.id }).where(eq(workspaces.id, admin.id));
+    });
+
+    afterAll(async () => {
+      await sql`delete from user_events where details->>'identifier' = ${`ghost-${stamp}@test.local`}`;
+      await sql`delete from workspaces where owner_id in (select id from users where email like ${`%-${stamp}@test.local`})`;
+      await sql`delete from users where email like ${`%-${stamp}@test.local`}`;
+    });
+
+    it('logs sign-up, logins, failed logins and logouts', async () => {
+      const ip = nextIp();
+      expect((await call('POST', '/api/auth/login', undefined, { email: person.user.email, password: 'wrong password!' }, {}, ip)).statusCode).toBe(422);
+      expect((await call('POST', '/api/auth/login', undefined, { email: `ghost-${stamp}@test.local`, password: 'whatever!' }, {}, ip)).statusCode).toBe(422);
+      const { res, cookie } = await login(person.user.email, person.password, ip);
+      expect(res.json().data.step).toBe('done');
+      expect((await call('POST', '/api/auth/logout', cookie)).statusCode).toBe(200);
+
+      const types = (await eventsOf(person.user.id)).map((e) => e.type);
+      expect(types[0]).toBe('signup');
+      expect(types.slice(-3)).toEqual(['login_failed', 'login', 'logout']);
+      const [ghost] = await sql<{ user_id: string | null; details: Record<string, unknown> }[]>`
+        select user_id, details from user_events where details->>'identifier' = ${`ghost-${stamp}@test.local`}`;
+      expect(ghost).toMatchObject({ user_id: null, details: { reason: 'unknown_account' } });
+      const [login1] = await sql<{ ip: string }[]>`select ip from user_events where user_id = ${person.user.id} and type = 'login'`;
+      expect(login1!.ip).toBe(ip);
+    });
+
+    it('turns pings into visits: came in, left, time spent', async () => {
+      const { cookie } = await login(person.user.email, person.password);
+      expect((await call('POST', '/api/activity', cookie, { path: '/dashboard', view: true })).json().data).toEqual({ recorded: true });
+      // A minute and a half later (a minute is the most one ping counts), then another page.
+      await sql`update user_visits set last_seen_at = last_seen_at - interval '90 seconds', started_at = started_at - interval '90 seconds' where user_id = ${person.user.id}`;
+      await call('POST', '/api/activity', cookie, { path: '/chats', view: true });
+      await call('POST', '/api/activity', cookie, { path: '/chats' });
+      const visits = await sql<{ active_seconds: number; page_views: number; entry_path: string; last_path: string }[]>`
+        select active_seconds, page_views, entry_path, last_path from user_visits where user_id = ${person.user.id}`;
+      expect(visits).toHaveLength(1);
+      expect(visits[0]).toMatchObject({ page_views: 2, entry_path: '/dashboard', last_path: '/chats' });
+      expect(visits[0]!.active_seconds).toBeGreaterThanOrEqual(60);
+      expect(visits[0]!.active_seconds).toBeLessThanOrEqual(62);
+
+      // Ten minutes of silence: the next ping is a new visit.
+      await sql`update user_visits set last_seen_at = last_seen_at - interval '10 minutes', started_at = started_at - interval '10 minutes' where user_id = ${person.user.id}`;
+      await call('POST', '/api/activity', cookie, { path: '/templates', view: true });
+      expect((await sql`select id from user_visits where user_id = ${person.user.id}`).length).toBe(2);
+
+      // Query strings (chat links carry numbers) and API tokens are refused or ignored.
+      expect((await call('POST', '/api/activity', cookie, { path: '/chats?chat=201000000000', view: true })).statusCode).toBe(422);
+      const pat = (await call('POST', '/api/api-keys', cookie, { name: 'probe' })).json().data.key;
+      expect((await call('POST', '/api/activity', pat, { path: '/dashboard' })).json().data).toEqual({ recorded: false });
+
+      // Dashboard actions land in the log too (after the reply, so give it a moment).
+      const keyAction = async () => (await eventsOf(person.user.id)).find((e) => e.type === 'action' && e.details.route === '/api/api-keys');
+      for (let i = 0; i < 20 && !(await keyAction()); i++) await new Promise((r) => setTimeout(r, 50));
+      expect((await keyAction())?.details).toEqual({ method: 'POST', route: '/api/api-keys', status: 201 });
+      // The ping itself is not an action.
+      expect((await eventsOf(person.user.id)).some((e) => e.details.route === '/api/activity')).toBe(false);
+    });
+
+    it('shows admins who is online, for how long, and what they did', async () => {
+      expect((await call('GET', '/api/admin/activity/summary', person.cookie)).json().code).toBe('admin_only');
+
+      const summary = (await call('GET', '/api/admin/activity/summary?days=7&tz=Africa/Cairo', admin.pat)).json().data;
+      expect(summary.daily).toHaveLength(7);
+      expect(summary.online.some((u: { email: string }) => u.email === person.user.email)).toBe(true);
+      expect(summary.onlineNow).toBeGreaterThanOrEqual(1);
+      expect(summary.topPages.some((p: { path: string }) => p.path === '/templates')).toBe(true);
+      expect((await call('GET', '/api/admin/activity/summary?tz=Mars/Olympus', admin.pat)).statusCode).toBe(422);
+
+      const users = (await call('GET', `/api/admin/activity/users?q=${encodeURIComponent(person.user.email)}&filter=online`, admin.pat)).json().data;
+      expect(users.items).toHaveLength(1);
+      expect(users.items[0]).toMatchObject({ email: person.user.email, online: true, visits: 2 });
+      expect(users.items[0].activeSeconds).toBeGreaterThanOrEqual(60);
+      expect(users.items[0].lastLoginAt).not.toBeNull();
+      expect((await call('GET', `/api/admin/activity/users?q=${encodeURIComponent(person.user.email)}&filter=inactive`, admin.pat)).json().data.total).toBe(0);
+
+      const detail = (await call('GET', `/api/admin/activity/users/${person.user.id}?days=7`, admin.pat)).json().data;
+      expect(detail).toMatchObject({ online: true, user: { email: person.user.email, twoFactor: true }, stats: { visits: 2, logins: 2, failedLogins: 1 } });
+      expect(detail.hours).toHaveLength(24);
+      expect(detail.logins.length).toBeGreaterThanOrEqual(2);
+      expect(detail.devices.length).toBeGreaterThanOrEqual(1);
+
+      const visits = (await call('GET', `/api/admin/activity/visits?userId=${person.user.id}`, admin.pat)).json().data;
+      expect(visits.total).toBe(2);
+      expect(visits.items[0]).toMatchObject({ entryPath: '/templates', online: true, user: { email: person.user.email } });
+
+      const events = (await call('GET', `/api/admin/activity/events?userId=${person.user.id}`, admin.pat)).json().data;
+      expect(events.items.some((e: { type: string }) => e.type === 'page')).toBe(false);
+      const failed = (await call('GET', `/api/admin/activity/events?type=login_failed&q=${encodeURIComponent(`ghost-${stamp}`)}`, admin.pat)).json().data;
+      expect(failed.items).toHaveLength(1);
+      expect(failed.items[0]).toMatchObject({ user: null, details: { identifier: `ghost-${stamp}@test.local` } });
+      const pages = (await call('GET', `/api/admin/activity/events?userId=${person.user.id}&type=page`, admin.pat)).json().data;
+      expect(pages.items.map((e: { details: { path: string } }) => e.details.path)).toEqual(['/templates', '/chats', '/dashboard']);
+    });
+  });
+
   describe('broadcasts (ads)', () => {
     const stamp = Date.now() + 3;
     let admin: { id: string; pat: string };

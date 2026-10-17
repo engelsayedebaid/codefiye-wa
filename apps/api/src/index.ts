@@ -2,6 +2,7 @@ import { createDb, createListener, databaseUrls, runMigrations } from '@wa/db';
 import pino from 'pino';
 import { buildApp } from './app';
 import { loadConfig } from './config';
+import { pruneActivity } from './lib/activity';
 import { createAuth } from './lib/auth';
 import { EventBus } from './lib/events';
 import { scrubUrl } from './lib/log';
@@ -82,6 +83,7 @@ await app.listen({ host: config.API_HOST, port: config.port });
 const sweep = setInterval(() => {
   sql`delete from throttles where reset_at < now()`.catch(() => {});
   sql`delete from phone_verifications where expires_at < now() - interval '1 day'`.catch(() => {});
+  pruneActivity(sql).catch(() => {});
 }, 15 * 60_000);
 sweep.unref();
 

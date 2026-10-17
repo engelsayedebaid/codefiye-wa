@@ -50,6 +50,15 @@ export const qk = {
     broadcast: (id: string) => ['admin', 'broadcasts', id] as const,
     /** Each number's campaign load; under `broadcasts` so a launch refreshes it. */
     broadcastNumbers: ['admin', 'broadcasts', 'numbers'] as const,
+    /** User activity (who is online, visits, the event log); refreshed while the admin watches. */
+    activity: {
+      all: ['admin', 'activity'] as const,
+      summary: (days: number) => ['admin', 'activity', 'summary', days] as const,
+      users: (params: { q: string; sort: string; filter: string; days: number; page: number }) => ['admin', 'activity', 'users', params] as const,
+      user: (id: string, days: number) => ['admin', 'activity', 'user', id, days] as const,
+      events: (params: { userId?: string; type: string; q: string; page: number }) => ['admin', 'activity', 'events', params] as const,
+      visits: (params: { userId?: string; page: number }) => ['admin', 'activity', 'visits', params] as const,
+    },
   },
 };
 

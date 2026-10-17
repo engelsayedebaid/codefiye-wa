@@ -23,6 +23,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import QRCode from 'qrcode';
 import { z } from 'zod';
 import type { Deps } from '../deps';
+import { recordEvent } from '../lib/activity';
 import { clearSessionCookie, CONSOLE_TTL_SEC, requirePat, SESSION_COOKIE, setSessionCookie, suspendedError } from '../lib/auth';
 import { ApiError, badRequest, conflict, forbidden, notFound, tooMany, unprocessable } from '../lib/errors';
 import { getFeatures } from '../lib/features';
@@ -388,7 +389,7 @@ export function publicAccountRoutes(deps: Deps): FastifyPluginAsyncZod {
   });
 
   /** Moves a login as far as it can go: the next factor it needs, or — when everything passed — the session cookie. */
-  async function advance(attempt: AttemptRow, req: FastifyRequest, reply: FastifyReply) {
+  async function advance(attempt: AttemptRow, req: FastifyRequest, reply: FastifyReply, via: 'password' | 'recovery' = 'password') {
     const user = await loadUser(attempt.user_id);
     if (phonePending(attempt)) return stepResponse(attempt, 'phone');
     if (user.totp_enabled_at && !attempt.totp_verified_at) return stepResponse(attempt, 'totp');
@@ -398,8 +399,17 @@ export function publicAccountRoutes(deps: Deps): FastifyPluginAsyncZod {
     const workspace = await primaryWorkspace(sql, user.id);
     if (!workspace) throw unprocessable('This account has no workspace', undefined, { code: 'no_workspace' });
     setSessionCookie(reply, await issueConsoleToken(sql, workspace.id, attempt.remember), { remember: attempt.remember, secure: req.secureCookies });
+    await recordEvent(sql, req, {
+      userId: user.id,
+      type: 'login',
+      details: { method: via, remember: attempt.remember, phoneCode: attempt.phone_verification_id !== null, twoFactor: user.totp_enabled_at !== null },
+    });
     return stepResponse(attempt, 'done', { session: { user: toUserDto(user), workspace: workspaceRowDto(workspace) } });
   }
+
+  /** A login step that failed, for the admin's activity log. */
+  const loginFailed = (req: FastifyRequest, userId: string | null, reason: string, extra: Record<string, unknown> = {}) =>
+    recordEvent(sql, req, { userId, type: 'login_failed', details: { reason, ...extra } });
 
   /**
    * One guess at the authenticator/recovery step, spent up front (parallel guesses can't exceed the
@@ -429,10 +439,13 @@ export function publicAccountRoutes(deps: Deps): FastifyPluginAsyncZod {
         where workspace_id in (select id from workspaces where owner_id = ${user.id}) and 'console' = any(scopes) and revoked_at is null
         returning id`;
     });
-    if (!ended) throw codeWrong(left);
+    if (!ended) {
+      await loginFailed(req, user.id, 'recovery_code');
+      throw codeWrong(left);
+    }
     if (ended.length) await auth.revoke({ keyIds: ended.map((k) => k.id) });
     req.log.info({ userId: user.id, sessionsEnded: ended.length }, 'login with a recovery code');
-    return advance({ ...attempt, totp_verified_at: new Date() }, req, reply);
+    return advance({ ...attempt, totp_verified_at: new Date() }, req, reply, 'recovery');
   }
 
   return async (app) => {
@@ -512,6 +525,7 @@ export function publicAccountRoutes(deps: Deps): FastifyPluginAsyncZod {
             throw takenError(err) ?? err;
           });
         setSessionCookie(reply, token, { remember: req.body.remember, secure: req.secureCookies });
+        await recordEvent(sql, req, { userId: user.id, type: 'signup' });
         reply.code(201);
         return ok({ user: toUserDto(user), workspace: workspaceRowDto(workspace) });
       },
@@ -566,16 +580,27 @@ export function publicAccountRoutes(deps: Deps): FastifyPluginAsyncZod {
           { key: submittedKey, limit: 10, windowSec: 900 },
           ...(user ? [{ key: `login:user:${user.id}`, limit: 10, windowSec: 900 }] : []),
         ];
-        await throttle.check(rules, 'Too many failed login attempts. Try again later.');
+        // An unknown account is logged by what was typed, so the admin can spot someone guessing.
+        const tried = user ? {} : { identifier: identity.kind === 'email' ? identity.email : identity.phone };
+        try {
+          await throttle.check(rules, 'Too many failed login attempts. Try again later.');
+        } catch (err) {
+          await loginFailed(req, user?.id ?? null, 'locked', tried);
+          throw err;
+        }
         // verifyPassword spends the same time when there's no user, so timing doesn't reveal accounts.
         const valid = await verifyPassword(req.body.password, user?.password_hash ?? null);
         if (!user || !valid) {
+          await loginFailed(req, user?.id ?? null, user ? 'password' : 'unknown_account', tried);
           await throttle.consume(rules, 'Too many failed login attempts. Try again later.');
           throw INVALID_LOGIN();
         }
         await throttle.reset(user ? [submittedKey, `login:user:${user.id}`] : [submittedKey]);
         // Only someone who knows the password learns that the account is suspended.
-        if (user.status === 'suspended') throw suspendedError(user.suspended_reason);
+        if (user.status === 'suspended') {
+          await loginFailed(req, user.id, 'suspended');
+          throw suspendedError(user.suspended_reason);
+        }
         if (needsRehash(user.password_hash)) await sql`update users set password_hash = ${await hashPassword(req.body.password)} where id = ${user.id}`;
         const workspace = await primaryWorkspace(sql, user.id);
         if (!workspace) throw unprocessable('This account has no workspace', undefined, { code: 'no_workspace' });
@@ -617,9 +642,14 @@ export function publicAccountRoutes(deps: Deps): FastifyPluginAsyncZod {
       async (req, reply) => {
         const attempt = await loadAttempt(req.body.loginId, req.body.loginToken);
         if (phonePending(attempt)) {
-          await verifications.confirm(attempt.phone_verification_id!, req.body.code, req.ip, { purpose: 'login', userId: attempt.user_id }, async (_row, tx) => {
-            await tx`update login_attempts set phone_verified_at = now() where id = ${attempt.id}`;
-          });
+          await verifications
+            .confirm(attempt.phone_verification_id!, req.body.code, req.ip, { purpose: 'login', userId: attempt.user_id }, async (_row, tx) => {
+              await tx`update login_attempts set phone_verified_at = now() where id = ${attempt.id}`;
+            })
+            .catch(async (err: unknown) => {
+              if (err instanceof ApiError && err.code === 'code_invalid') await loginFailed(req, attempt.user_id, 'phone_code');
+              throw err;
+            });
           attempt.phone_verified_at = new Date();
         }
         return ok(await advance(attempt, req, reply));
@@ -657,7 +687,10 @@ export function publicAccountRoutes(deps: Deps): FastifyPluginAsyncZod {
         const user = await loadUser(attempt.user_id);
         if (user.totp_enabled_at && !attempt.totp_verified_at) {
           const left = await spendFactorAttempt(attempt.id);
-          if (!(await acceptTotp(sql, cipher, user, req.body.code))) throw codeWrong(left);
+          if (!(await acceptTotp(sql, cipher, user, req.body.code))) {
+            await loginFailed(req, user.id, 'totp');
+            throw codeWrong(left);
+          }
           await sql`update login_attempts set totp_verified_at = now() where id = ${attempt.id}`;
           attempt.totp_verified_at = new Date();
         }
@@ -784,6 +817,7 @@ export function publicAccountRoutes(deps: Deps): FastifyPluginAsyncZod {
           return { userId: row.user_id, keys };
         });
         if (ended.keys.length) await auth.revoke({ keyIds: ended.keys.map((k) => k.id) });
+        await recordEvent(sql, req, { userId: ended.userId, type: 'password_reset', details: { sessionsEnded: ended.keys.length } });
         const cleared = [`login:user:${ended.userId}`];
         if (pending?.email) cleared.push(`login:email:${pending.email}`);
         if (pending?.phone) cleared.push(`login:phone:${pending.phone}`);
@@ -808,11 +842,14 @@ export function publicAccountRoutes(deps: Deps): FastifyPluginAsyncZod {
         const token = header?.startsWith('Bearer ') ? header.slice(7).trim() : (req.cookies[SESSION_COOKIE] ?? '');
         if (token) {
           // Only dashboard sessions end here; API keys are revoked from the keys page.
-          const revoked = await sql<{ id: string }[]>`
+          const revoked = await sql<{ id: string; user_id: string | null; created_at: Date }[]>`
             update api_keys set revoked_at = now()
             where key_hash = ${hashKey(token)} and 'console' = any(scopes) and revoked_at is null
-            returning id`;
+            returning id, created_at, (select owner_id from workspaces w where w.id = api_keys.workspace_id) as user_id`;
           if (revoked.length) await auth.revoke({ keyIds: revoked.map((r) => r.id) });
+          for (const key of revoked) {
+            if (key.user_id) await recordEvent(sql, req, { userId: key.user_id, type: 'logout', details: { loggedInAt: key.created_at.toISOString() } });
+          }
         }
         clearSessionCookie(reply, req.secureCookies);
         return ok({ loggedOut: true as const });
@@ -936,6 +973,8 @@ export function accountRoutes(deps: Deps): FastifyPluginAsyncZod {
         if (req.auth.console) {
           await sql`update api_keys set revoked_at = now() where id = ${req.auth.keyId}`;
           await auth.revoke({ keyIds: [req.auth.keyId] });
+        } else if (req.auth.userId) {
+          await recordEvent(sql, req, { userId: req.auth.userId, type: 'login', details: { method: 'token', remember: req.body.remember } });
         }
         setSessionCookie(reply, token, { remember: req.body.remember, secure: req.secureCookies });
         return ok(await loadMe(req.auth.workspaceId));

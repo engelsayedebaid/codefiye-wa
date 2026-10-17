@@ -42,6 +42,7 @@ import { notificationsOn, NoteStack, useInboxNotes } from './chats/Notifier';
 import { OPEN_CHAT_EVENT, type OpenChatDetail, ReadNoteStack, useReadNotes } from './chats/ReadNotes';
 import { Button, buttonClass, cx, ErrorNote, Field, flip, LangSwitch, Logo, LogoMark, Modal, SuccessNote, ThemeSwitch, usePlanName, VerifiedMark } from '../ui';
 import { type Account, AccountContext, isUnlimitedPlan, planState, useAccount } from './account';
+import { useActivityPing } from './activity';
 
 const COLLAPSE_KEY = 'wa.sidebar.collapsed';
 /** The user's own choice (toggle button), or null when they never made one. */
@@ -620,6 +621,7 @@ export function AppShell({ children, account }: { children: ReactNode; account: 
   // The account is cached and kept fresh by React Query; pages call reload() after changing it.
   const context = useMemo(() => ({ account, reload: () => void queryClient.invalidateQueries({ queryKey: qk.me }) }), [account, queryClient]);
   useLiveCache();
+  useActivityPing(path);
   // The other pages' code arrives in idle time, so the first click on each is instant.
   useEffect(() => prefetchAllPages(location.pathname), []);
 

@@ -7,17 +7,16 @@ import {
   AlertTriangle,
   BadgePercent,
   Ban,
-  CircleDollarSign,
   CreditCard,
   History,
-  Hourglass,
   ImageOff,
   Inbox,
   LayoutGrid,
-  MessageSquare,
   MessageSquareText,
   MonitorPlay,
+  ScrollText,
   Search,
+  ShieldCheck,
   Smartphone,
   Users,
   ZoomIn,
@@ -29,10 +28,12 @@ import { usePlanPricing } from '../app/plan-pricing';
 import { METHOD_LOOK, MethodChip, MethodGlyph, PaymentDetailsRows, usePaymentSettings } from '../app/payments/methods';
 import { useI18n } from '../i18n';
 import { qk } from '../queries';
+import { navigate, useQuery as useSearchParams } from '../router';
+import { ActivityLog, ActivityUsers, AdminOverview, type Period, PeriodPicker, PERIODS, useActivitySummary } from './AdminActivity';
 import { PlanPricingSettings } from './AdminPricing';
 import { SiteSettingsCard } from './AdminSite';
 import { TemplatePreview } from './Templates';
-import { Badge, Button, Card, cx, delay, EmptyState, ErrorNote, Field, inputClass, Loading, LoadError, Modal, PageHeader, Pagination, Select, SuccessNote, TextArea, usePlanName } from '../ui';
+import { Badge, Button, Card, cx, delay, EmptyState, ErrorNote, Field, inputClass, Loading, LoadError, Modal, Pagination, Select, SuccessNote, TextArea, usePlanName } from '../ui';
 
 type Stats = {
   users: number;
@@ -86,16 +87,49 @@ const DURATIONS = [1, 3, 6, 12, null] as const;
 type Duration = (typeof DURATIONS)[number];
 const PAGE_SIZE = 25;
 
-type Tab = 'overview' | 'users' | 'payments' | 'pricing' | 'messages' | 'site' | 'audit';
-const TABS: { id: Tab; icon: typeof Users }[] = [
-  { id: 'overview', icon: LayoutGrid },
-  { id: 'users', icon: Users },
-  { id: 'payments', icon: CreditCard },
-  { id: 'pricing', icon: BadgePercent },
-  { id: 'messages', icon: MessageSquareText },
-  { id: 'site', icon: MonitorPlay },
-  { id: 'audit', icon: History },
+type Tab = 'overview' | 'activity' | 'logs' | 'requests' | 'users' | 'payments' | 'pricing' | 'messages' | 'site' | 'audit';
+type NavGroup = 'insights' | 'customers' | 'settings' | 'security';
+const NAV: { group: NavGroup; items: { id: Tab; icon: typeof Users }[] }[] = [
+  {
+    group: 'insights',
+    items: [
+      { id: 'overview', icon: LayoutGrid },
+      { id: 'activity', icon: Activity },
+      { id: 'logs', icon: ScrollText },
+    ],
+  },
+  {
+    group: 'customers',
+    items: [
+      { id: 'requests', icon: Inbox },
+      { id: 'users', icon: Users },
+    ],
+  },
+  {
+    group: 'settings',
+    items: [
+      { id: 'payments', icon: CreditCard },
+      { id: 'pricing', icon: BadgePercent },
+      { id: 'messages', icon: MessageSquareText },
+      { id: 'site', icon: MonitorPlay },
+    ],
+  },
+  { group: 'security', items: [{ id: 'audit', icon: History }] },
 ];
+const TAB_IDS = NAV.flatMap((g) => g.items.map((i) => i.id));
+/** Tabs whose numbers cover a period (the picker shows on them). */
+const PERIOD_TABS: Tab[] = ['overview', 'activity', 'logs'];
+const PERIOD_KEY = 'wa.admin.period';
+
+function readPeriod(): Period {
+  try {
+    const saved = Number(localStorage.getItem(PERIOD_KEY));
+    if ((PERIODS as readonly number[]).includes(saved)) return saved as Period;
+  } catch {
+    // storage unavailable
+  }
+  return 30;
+}
 
 /** The value, once it has stopped changing for `ms` (search as you type without a request per key). */
 function useDebounced<T>(value: T, ms: number) {
@@ -125,27 +159,6 @@ function DurationSelect({ value, onChange, label }: { value: Duration; onChange:
       onChange={(v) => onChange(v === 'none' ? null : (Number(v) as Duration))}
       options={DURATIONS.map((d) => ({ value: d === null ? 'none' : String(d), label: d === null ? t.admin.planModal.noExpiry : t.admin.planModal.months(d) }))}
     />
-  );
-}
-
-// --- stats strip ---------------------------------------------------------------------------------
-
-function Stat({ icon: Icon, label, value, index, accent }: { icon: typeof Users; label: string; value: string; index: number; accent?: 'info' | 'danger' | 'brand' }) {
-  return (
-    <div className="animate-fade-up flex min-w-0 items-center gap-3 px-4 py-3.5" style={delay(index * 50)}>
-      <span
-        className={cx(
-          'flex size-9 shrink-0 items-center justify-center rounded-lg',
-          accent === 'info' ? 'bg-info/15 text-info' : accent === 'danger' ? 'bg-critical/15 text-critical' : accent === 'brand' ? 'bg-brand/15 text-brand' : 'bg-raised text-muted',
-        )}
-      >
-        <Icon className="size-4" />
-      </span>
-      <div className="min-w-0">
-        <p className="truncate text-[11px] font-medium tracking-wide text-muted uppercase">{label}</p>
-        <p className="text-xl leading-tight font-semibold whitespace-nowrap tabular-nums">{value}</p>
-      </div>
-    </div>
   );
 }
 
@@ -956,67 +969,125 @@ export function AdminPage() {
   const { account } = useAccount();
   const isAdmin = Boolean(account?.user?.isAdmin);
   // The server refuses non-admins anyway; this only avoids pointless requests and a broken page.
-  const stats = useQuery({ queryKey: qk.admin.stats, queryFn: ({ signal }) => api<Stats>('/api/admin/stats', { signal }), enabled: isAdmin });
-  const [tab, setTab] = useState<Tab>('overview');
+  const stats = useQuery({ queryKey: qk.admin.stats, queryFn: ({ signal }) => api<Stats>('/api/admin/stats', { signal }), enabled: isAdmin, refetchInterval: 60_000 });
+  const params = useSearchParams();
+  const asked = params.get('tab') as Tab | null;
+  const tab: Tab = asked && TAB_IDS.includes(asked) ? asked : 'overview';
+  const setTab = (next: Tab) => navigate(next === 'overview' ? '/admin' : `/admin?tab=${next}`);
+  const [days, setDaysState] = useState<Period>(readPeriod);
+  const setDays = (next: Period) => {
+    setDaysState(next);
+    try {
+      localStorage.setItem(PERIOD_KEY, String(next));
+    } catch {
+      // per-tab only
+    }
+  };
+  const summary = useActivitySummary(days, isAdmin);
 
   if (account && !isAdmin) return <ErrorNote>{a.forbidden}</ErrorNote>;
 
-  const n = (v: number | undefined) => (v === undefined ? '…' : fmt.number.format(v));
-  const s = stats.data;
-  const pendingCount = s?.pendingRequests ?? 0;
+  const pendingCount = stats.data?.pendingRequests ?? 0;
+  const online = summary.data?.onlineNow;
+  const counts: Partial<Record<Tab, { value: number; tone: 'brand' | 'good' }>> = {
+    ...(pendingCount > 0 ? { requests: { value: pendingCount, tone: 'brand' as const } } : {}),
+    ...(online ? { activity: { value: online, tone: 'good' as const } } : {}),
+  };
+
+  const navButton = (id: Tab, Icon: typeof Users, layout: 'side' | 'top') => {
+    const active = tab === id;
+    const count = counts[id];
+    return (
+      <button
+        key={id}
+        type="button"
+        onClick={() => setTab(id)}
+        aria-current={active ? 'page' : undefined}
+        className={cx(
+          'relative flex shrink-0 items-center gap-2.5 text-sm font-medium transition-colors',
+          layout === 'side'
+            ? cx('h-9 w-full rounded-lg px-2.5', active ? 'bg-raised text-ink' : 'text-muted hover:bg-raised/50 hover:text-ink')
+            : cx('h-9 rounded-full border px-3.5', active ? 'border-ink bg-ink text-bg' : 'border-line bg-card text-muted hover:border-line-strong hover:text-ink'),
+        )}
+      >
+        {layout === 'side' && active && <span className="absolute inset-y-2 -start-3 w-[3px] rounded-e-full bg-brand" />}
+        <Icon className={cx('size-4 shrink-0', layout === 'side' && active && 'text-brand')} />
+        <span className="truncate">{a.tabs[id]}</span>
+        {count && (
+          <span
+            className={cx(
+              'ms-auto rounded-full px-1.5 py-0.5 text-[11px] leading-none font-semibold tabular-nums',
+              count.tone === 'good' ? 'bg-good/15 text-good' : layout === 'top' && active ? 'bg-bg/20 text-bg' : 'bg-brand text-on-brand',
+            )}
+          >
+            {fmt.number.format(count.value)}
+          </span>
+        )}
+      </button>
+    );
+  };
 
   return (
-    <div className="mx-auto w-full max-w-7xl space-y-6">
-      <PageHeader title={a.title} description={a.description} />
+    <div className="mx-auto w-full max-w-[90rem] space-y-6">
+      <header className="animate-fade-up flex flex-wrap items-end justify-between gap-4">
+        <div className="space-y-1.5">
+          <p className="flex items-center gap-1.5 text-xs font-semibold tracking-wider text-brand uppercase">
+            <ShieldCheck className="size-3.5" />
+            {a.title}
+          </p>
+          <h1 className="text-3xl font-bold tracking-tight">{a.tabs[tab]}</h1>
+          <p className="text-muted">{a.description}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setTab('activity')}
+            className={cx(
+              'flex h-9 items-center gap-2 rounded-lg border px-3 text-sm font-medium transition-colors',
+              online ? 'border-good/30 bg-good/10 text-good hover:bg-good/15' : 'border-line bg-card text-muted hover:text-ink',
+            )}
+          >
+            <span className="relative flex size-2">
+              {Boolean(online) && <span className="absolute inset-0 animate-ping rounded-full bg-good/70 motion-reduce:hidden" />}
+              <span className={cx('relative size-2 rounded-full', online ? 'bg-good' : 'bg-faint')} />
+            </span>
+            {a.live(online ?? 0)}
+          </button>
+          {PERIOD_TABS.includes(tab) && <PeriodPicker value={days} onChange={setDays} />}
+        </div>
+      </header>
+
       {stats.isError && <LoadError error={stats.error} onRetry={() => void stats.refetch()} retrying={stats.isFetching} />}
 
-      {/* stats strip: as many columns as fit the content area (it narrows with the sidebar open). Every
-          tile draws its end and bottom edge; the grid reaches 1px past the box so the outer ones are clipped. */}
-      <div className="overflow-hidden rounded-xl border border-line bg-card shadow-sm">
-        <div className="-me-px -mb-px grid grid-cols-[repeat(auto-fit,minmax(10.5rem,1fr))] [&>*]:border-e [&>*]:border-b [&>*]:border-line/60">
-        <Stat index={0} icon={Users} label={a.stats.users} value={n(s?.users)} />
-        <Stat index={1} icon={Activity} label={a.stats.workspaces} value={n(s?.workspaces)} />
-        <Stat index={2} icon={CircleDollarSign} label={a.stats.activePaid} value={n(s?.activePaid)} accent="brand" />
-        <Stat index={3} icon={Smartphone} label={a.stats.sessions} value={s ? `${n(s.connected)} / ${n(s.sessions)}` : '…'} />
-        <Stat index={4} icon={Hourglass} label={a.stats.pending} value={n(s?.pendingRequests)} accent={pendingCount ? 'info' : undefined} />
-        <Stat index={5} icon={MessageSquare} label={a.stats.messagesToday} value={n(s?.messagesToday)} />
-        <Stat index={6} icon={Ban} label={a.stats.suspended} value={n(s?.suspended)} accent={s?.suspended ? 'danger' : undefined} />
-        </div>
-      </div>
-
-      {/* tabs */}
-      <nav aria-label={a.title} className="code-scroll -mx-1 flex gap-1 overflow-x-auto px-1 pb-1">
-        {TABS.map(({ id, icon: Icon }) => {
-          const active = tab === id;
-          return (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setTab(id)}
-              aria-current={active ? 'page' : undefined}
-              className={cx(
-                'flex h-9 shrink-0 items-center gap-2 rounded-full border px-4 text-sm font-medium transition-colors',
-                active ? 'border-ink bg-ink text-bg' : 'border-line bg-card text-muted hover:border-line-strong hover:text-ink',
-              )}
-            >
-              <Icon className="size-4" />
-              {a.tabs[id]}
-              {id === 'overview' && pendingCount > 0 && (
-                <span className={cx('rounded-full px-1.5 py-0.5 text-[11px] leading-none font-semibold tabular-nums', active ? 'bg-bg/20 text-bg' : 'bg-brand text-on-brand')}>{pendingCount}</span>
-              )}
-            </button>
-          );
-        })}
+      {/* Narrow screens: the sections scroll sideways above the content. */}
+      <nav aria-label={a.title} className="code-scroll -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 lg:hidden">
+        {NAV.flatMap((g) => g.items.map(({ id, icon }) => navButton(id, icon, 'top')))}
       </nav>
 
-      <div key={tab} className="animate-fade-up">
-        {tab === 'overview' && <Requests />}
-        {tab === 'users' && <UsersTable selfId={account?.user?.id ?? null} />}
-        {tab === 'payments' && <PaymentMethodsSettings />}
-        {tab === 'pricing' && <PlanPricingSettings />}
-        {tab === 'messages' && <OtpText />}
-        {tab === 'site' && <SiteSettingsCard />}
-        {tab === 'audit' && <AuditLog />}
+      <div className="grid items-start gap-6 lg:grid-cols-[14.5rem_minmax(0,1fr)]">
+        <aside className="sticky top-4 hidden lg:block">
+          <nav aria-label={a.title} className="space-y-5 rounded-xl border border-line bg-card p-3 shadow-sm">
+            {NAV.map((g) => (
+              <div key={g.group} className="space-y-1">
+                <p className="px-2.5 pb-1 text-[11px] font-semibold tracking-wider text-faint uppercase">{a.navGroups[g.group]}</p>
+                {g.items.map(({ id, icon }) => navButton(id, icon, 'side'))}
+              </div>
+            ))}
+          </nav>
+        </aside>
+
+        <div key={tab} className="animate-fade-up min-w-0">
+          {tab === 'overview' && <AdminOverview days={days} platform={stats.data} onTab={setTab} />}
+          {tab === 'activity' && <ActivityUsers days={days} />}
+          {tab === 'logs' && <ActivityLog days={days} />}
+          {tab === 'requests' && <Requests />}
+          {tab === 'users' && <UsersTable selfId={account?.user?.id ?? null} />}
+          {tab === 'payments' && <PaymentMethodsSettings />}
+          {tab === 'pricing' && <PlanPricingSettings />}
+          {tab === 'messages' && <OtpText />}
+          {tab === 'site' && <SiteSettingsCard />}
+          {tab === 'audit' && <AuditLog />}
+        </div>
       </div>
     </div>
   );

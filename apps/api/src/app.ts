@@ -21,10 +21,13 @@ import {
 } from 'fastify-type-provider-zod';
 import type { Logger } from 'pino';
 import type { Deps } from './deps';
+import { recordAction } from './lib/activity';
 import { ApiError, codeForStatus, forbidden, notFound, tooMany } from './lib/errors';
 import { twoFactorGraceUntil } from './lib/totp';
 import { accountRoutes, publicAccountRoutes } from './routes/account';
+import { activityRoutes } from './routes/activity';
 import { adminRoutes } from './routes/admin';
+import { adminActivityRoutes } from './routes/admin-activity';
 import { broadcastRoutes } from './routes/broadcasts';
 import { adLibraryRoutes } from './routes/ad-library';
 import { chatRoutes } from './routes/chats';
@@ -39,7 +42,7 @@ import { templateRoutes } from './routes/templates';
 /** Floor for dashboard sessions, so browsing the console on a small plan doesn't trip the API limit. */
 const CONSOLE_RPM = 240;
 /** What a dashboard session may still reach before its user sets up two-factor authentication. */
-const TWO_FACTOR_EXEMPT = /^\/api\/(me|account\/2fa(\/[^?]*)?|events)(\?.*)?$/;
+const TWO_FACTOR_EXEMPT = /^\/api\/(me|account\/2fa(\/[^?]*)?|events|activity)(\?.*)?$/;
 /** GET routes inside /api that need no key: the landing page reads them before anyone signs in. */
 const PUBLIC_READS = new Set(['/api/plan-pricing', '/api/site']);
 /** No request may hang: anything still running after this gets a 503 (SSE streams excepted). */
@@ -248,6 +251,8 @@ export async function buildApp(deps: Deps, options: AppOptions) {
           throw forbidden('Set up two-factor authentication first', 'two_factor_required');
         }
       });
+      // What signed-in users do in the dashboard, for the admin's activity log (runs after the reply is out).
+      api.addHook('onResponse', async (req, reply) => recordAction(deps.sql, req, reply.statusCode));
       // README §6: per plan, per session (session keys) or per workspace (workspace tokens) — not per
       // token, or minting more tokens would multiply the limit. The dashboard has its own bucket.
       await api.register(rateLimit, {
@@ -272,7 +277,9 @@ export async function buildApp(deps: Deps, options: AppOptions) {
       await api.register(accountRoutes(deps));
       await api.register(planPricingRoutes(deps));
       await api.register(siteRoutes(deps));
+      await api.register(activityRoutes(deps));
       await api.register(adminRoutes(deps), { prefix: '/admin' });
+      await api.register(adminActivityRoutes(deps), { prefix: '/admin/activity' });
       await api.register(broadcastRoutes(deps), { prefix: '/broadcasts' });
       await api.register(chatRoutes(deps), { prefix: '/chats' });
       await api.register(adLibraryRoutes(deps), { prefix: '/ads' });

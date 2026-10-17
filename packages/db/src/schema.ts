@@ -198,6 +198,54 @@ export const auditLogs = pgTable(
   (t) => [index().on(t.createdAt), index().on(t.targetType, t.targetId)],
 );
 
+/**
+ * What a user did on the platform, for the admin's activity view (apps/api/src/lib/activity.ts):
+ * sign-ups, logins (and failed ones), logouts, page views and dashboard actions. `user_id` is null for
+ * a failed login on an unknown account. Pruned after 180 days.
+ */
+export type UserEventType = 'signup' | 'login' | 'login_failed' | 'logout' | 'password_reset' | 'page' | 'action';
+
+export const userEvents = pgTable(
+  'user_events',
+  {
+    id: bigint({ mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    userId: uuid().references(() => users.id, { onDelete: 'cascade' }),
+    type: text().$type<UserEventType>().notNull(),
+    ip: text(),
+    userAgent: text(),
+    details: jsonb().$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: createdAt(),
+  },
+  (t) => [index().on(t.userId, t.createdAt), index().on(t.createdAt), index().on(t.type, t.createdAt)],
+);
+
+/**
+ * Time spent in the dashboard. While a tab is visible and in use it pings every minute; pings less
+ * than 5 minutes apart extend the user's open visit, a longer silence starts a new one. So a visit
+ * is "came in at `started_at`, left at `last_seen_at`", and `active_seconds` the time in between
+ * that was actually spent (at most a minute per ping).
+ */
+export const userVisits = pgTable(
+  'user_visits',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    userId: uuid()
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** The dashboard login (console key) the visit started on. */
+    keyId: uuid(),
+    startedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    activeSeconds: integer().notNull().default(0),
+    pageViews: integer().notNull().default(0),
+    entryPath: text(),
+    lastPath: text(),
+    ip: text(),
+    userAgent: text(),
+  },
+  (t) => [index().on(t.userId, t.lastSeenAt), index().on(t.startedAt), index().on(t.lastSeenAt)],
+);
+
 export type PlanRequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
 
 /**
