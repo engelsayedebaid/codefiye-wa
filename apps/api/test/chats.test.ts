@@ -242,6 +242,30 @@ describe.skipIf(!url)('chats api (integration)', () => {
     expect((await call('GET', `/api/chats/media/${sent.json().data.id}`, business.pat)).statusCode).toBe(404);
   });
 
+  it('sends a failed message again in place of the failed one, once per key', async () => {
+    const [failed] = await sql<{ id: number }[]>`
+      insert into messages (workspace_id, session_id, direction, remote_jid, type, content, status, error)
+      values (${admin.id}, ${sessionId}, 'out', ${PHONE}, 'text', ${sql.json({ type: 'text', text: 'Try me again', sentFrom: 'chats' })}, 'failed', 'Interrupted while sending')
+      returning id`;
+    const resend = () =>
+      app.inject({
+        method: 'POST',
+        url: `/api/chats/${sessionId}/resend`,
+        headers: { authorization: `Bearer ${admin.pat}`, 'idempotency-key': 'resend-1' },
+        payload: { messageId: failed!.id },
+      });
+    const first = await resend();
+    expect(first.statusCode, first.body).toBe(200);
+    expect(first.json().data).toMatchObject({ status: 'queued', error: null, content: { type: 'text', text: 'Try me again', sentFrom: 'chats' } });
+    expect((await resend()).json().data.id).toBe(first.json().data.id);
+    const rows = await sql<{ id: number }[]>`select id from messages where session_id = ${sessionId} and content->>'text' = 'Try me again'`;
+    expect(rows.map((r) => r.id)).toEqual([first.json().data.id]);
+
+    // Only our own failed messages, and not twice.
+    expect((await call('POST', `/api/chats/${sessionId}/resend`, admin.pat, { messageId: failed!.id })).json()).toMatchObject({ code: 'not_resendable' });
+    expect((await call('POST', `/api/chats/${sessionId}/resend`, admin.pat, { messageId: first.json().data.id })).json()).toMatchObject({ code: 'not_resendable' });
+  });
+
   it('reports insights for a number', async () => {
     const res = await call('GET', `/api/chats/${sessionId}/insights?days=7&tz=Africa/Cairo`, admin.pat);
     expect(res.statusCode, res.body).toBe(200);

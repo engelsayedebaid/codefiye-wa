@@ -26,7 +26,7 @@ import {
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { api, errorMessage } from '../../api';
+import { api, ApiRequestError, errorMessage } from '../../api';
 import { useLiveEvents } from '../../events';
 import { useI18n } from '../../i18n';
 import { qk } from '../../queries';
@@ -148,6 +148,8 @@ type Item = { kind: 'day'; key: string; label: string } | { kind: 'unread'; key:
 type Props = {
   sessionId: string;
   connected: boolean;
+  /** The number is reconnecting: messages can still be queued (they go out once it's back). */
+  reconnecting?: boolean;
   chat: ChatSummary;
   presence?: PresenceState;
   picture: string | null;
@@ -166,7 +168,7 @@ type Props = {
   onOpenIn?: (sessionId: string, jid: string) => void;
 };
 
-export function Conversation({ sessionId, connected, chat, presence, picture, receipts, infoOpen, onBack, onToggleInfo, onFlags, onOpenPhone, onSync, syncing, search, onOpenIn }: Props) {
+export function Conversation({ sessionId, connected, reconnecting = false, chat, presence, picture, receipts, infoOpen, onBack, onToggleInfo, onFlags, onOpenPhone, onSync, syncing, search, onOpenIn }: Props) {
   const { t, fmt } = useI18n();
   const c = t.chats;
   const queryClient = useQueryClient();
@@ -464,6 +466,32 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
     setReactError(text);
     setTimeout(() => setReactError(null), 4_000);
   }, []);
+  // A stored message that failed, sent again: the copy arrives as a new message (messages.created) and
+  // the failed one goes (message.changed). The key stays the same for the retries of one click.
+  const [resending, setResending] = useState<Set<number>>(() => new Set());
+  const resend = useCallback(
+    async (m: ChatMessage) => {
+      setResending((s) => new Set(s).add(m.id));
+      try {
+        await api(`/api/chats/${sessionId}/resend`, { method: 'POST', headers: { 'idempotency-key': `resend-${m.id}-${crypto.randomUUID()}` }, body: { messageId: m.id }, timeoutMs: 30_000 });
+        void catchUp();
+        void queryClient.invalidateQueries({ queryKey: key });
+      } catch (err) {
+        const expired = err instanceof ApiRequestError && err.status === 422 && Boolean(err.errors?.messageId);
+        if (err instanceof ApiRequestError && err.code === 'session_not_connected') void queryClient.invalidateQueries({ queryKey: qk.chats.numbers });
+        notice(expired ? c.pending.fileExpired : errorMessage(err));
+      } finally {
+        setResending((s) => {
+          const next = new Set(s);
+          next.delete(m.id);
+          return next;
+        });
+      }
+    },
+    [sessionId, catchUp, queryClient, key, notice, c.pending.fileExpired],
+  );
+  const canQueue = connected || reconnecting;
+
   const shownIds = useMemo(() => new Set(list.map((m) => m.id)), [list]);
   // Once the list holds the real message, its "sending" stand-in goes.
   useEffect(() => settle(sessionId, chat.jid, (id) => shownIds.has(id)), [shownIds, pending, sessionId, chat.jid]);
@@ -645,6 +673,8 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
                             onReact={connected ? react : undefined}
                             onEdit={connected ? setEditing : undefined}
                             onDelete={setDeleting}
+                            onResend={canQueue && !item.m.broadcastId ? resend : undefined}
+                            resending={resending.has(item.m.id)}
                             highlight={q || undefined}
                             quotedAuthor={quotedAuthor}
                             onReply={setReply}
@@ -667,6 +697,8 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
                       pending={{
                         failed: p.state === 'failed',
                         error: p.error,
+                        waiting: p.waiting,
+                        progress: p.progress,
                         onRetry: () => retry(queryClient, sessionId, chat.jid, p.ref),
                         onDiscard: () => discard(sessionId, chat.jid, p.ref),
                       }}
@@ -736,6 +768,7 @@ export function Conversation({ sessionId, connected, chat, presence, picture, re
         sessionId={sessionId}
         jid={chat.jid}
         connected={viaNumber ? viaNumber.status === 'connected' : connected}
+        reconnecting={viaNumber ? viaNumber.status === 'connecting' : reconnecting}
         title={title}
         reply={viaNumber ? null : reply}
         onCancelReply={cancelReply}

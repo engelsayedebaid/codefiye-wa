@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent } from 'react';
+import { useEffect, useEffectEvent, useSyncExternalStore } from 'react';
 import type { LiveEvent } from './types';
 
 const EVENT_TYPES = ['session.status', 'qrcode.updated', 'pairing.updated', 'messages.received', 'messages.update', 'messages.created', 'poll.vote', 'presence.update', 'chat.read', 'chats.synced', 'sync.progress', 'sync.log', 'message.changed'] as const;
@@ -20,6 +20,28 @@ let retryDelay = 2_000;
 /** Events may have been missed since the last open stream. */
 let missed = false;
 let hooks = { onResync: () => {}, onRefused: () => {} };
+
+/**
+ * How the stream is doing, for a "live updates paused" hint: `idle` (not needed, or a hidden tab),
+ * `connecting` (first open), `open`, `reconnecting` (it was open and dropped, or never got through).
+ */
+export type LiveStatus = 'idle' | 'connecting' | 'open' | 'reconnecting';
+let status: LiveStatus = 'idle';
+let everOpened = false;
+const statusListeners = new Set<() => void>();
+function setStatus(next: LiveStatus) {
+  if (status === next) return;
+  status = next;
+  statusListeners.forEach((l) => l());
+}
+const subscribeStatus = (l: () => void) => {
+  statusListeners.add(l);
+  return () => void statusListeners.delete(l);
+};
+/** The shared stream's state (re-renders when it changes). */
+export function useLiveStatus(): LiveStatus {
+  return useSyncExternalStore(subscribeStatus, () => status, () => 'idle');
+}
 
 /** `onResync`: reload server state. `onRefused`: the server ended the stream (e.g. signed out) — re-check the session. */
 export function configureLiveEvents(next: { onResync: () => void; onRefused: () => void }) {
@@ -78,7 +100,10 @@ function connect() {
   // Same origin: the session cookie goes along, no token handling needed.
   const stream = new EventSource('/api/events');
   source = stream;
+  setStatus(everOpened ? 'reconnecting' : 'connecting');
   stream.onopen = () => {
+    everOpened = true;
+    setStatus('open');
     retryDelay = 2_000;
     if (missed) hooks.onResync();
     missed = false;
@@ -98,10 +123,12 @@ function connect() {
   stream.addEventListener('resync', () => hooks.onResync());
   stream.onerror = () => {
     missed = true;
+    setStatus('reconnecting');
     if (stream.readyState !== EventSource.CLOSED) return; // the browser reconnects by itself
     // Refused (signed out, too many streams…): back off and let the app re-check the session.
     disconnect();
     hooks.onRefused();
+    setStatus('reconnecting');
     retryTimer = setTimeout(connect, retryDelay);
     retryDelay = Math.min(retryDelay * 2, 60_000);
   };
@@ -112,6 +139,7 @@ function disconnect() {
   source = null;
   if (retryTimer) clearTimeout(retryTimer);
   retryTimer = null;
+  setStatus('idle');
 }
 
 if (typeof document !== 'undefined') {

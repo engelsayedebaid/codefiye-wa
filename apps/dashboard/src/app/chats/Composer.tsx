@@ -1,5 +1,5 @@
 import { UPLOAD_MAX_BYTES } from '@wa/shared/chats';
-import { FileText, FileUp, Image as ImageIcon, Mic, Paperclip, Plus, Reply, SendHorizontal, Smile, WifiOff, X } from 'lucide-react';
+import { FileText, FileUp, Image as ImageIcon, Loader2, Mic, Paperclip, Plus, Reply, SendHorizontal, Smile, WifiOff, X } from 'lucide-react';
 import { type FormEvent, type KeyboardEvent, lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '../../api';
@@ -78,6 +78,8 @@ type Props = {
   sessionId: string;
   jid: string;
   connected: boolean;
+  /** The number is reconnecting: messages can be written and queued, and go out once it's back. */
+  reconnecting?: boolean;
   /** Name shown on a reply to their message. */
   title: string;
   reply: ChatMessage | null;
@@ -89,7 +91,7 @@ type Props = {
  * The message field with its attach, emoji, voice-note and send buttons. Its own component so that
  * typing re-renders only this, not the conversation above it.
  */
-export const Composer = memo(function Composer({ sessionId, jid, connected, title, reply, onCancelReply, onSend }: Props) {
+export const Composer = memo(function Composer({ sessionId, jid, connected, reconnecting = false, title, reply, onCancelReply, onSend }: Props) {
   const { t } = useI18n();
   const c = t.chats;
   const draftKey = `${sessionId}\n${jid}`;
@@ -168,7 +170,9 @@ export const Composer = memo(function Composer({ sessionId, jid, connected, titl
     if (matchMedia('(pointer: fine)').matches) input.current?.focus();
   }, [jid, reply]);
 
-  const canSend = connected && (text.trim().length > 0 || files.length > 0);
+  // Reconnecting: the server queues the message and the number sends it once it's back.
+  const canQueue = connected || reconnecting;
+  const canSend = canQueue && (text.trim().length > 0 || files.length > 0);
   const reset = () => {
     setText('');
     setFiles([]);
@@ -241,7 +245,7 @@ export const Composer = memo(function Composer({ sessionId, jid, connected, titl
     const onOver = (e: DragEvent) => {
       if (!hasFiles(e)) return;
       e.preventDefault();
-      if (e.dataTransfer) e.dataTransfer.dropEffect = connected ? 'copy' : 'none';
+      if (e.dataTransfer) e.dataTransfer.dropEffect = canQueue ? 'copy' : 'none';
     };
     const onLeave = (e: DragEvent) => {
       if (!hasFiles(e)) return;
@@ -254,7 +258,7 @@ export const Composer = memo(function Composer({ sessionId, jid, connected, titl
       e.preventDefault();
       depth = 0;
       setDragging(false);
-      if (connected) addFilesRef.current([...(e.dataTransfer?.files ?? [])]);
+      if (canQueue) addFilesRef.current([...(e.dataTransfer?.files ?? [])]);
     };
     dropRoot.addEventListener('dragenter', onEnter);
     dropRoot.addEventListener('dragover', onOver);
@@ -266,7 +270,7 @@ export const Composer = memo(function Composer({ sessionId, jid, connected, titl
       dropRoot.removeEventListener('dragleave', onLeave);
       dropRoot.removeEventListener('drop', onDrop);
     };
-  }, [dropRoot, connected]);
+  }, [dropRoot, canQueue]);
 
   const rememberCaret = () => {
     const el = input.current;
@@ -309,22 +313,27 @@ export const Composer = memo(function Composer({ sessionId, jid, connected, titl
             <div
               className={cx(
                 'flex w-full max-w-sm flex-col items-center gap-2 rounded-2xl border-2 border-dashed px-6 py-10 text-center',
-                connected ? 'border-brand/60 bg-brand/5 text-brand' : 'border-warning/50 bg-warning/5 text-warning',
+                canQueue ? 'border-brand/60 bg-brand/5 text-brand' : 'border-warning/50 bg-warning/5 text-warning',
               )}
             >
-              {connected ? <FileUp className="size-9" /> : <WifiOff className="size-9" />}
-              <p className="font-semibold">{connected ? c.composer.dropTitle : c.composer.disconnected}</p>
-              {connected && <p className="text-xs text-muted">{c.composer.dropHint(MAX_FILES, UPLOAD_MAX_BYTES / 1024 / 1024)}</p>}
+              {canQueue ? <FileUp className="size-9" /> : <WifiOff className="size-9" />}
+              <p className="font-semibold">{canQueue ? c.composer.dropTitle : c.composer.disconnected}</p>
+              {canQueue && <p className="text-xs text-muted">{c.composer.dropHint(MAX_FILES, UPLOAD_MAX_BYTES / 1024 / 1024)}</p>}
             </div>
           </div>,
           dropRoot,
         )}
       {panel === 'voice' && <VoiceRecorder onSend={(blob, seconds) => void sendVoice(blob, seconds)} onClose={closePanel} onRecording={onRecording} />}
-      {!connected && (
-        <p className="mb-2 flex items-center gap-2 rounded-md bg-warning/10 px-3 py-2 text-xs text-warning">
-          <WifiOff className="size-4 shrink-0" /> {c.composer.disconnected}
-        </p>
-      )}
+      {!connected &&
+        (reconnecting ? (
+          <p role="status" className="mb-2 flex items-center gap-2 rounded-md bg-info/10 px-3 py-2 text-xs text-info">
+            <Loader2 className="size-4 shrink-0 animate-spin" /> {c.composer.reconnecting}
+          </p>
+        ) : (
+          <p className="mb-2 flex items-center gap-2 rounded-md bg-warning/10 px-3 py-2 text-xs text-warning">
+            <WifiOff className="size-4 shrink-0" /> {c.composer.disconnected}
+          </p>
+        ))}
       {error && (
         <p role="alert" className="mb-2 flex items-start justify-between gap-2 rounded-md bg-critical/10 px-3 py-2 text-xs text-critical">
           <span>{error}</span>
@@ -427,7 +436,7 @@ export const Composer = memo(function Composer({ sessionId, jid, connected, titl
           >
             <Smile className="size-[19px]" />
           </button>
-          <button type="button" onClick={() => fileInput.current?.click()} disabled={!connected} className={iconButton} aria-label={c.composer.attach} title={c.composer.attach}>
+          <button type="button" onClick={() => fileInput.current?.click()} disabled={!canQueue} className={iconButton} aria-label={c.composer.attach} title={c.composer.attach}>
             <Paperclip className="size-[18px]" />
           </button>
           <input ref={fileInput} type="file" multiple className="hidden" onChange={(e) => (addFiles([...(e.target.files ?? [])]), (e.target.value = ''))} />
@@ -455,7 +464,7 @@ export const Composer = memo(function Composer({ sessionId, jid, connected, titl
           />
         </div>
         {/* WhatsApp's pattern: a microphone while the field is empty, Send once there's something to send. */}
-        {canSend || !connected ? (
+        {canSend || !canQueue ? (
           <button
             type="submit"
             disabled={!canSend}

@@ -44,6 +44,8 @@ import { FocusBar, FocusMenu, type FocusMode, useFocusMode } from '../app/chats/
 import { AI_REPORT_SOON, AiReport, AiReportSoon } from '../app/chats/AiReport';
 import { setCrossSend, useCrossSend } from '../app/chats/crossSend';
 import { GlobalSearch } from '../app/chats/GlobalSearch';
+import { LiveBanner } from '../app/chats/LiveBanner';
+import { restoreOutbox } from '../app/chats/outbox';
 import { NumberSwitcher } from '../app/chats/NumberSwitcher';
 import { AccountsSplit, type OpenChats, type OpenRequest } from '../app/chats/AccountsSplit';
 import { useLiveEvents } from '../events';
@@ -364,6 +366,11 @@ export function ChatsPage() {
     enabled: allowed,
   });
 
+  // Messages a reload interrupted carry on (same keys: none is sent twice).
+  useEffect(() => {
+    if (allowed) restoreOutbox(queryClient);
+  }, [allowed, queryClient]);
+
   // --- which number, which chat ---
   const params = new URLSearchParams(location.search);
   const [sessionId, setSessionId] = useState<string | null>(() => params.get('session') ?? read(SESSION_KEY));
@@ -454,6 +461,8 @@ export function ChatsPage() {
   const current = list.find((n) => n.id === sessionId) ?? list.find((n) => n.status === 'connected') ?? list[0] ?? null;
   const activeId = current?.id ?? null;
   const connected = current?.status === 'connected';
+  // Coming back after a drop: messages can still be written and queued (the number sends them once back).
+  const reconnecting = current?.status === 'connecting';
   useEffect(() => {
     if (activeId) write(SESSION_KEY, activeId);
     setUrl(activeId, selected?.jid ?? pendingJid);
@@ -854,10 +863,13 @@ export function ChatsPage() {
           {!connected && (
             <Link
               href={`/sessions/${current.id}`}
-              className="animate-fade-in flex items-start gap-2 rounded-xl bg-warning/10 px-3 py-2 text-xs text-warning ring-1 ring-warning/25 transition-colors hover:bg-warning/15"
+              className={cx(
+                'animate-fade-in flex items-start gap-2 rounded-xl px-3 py-2 text-xs ring-1 transition-colors',
+                reconnecting ? 'bg-info/10 text-info ring-info/25 hover:bg-info/15' : 'bg-warning/10 text-warning ring-warning/25 hover:bg-warning/15',
+              )}
             >
-              <WifiOff className="mt-0.5 size-3.5 shrink-0" />
-              <span className="min-w-0 flex-1">{c.offlineNumber}</span>
+              {reconnecting ? <RefreshCw className="mt-0.5 size-3.5 shrink-0 animate-spin [animation-duration:2s]" /> : <WifiOff className="mt-0.5 size-3.5 shrink-0" />}
+              <span className="min-w-0 flex-1">{reconnecting ? c.reconnectingNumber : c.offlineNumber}</span>
             </Link>
           )}
         </div>
@@ -911,6 +923,7 @@ export function ChatsPage() {
               key={`${current.id}:${selected.jid}`}
               sessionId={current.id}
               connected={connected}
+              reconnecting={reconnecting}
               chat={selected}
               presence={selectedPresence}
               picture={profile.data?.pictureUrl ?? null}
@@ -1013,6 +1026,7 @@ export function ChatsPage() {
                 key={`${current.id}:${second.jid}`}
                 sessionId={current.id}
                 connected={connected}
+                reconnecting={reconnecting}
                 chat={second}
                 presence={presence.get(second.jid) ?? (second.altJid ? presence.get(second.altJid) : undefined)}
                 picture={secondProfile.data?.pictureUrl ?? null}
@@ -1089,6 +1103,8 @@ export function ChatsPage() {
       {syncOpen && <SyncModal sessionId={current.id} connected={connected} onClose={() => setSyncOpen(false)} />}
 
       <NoteStack notes={inbox.notes} onOpen={inbox.open} onDismiss={inbox.dismiss} />
+
+      <LiveBanner />
 
       {/* toast */}
       {(sync || toast) && (

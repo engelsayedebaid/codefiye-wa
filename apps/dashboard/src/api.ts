@@ -148,6 +148,11 @@ function friendly(err: ApiRequestError): string | null {
       return e.sessionExpired;
     case 'csrf_blocked':
       return e.csrf;
+    case 'session_not_connected':
+      return e.sessionNotConnected;
+    case 'trial_expired':
+    case 'plan_expired':
+      return e.planExpired;
   }
   if (err.status >= 500) return e.server(err.requestId ?? null);
   return null;

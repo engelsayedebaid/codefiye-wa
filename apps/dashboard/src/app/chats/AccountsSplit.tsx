@@ -1,6 +1,6 @@
 import type { ChatFilter } from '@wa/shared/chats';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, WifiOff, X } from 'lucide-react';
+import { Plus, RefreshCw, WifiOff, X } from 'lucide-react';
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { api, errorMessage } from '../../api';
 import { useLiveEvents } from '../../events';
@@ -184,6 +184,7 @@ function AccountPane({
   const queryClient = useQueryClient();
   const sessionId = number.id;
   const connected = number.status === 'connected';
+  const reconnecting = number.status === 'connecting';
   const [selected, setSelected] = useState<ChatSummary | null>(null);
   const [filter, setFilter] = useState<ChatFilter>('all');
   const [query, setQuery] = useState('');
@@ -376,9 +377,15 @@ function AccountPane({
         )}
       </div>
       {!connected && (
-        <Link href={`/sessions/${sessionId}`} className="flex shrink-0 items-center gap-2 bg-warning/10 px-3 py-1.5 text-xs text-warning transition-colors hover:bg-warning/15">
-          <WifiOff className="size-3.5 shrink-0" />
-          <span className="min-w-0 flex-1 truncate">{c.offlineNumber}</span>
+        <Link
+          href={`/sessions/${sessionId}`}
+          className={cx(
+            'flex shrink-0 items-center gap-2 px-3 py-1.5 text-xs transition-colors',
+            reconnecting ? 'bg-info/10 text-info hover:bg-info/15' : 'bg-warning/10 text-warning hover:bg-warning/15',
+          )}
+        >
+          {reconnecting ? <RefreshCw className="size-3.5 shrink-0 animate-spin [animation-duration:2s]" /> : <WifiOff className="size-3.5 shrink-0" />}
+          <span className="min-w-0 flex-1 truncate">{reconnecting ? c.reconnectingNumber : c.offlineNumber}</span>
         </Link>
       )}
       <div className="relative flex min-h-0 flex-1">
@@ -404,6 +411,7 @@ function AccountPane({
               key={selected.jid}
               sessionId={sessionId}
               connected={connected}
+              reconnecting={reconnecting}
               chat={selected}
               presence={selectedPresence}
               picture={profile.data?.pictureUrl ?? null}

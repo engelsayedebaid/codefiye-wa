@@ -216,6 +216,29 @@ export function chatRoutes(deps: Deps): FastifyPluginAsyncZod {
 
   const publish = (event: WaEvent) => notify(sql, CHANNELS.events, event);
 
+  /**
+   * Queues an outbound message typed on the chats page. One round trip: the row, the worker's
+   * wake-up and the page's event (both sent on commit). A concurrent request with the same key gets
+   * the row the first one made.
+   */
+  const queueOutbound = async (workspaceId: string, sessionId: string, jid: string, content: Record<string, unknown> & { type: MessageType }, key: string | null) => {
+    const created = (id: SqlFragment) =>
+      sql`jsonb_build_object('type', 'messages.created', 'workspaceId', ${workspaceId}::text, 'sessionId', ${sessionId}::text,
+        'data', jsonb_build_object('id', ${id}, 'chatJid', ${jid}::text, 'direction', 'out', 'type', ${content.type}::text, 'ref', ${key}::text))::text`;
+    let [row] = await sql<MessageRow[]>`
+      with ins as (
+        insert into messages (workspace_id, session_id, direction, remote_jid, type, content, status, idempotency_key)
+        values (${workspaceId}, ${sessionId}, 'out', ${jid}, ${content.type}, ${sql.json(content as never)}, 'queued', ${key})
+        on conflict (session_id, idempotency_key) do nothing
+        returning ${sql.unsafe(MESSAGE_COLUMNS)}
+      )
+      select ins.*, pg_notify(${CHANNELS.control}, ${JSON.stringify({ type: 'message.queued', sessionId })}), pg_notify(${CHANNELS.events}, ${created(sql`ins.id`)})
+      from ins`;
+    // Lost a race with a concurrent retry carrying the same key.
+    if (!row) [row] = await sql<MessageRow[]>`select ${sql.unsafe(MESSAGE_COLUMNS)} from messages where session_id = ${sessionId} and idempotency_key = ${key}`;
+    return row!;
+  };
+
   const findChat = async (sessionId: string, jid: string) => {
     const [chat] = await sql<{ jid: string; alt_jid: string | null; unread_count: number; inbound_count: number; name: string | null }[]>`
       select jid, alt_jid, unread_count, inbound_count, name from chats where session_id = ${sessionId} and (jid = ${jid} or alt_jid = ${jid})`;
@@ -628,22 +651,7 @@ export function chatRoutes(deps: Deps): FastifyPluginAsyncZod {
         // Typed by a person on the chats page: the worker skips the artificial "typing…" pause.
         // A contact who has written to this number is on WhatsApp: the worker can skip asking again.
         const stored = { ...content, sentFrom: 'chats' as const, ...(found && found.inbound_count > 0 ? { reachable: true as const } : {}) };
-
-        // One round trip: the row, the worker's wake-up and the page's event (both sent on commit).
-        const created = (id: SqlFragment) =>
-          sql`jsonb_build_object('type', 'messages.created', 'workspaceId', ${req.auth.workspaceId}::text, 'sessionId', ${session.id}::text,
-            'data', jsonb_build_object('id', ${id}, 'chatJid', ${jid}::text, 'direction', 'out', 'type', ${content.type}::text, 'ref', ${key}::text))::text`;
-        let [row] = await sql<MessageRow[]>`
-          with ins as (
-            insert into messages (workspace_id, session_id, direction, remote_jid, type, content, status, idempotency_key)
-            values (${req.auth.workspaceId}, ${session.id}, 'out', ${jid}, ${content.type}, ${sql.json(stored as never)}, 'queued', ${key})
-            on conflict (session_id, idempotency_key) do nothing
-            returning ${sql.unsafe(MESSAGE_COLUMNS)}
-          )
-          select ins.*, pg_notify(${CHANNELS.control}, ${JSON.stringify({ type: 'message.queued', sessionId: session.id })}), pg_notify(${CHANNELS.events}, ${created(sql`ins.id`)})
-          from ins`;
-        // Lost a race with a concurrent retry carrying the same key.
-        if (!row) [row] = await sql<MessageRow[]>`select ${sql.unsafe(MESSAGE_COLUMNS)} from messages where session_id = ${session.id} and idempotency_key = ${key}`;
+        const row = await queueOutbound(req.auth.workspaceId, session.id, jid, stored, key);
 
         // Answering a chat reads it, as on WhatsApp. Not worth holding the reply for.
         void markChatRead(sql, session.id, jid)
@@ -651,7 +659,54 @@ export function chatRoutes(deps: Deps): FastifyPluginAsyncZod {
             if (read) await publish({ type: 'chat.read', workspaceId: req.auth.workspaceId, sessionId: session.id, data: { chatJid: read } });
           })
           .catch((err: unknown) => req.log.warn({ err }, 'could not mark the chat read after sending'));
-        return ok(toMessageDto(row!));
+        return ok(toMessageDto(row));
+      },
+    );
+
+    app.post(
+      '/:sessionId/resend',
+      {
+        schema: {
+          ...schemaBase,
+          summary: 'Send a failed message again',
+          description:
+            'Queues a copy of one of our failed messages (same text or file) at the end of the chat and removes the failed one. ' +
+            'Campaign messages are excluded (campaigns pace and retry their own). Send an `Idempotency-Key` header to make retries safe.',
+          params: sessionParams,
+          headers: z.object({ 'idempotency-key': z.string().min(1).max(255).optional() }),
+          body: z.object({ messageId: z.number().int().positive() }),
+          response: { 200: successSchema(chatMessageDto) },
+        },
+      },
+      async (req) => {
+        const key = req.headers['idempotency-key'] ?? null;
+        const session = await ownedSession(sql, req, req.params.sessionId);
+        // A retry of a resend that already went through gets that message back.
+        if (key) {
+          const [repeat] = await sql<MessageRow[]>`select ${sql.unsafe(MESSAGE_COLUMNS)} from messages where session_id = ${session.id} and idempotency_key = ${key}`;
+          if (repeat) return ok(toMessageDto(repeat));
+        }
+        const [failed] = await sql<{ id: number; remote_jid: string; type: MessageType; content: Record<string, unknown> }[]>`
+          select id, remote_jid, type, content from messages
+          where id = ${req.body.messageId} and session_id = ${session.id} and direction = 'out' and status = 'failed' and broadcast_id is null`;
+        if (!failed) throw notFound('No failed message to send again', 'not_resendable');
+        assertActive(req.auth);
+        if (session.desired_state !== 'running' || !SENDABLE.has(session.status)) {
+          throw conflict(`Session is not connected (status: ${session.status})`, 'session_not_connected');
+        }
+        const url = typeof failed.content.url === 'string' ? failed.content.url : null;
+        if (url?.startsWith(UPLOAD_SCHEME)) {
+          const [kept] = await sql`select 1 from media_uploads where id = ${url.slice(UPLOAD_SCHEME.length)} and workspace_id = ${req.auth.workspaceId}`;
+          if (!kept) throw unprocessable('The attachment expired', { messageId: ['Attach the file again'] });
+        }
+        // The copy is a new message typed here: whatever the first one recorded about its send goes.
+        const { history: _history, ...content } = failed.content;
+        const row = await queueOutbound(req.auth.workspaceId, session.id, failed.remote_jid, { ...content, type: failed.type, sentFrom: 'chats' }, key);
+        // The failed one gives way to its copy, as on WhatsApp.
+        if (row.id !== failed.id && (await removeStoredMessage(sql, failed.id))) {
+          await publish({ type: 'message.changed', workspaceId: req.auth.workspaceId, sessionId: session.id, data: { id: failed.id, chatJid: failed.remote_jid, change: 'removed' } });
+        }
+        return ok(toMessageDto(row));
       },
     );
 

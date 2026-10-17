@@ -480,9 +480,48 @@ type BubbleProps = {
   onOpenChat?: (phone: string) => void;
   /** A message still on its way from this page (see outbox.ts): its file previews locally. */
   localSrc?: string;
-  /** Failed on its way: offer to retry or drop it. */
-  pending?: { failed: boolean; error?: string; onRetry: () => void; onDiscard: () => void };
+  /** On its way from this page: upload progress, waiting between automatic tries, or failed (retry / drop). */
+  pending?: { failed: boolean; error?: string; waiting?: 'network' | 'retry'; progress?: number; onRetry: () => void; onDiscard: () => void };
+  /** One of our stored messages that failed: send it again (it takes the failed one's place). */
+  onResend?: (m: ChatMessage) => void;
+  /** A resend of this message is on its way. */
+  resending?: boolean;
 };
+
+/** Errors where sending again can't help (or makes it worse): no resend button. */
+const NO_RESEND = [/^Recipient is not on WhatsApp$/, /^WhatsApp refused: this number may not start new chats/];
+/** It may have gone out after all: resending asks for a second click. */
+const MAYBE_SENT = [/^Interrupted while sending/, /^WhatsApp did not confirm this message in time/];
+
+/** "Send again" under a failed message; a second click confirms when it may have been delivered. */
+function ResendButton({ m, busy, onResend }: { m: ChatMessage; busy?: boolean; onResend: (m: ChatMessage) => void }) {
+  const { t } = useI18n();
+  const p = t.chats.pending;
+  const careful = MAYBE_SENT.some((re) => re.test(m.error ?? ''));
+  const [confirming, setConfirming] = useState(false);
+  useEffect(() => {
+    if (!confirming) return;
+    const timer = setTimeout(() => setConfirming(false), 5_000);
+    return () => clearTimeout(timer);
+  }, [confirming]);
+  return (
+    <div className="mt-1.5 flex items-center justify-end gap-1.5">
+      {confirming && <span className="text-[11px] text-ink/60">{p.resendConfirm}</span>}
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => {
+          if (careful && !confirming) return setConfirming(true);
+          setConfirming(false);
+          onResend(m);
+        }}
+        className="inline-flex items-center gap-1 rounded-md bg-brand px-2 py-1 text-xs font-semibold text-on-brand transition-opacity hover:opacity-90 disabled:opacity-60"
+      >
+        <RotateCw className={cx('size-3', busy && 'animate-spin')} /> {busy ? p.resending : confirming ? p.resendYes : p.resend}
+      </button>
+    </div>
+  );
+}
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 const REACT_BAR_WIDTH = 296;
@@ -586,6 +625,8 @@ export const Bubble = memo(function Bubble({
   onOpenChat,
   localSrc,
   pending,
+  onResend,
+  resending,
 }: BubbleProps) {
   const { t, fmt } = useI18n();
   const c = t.chats;
@@ -706,6 +747,26 @@ export const Bubble = memo(function Bubble({
               <AlertTriangle className="mt-px size-3.5 shrink-0" />
               <span dir="auto">{errorText(m.error, t.sessionDetail.errors)}</span>
             </p>
+          )}
+          {onResend && out && m.status === 'failed' && !pending && !NO_RESEND.some((re) => re.test(m.error ?? '')) && <ResendButton m={m} busy={resending} onResend={onResend} />}
+          {pending && !pending.failed && (pending.waiting || pending.progress !== undefined) && (
+            <div className="mt-1.5 min-w-40 space-y-1">
+              {pending.progress !== undefined && (
+                <div className="h-1 overflow-hidden rounded-full bg-ink/10" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pending.progress * 100)}>
+                  <div className="h-full rounded-full bg-brand transition-[width] duration-300" style={{ width: `${Math.round(pending.progress * 100)}%` }} />
+                </div>
+              )}
+              <p className="flex items-center justify-between gap-3 text-[11px] text-ink/60">
+                <span>
+                  {pending.waiting === 'network' ? c.pending.waitingNetwork : pending.waiting === 'retry' ? c.pending.retrying : c.pending.uploading(Math.round((pending.progress ?? 0) * 100))}
+                </span>
+                {pending.waiting && (
+                  <button type="button" onClick={pending.onDiscard} className="rounded px-1 font-medium hover:text-ink">
+                    {c.pending.cancel}
+                  </button>
+                )}
+              </p>
+            </div>
           )}
           {pending?.failed && (
             <div className="mt-1.5 flex items-center justify-end gap-1">
