@@ -249,6 +249,11 @@ export async function collectInbox(sql: Sql, workspaceId: string, sessionIds: st
   if (ids.length === 0) return null;
   // One-to-one conversations only: groups are counted, not analyzed.
   const direct = sql`m.remote_jid not like '%@g.us' and m.remote_jid <> 'status@broadcast' and m.type <> 'reaction'`;
+  // One contact, two addresses: WhatsApp often delivers a customer's messages under their LID while our
+  // replies (from the phone) go to their phone JID. The chat's `alt_jid` maps the LID back, so every
+  // figure and transcript treats both as one conversation (`chat`).
+  const asChat = sql`left join chats ac on ac.session_id = m.session_id and ac.alt_jid = m.remote_jid`;
+  const chatOfMessage = sql`coalesce(ac.jid, m.remote_jid)`;
 
   const [counts, fresh, replies, waitingCounts, groups, unanswered, top] = await Promise.all([
     sql<{ session_id: string; inbound: number; outbound: number; from_phone: number; from_dashboard: number; from_api: number; campaign: number; customers: number }[]>`
@@ -259,13 +264,13 @@ export async function collectInbox(sql: Sql, workspaceId: string, sessionIds: st
         count(*) filter (where m.direction = 'out' and m.broadcast_id is null and m.content->>'sentFrom' = 'chats')::int as from_dashboard,
         count(*) filter (where m.direction = 'out' and m.broadcast_id is null and coalesce(m.content->>'sentFrom', '') not in ('phone', 'chats'))::int as from_api,
         count(*) filter (where m.direction = 'out' and m.broadcast_id is not null)::int as campaign,
-        count(distinct m.remote_jid) filter (where m.direction = 'in')::int as customers
-      from messages m
+        count(distinct ${chatOfMessage}) filter (where m.direction = 'in')::int as customers
+      from messages m ${asChat}
       where m.workspace_id = ${workspaceId} and m.session_id = any(${ids}::uuid[]) and m.created_at >= ${since} and ${direct}
       group by m.session_id`,
     sql<{ session_id: string; n: number }[]>`
       select session_id, count(*)::int as n from (
-        select m.session_id, m.remote_jid, min(m.created_at) as first_at from messages m
+        select m.session_id, ${chatOfMessage} as chat, min(m.created_at) as first_at from messages m ${asChat}
         where m.workspace_id = ${workspaceId} and m.session_id = any(${ids}::uuid[]) and m.direction = 'in' and ${direct}
         group by 1, 2) x
       where first_at >= ${since}
@@ -273,17 +278,18 @@ export async function collectInbox(sql: Sql, workspaceId: string, sessionIds: st
     // A customer's turn starts at an incoming message after one of ours (or the first); the reply is our next own message.
     sql<{ session_id: string; turns: number; answered: number; median: number | null; avg: number | null }[]>`
       with m as (
-        select m.session_id, m.remote_jid, m.direction, m.created_at, lag(m.direction) over (partition by m.session_id, m.remote_jid order by m.created_at, m.id) as prev
-        from messages m
+        select m.session_id, ${chatOfMessage} as chat, m.id, m.direction, m.created_at
+        from messages m ${asChat}
         where m.workspace_id = ${workspaceId} and m.session_id = any(${ids}::uuid[]) and m.created_at >= ${since} and ${direct}
           and (m.direction = 'in' or m.broadcast_id is null)),
-      turns as (select session_id, remote_jid, created_at from m where direction = 'in' and (prev is null or prev = 'out')),
+      w as (
+        select session_id, direction, created_at,
+          lag(direction) over (partition by session_id, chat order by created_at, id) as prev,
+          min(created_at) filter (where direction = 'out') over (partition by session_id, chat order by created_at, id rows between current row and unbounded following) as reply_at
+        from m),
       answered as (
-        select t.session_id, extract(epoch from r.at - t.created_at)::float8 as secs
-        from turns t
-        left join lateral (
-          select min(x.created_at) as at from messages x
-          where x.session_id = t.session_id and x.remote_jid = t.remote_jid and x.direction = 'out' and x.broadcast_id is null and x.created_at > t.created_at) r on true)
+        select session_id, extract(epoch from reply_at - created_at)::float8 as secs
+        from w where direction = 'in' and (prev is null or prev = 'out'))
       select session_id, count(*)::int as turns, count(secs)::int as answered,
         percentile_cont(0.5) within group (order by secs) as median, avg(secs)::float8 as avg
       from answered group by session_id`,
@@ -304,17 +310,25 @@ export async function collectInbox(sql: Sql, workspaceId: string, sessionIds: st
         and m.created_at >= ${since}
       order by m.created_at asc
       limit ${UNANSWERED}`,
-    sql<{ session_id: string; remote_jid: string; n: number; chat_jid: string | null; name: string | null }[]>`
-      select x.session_id, x.remote_jid, x.n, c.jid as chat_jid, case when c.jid is not null then chat_display_name(c.session_id, c.jid, c.alt_jid, c.name) end as name
-      from (
-        select m.session_id, m.remote_jid, count(*)::int as n from messages m
+    // The busiest conversations the customer wrote in, counted over all the addresses of each contact.
+    sql<{ session_id: string; jid: string; n: number; name: string | null; addresses: string[] }[]>`
+      with x as (
+        select m.session_id, m.remote_jid, count(*)::int as n, count(*) filter (where m.direction = 'in')::int as inbound
+        from messages m
         where m.workspace_id = ${workspaceId} and m.session_id = any(${ids}::uuid[]) and m.created_at >= ${since} and ${direct}
-        group by 1, 2 having count(*) filter (where m.direction = 'in') > 0
-        order by 3 desc limit ${MAX_CHATS * 2}) x
-      left join lateral (
-        select session_id, jid, alt_jid, name from chats
-        where session_id = x.session_id and (jid = x.remote_jid or alt_jid = x.remote_jid) limit 1) c on true
-      order by x.n desc`,
+        group by 1, 2),
+      y as (
+        select x.*, c.jid as chat_jid, c.alt_jid, c.name as chat_name
+        from x left join lateral (
+          select jid, alt_jid, name from chats
+          where session_id = x.session_id and (jid = x.remote_jid or alt_jid = x.remote_jid) limit 1) c on true)
+      select session_id, coalesce(chat_jid, remote_jid) as jid, sum(n)::int as n,
+        case when max(chat_jid) is not null then chat_display_name(session_id, max(chat_jid), max(alt_jid), max(chat_name)) end as name,
+        array_remove(array_agg(distinct remote_jid) || array_agg(distinct chat_jid) || array_agg(distinct alt_jid), null) as addresses
+      from y
+      group by session_id, coalesce(chat_jid, remote_jid)
+      having sum(inbound) > 0
+      order by 3 desc limit ${MAX_CHATS}`,
   ]);
 
   const by = <T extends { session_id: string }>(rows: T[]) => new Map(rows.map((r) => [r.session_id, r]));
@@ -344,15 +358,8 @@ export async function collectInbox(sql: Sql, workspaceId: string, sessionIds: st
     };
   });
 
-  // The busiest conversations; a contact written to under both its phone and LID address is one chat.
-  const picked = new Map<string, { sessionId: string; jid: string; name: string | null; addresses: string[] }>();
-  for (const t of top) {
-    const jid = t.chat_jid ?? t.remote_jid;
-    const key = `${t.session_id}\n${jid}`;
-    const known = picked.get(key);
-    if (known) known.addresses.push(t.remote_jid);
-    else if (picked.size < MAX_CHATS) picked.set(key, { sessionId: t.session_id, jid, name: t.name, addresses: [t.remote_jid] });
-  }
+  // The busiest conversations, each with all its addresses (phone JID and LID): our replies are read with the customer's messages.
+  const picked = new Map(top.map((t) => [`${t.session_id}\n${t.jid}`, { sessionId: t.session_id, jid: t.jid, name: t.name, addresses: [...new Set(t.addresses)] }]));
   const pairs = [...picked.values()].flatMap((p) => p.addresses.map((a) => [p.sessionId, a] as const));
   type Line = { session_id: string; remote_jid: string; direction: 'in' | 'out'; type: string; created_at: Date; campaign: boolean; sent_from: string | null; text: string | null };
   const rows: Line[] = pairs.length
