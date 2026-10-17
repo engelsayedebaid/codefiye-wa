@@ -46,6 +46,9 @@ const WALL_ICONS = { chat: MessageCircle, groups: Users, contacts: User, all: La
 
 type Pages = InfiniteData<MessagesPage, number | undefined>;
 
+/** How far along a message is; a status only replaces one ranked below it. A failure ends a send that hadn't gone out. */
+const STATUS_RANK: Record<ChatMessage['status'], number> = { queued: 0, sending: 1, failed: 2, sent: 3, delivered: 4, read: 5, received: 0 };
+
 /** A message on its way, drawn like a stored one ("queued", or "failed" with retry). */
 function pendingMessage(p: Pending, index: number): ChatMessage {
   const { text, file, ptt, seconds, quote } = p.draft;
@@ -212,8 +215,19 @@ export function Conversation({ sessionId, connected, reconnecting = false, chat,
   });
 
   // Oldest first, reactions folded onto the messages they react to.
+  /**
+   * Status updates that came before their message did: a fast send is "sent" and "delivered" before
+   * the page has the row (from the send response or a catch-up). Kept here and applied once it shows.
+   */
+  const [early, setEarly] = useState(() => new Map<number, Pick<ChatMessage, 'status' | 'error' | 'waMessageId'>>());
+
   const { list, reactions, mine, images, people } = useMemo(() => {
-    const all = (messages.data?.pages.flatMap((p) => p.messages) ?? []).slice().reverse();
+    const all = (messages.data?.pages.flatMap((p) => p.messages) ?? [])
+      .map((m) => {
+        const later = early.get(m.id);
+        return later && STATUS_RANK[later.status] > STATUS_RANK[m.status] ? { ...m, ...later, waMessageId: m.waMessageId ?? later.waMessageId } : m;
+      })
+      .reverse();
     const people: Record<string, Person> = Object.assign({}, ...(messages.data?.pages.map((p) => p.senders ?? {}) ?? []));
     const byTarget = new Map<string, Map<string, string>>();
     for (const m of all) {
@@ -229,7 +243,7 @@ export function Conversation({ sessionId, connected, reconnecting = false, chat,
     // Our own reaction per message, so picking it again takes it back.
     const mine = new Map([...byTarget].flatMap(([id, who]) => (who.has('me') ? [[id, who.get('me')!] as const] : [])));
     return { list: shown, reactions, mine, people, images: shown.filter((m) => m.type === 'image' && m.hasMedia && !m.content.viewOnce) };
-  }, [messages.data]);
+  }, [messages.data, early]);
 
   // The unread divider sits where the chat's unread messages began when it was opened.
   const [unreadAtOpen] = useState(chat.unread);
@@ -371,7 +385,16 @@ export function Conversation({ sessionId, connected, reconnecting = false, chat,
       });
       if (found && (event.type === 'poll.vote' || idMissing)) void queryClient.invalidateQueries({ queryKey: key });
       // A message sent through the API to this chat appears once WhatsApp accepts it.
-      if (!found && event.type === 'messages.update' && event.data.status === 'sent') void catchUp();
+      if (!found && event.type === 'messages.update') {
+        // Ours, but not on the page yet (its row is on the way): keep the news for when it lands.
+        const { id, status, error, waMessageId } = event.data;
+        setEarly((prev) => {
+          const had = prev.get(id);
+          if (had && STATUS_RANK[had.status] >= STATUS_RANK[status]) return prev;
+          return new Map(prev).set(id, { status, error: error ?? null, waMessageId: waMessageId ?? had?.waMessageId ?? null });
+        });
+        if (status === 'sent') void catchUp();
+      }
     }
   });
 
