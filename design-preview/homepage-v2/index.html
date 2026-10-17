@@ -1,0 +1,702 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#f7f4ee">
+  <script>
+    (function () {
+      var saved = null;
+      try { saved = localStorage.getItem('wa.homepage-v2.theme'); } catch (e) {}
+      var q = new URLSearchParams(location.search).get('theme');
+      var t = q || saved || 'light';
+      if (t !== 'dark' && t !== 'light') t = 'light';
+      document.documentElement.dataset.theme = t;
+      var m = document.querySelector('meta[name=theme-color]');
+      if (m) m.content = t === 'dark' ? '#171f1c' : '#f7f4ee';
+    })();
+  </script>
+  <meta name="description" content="اربط رقم واتساب متجرك الحالي بـ REST API ولوحة تحكم عربية، وابعت تحديثات الطلبات تلقائيًا. من 6$ شهريًا للرقم، بدون رسوم لكل رسالة.">
+  <title>WA CodeFiye — رقمك، من غير فاتورة لكل رسالة</title>
+  <link rel="icon" href="assets/logo-mark.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Instrument+Sans:wght@600;700&family=Instrument+Serif&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!--
+    Standalone design preview (HTML + CSS only). Not imported by the dashboard.
+    Each "→ Name" comment marks a future component.
+    Plan data mirrors packages/shared/src/plans.ts; copy mirrors apps/dashboard/src/i18n/ar.ts.
+  -->
+  <a class="skip" href="#main">تخطَّ إلى المحتوى</a>
+
+  <!-- ============ Header (→ SiteHeader) ============ -->
+  <header class="header">
+    <div class="container header__bar">
+      <!-- Original logo: mark = apps/dashboard/public/favicon.svg, wordmark as in ui.tsx `Logo`. -->
+      <a class="brand" href="#top" aria-label="WA CodeFiye — الصفحة الرئيسية">
+        <img class="brand__mark" src="assets/logo-mark.svg" width="32" height="32" alt="">
+        <span class="brand__name" dir="ltr"><span class="brand__wa">WA</span> CodeFiye</span>
+      </a>
+
+      <nav class="nav" aria-label="التنقل الرئيسي">
+        <a href="#how">طريقة العمل</a>
+        <a href="#features">المميزات</a>
+        <a href="#pricing">الأسعار</a>
+        <a href="#developers">للمطوّرين والوكالات</a>
+        <a href="#faq">الأسئلة الشائعة</a>
+      </nav>
+
+      <div class="header__actions">
+        <button class="theme-btn" id="theme" type="button" aria-label="تفعيل المظهر الداكن">
+          <svg class="theme-btn__moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M16 3.2A8.2 8.2 0 1 0 20.8 14 6.4 6.4 0 0 1 16 3.2Z" stroke-linejoin="round"/>
+          </svg>
+          <svg class="theme-btn__sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <circle cx="12" cy="12" r="3.2"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M18.8 5.2l-1.4 1.4M6.6 17.4l-1.4 1.4" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <a class="link-quiet header__login" href="/login">تسجيل الدخول</a>
+        <a class="btn btn--brand btn--sm header__cta" href="/register">ابدأ التجربة</a>
+
+        <!-- Mobile menu: <details> keeps it JavaScript-free. -->
+        <details class="mnav">
+          <summary class="mnav__toggle" aria-label="القائمة">
+            <span class="mnav__bars" aria-hidden="true"></span>
+          </summary>
+          <div class="mnav__panel">
+            <nav aria-label="قائمة الموبايل">
+              <a href="#how"><span>طريقة العمل</span><span class="mono">01</span></a>
+              <a href="#features"><span>المميزات</span><span class="mono">02</span></a>
+              <a href="#pricing"><span>الأسعار</span><span class="mono">03</span></a>
+              <a href="#developers"><span>للمطوّرين والوكالات</span><span class="mono">04</span></a>
+              <a href="#faq"><span>الأسئلة الشائعة</span><span class="mono">05</span></a>
+            </nav>
+            <div class="mnav__actions">
+              <a class="btn btn--brand btn--block" href="/register">ابدأ تجربة 3 أيام مجانًا</a>
+              <a class="btn btn--ghost btn--block" href="/login">تسجيل الدخول</a>
+            </div>
+          </div>
+        </details>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- ============ Hero (→ Hero + OrderTicket) ============ -->
+    <section class="hero" id="top">
+      <div class="container hero__grid">
+        <div class="hero__copy">
+          <p class="eyebrow rise"><span class="eyebrow__dot" aria-hidden="true"></span>لأصحاب المتاجر الإلكترونية في مصر</p>
+
+          <h1 class="hero__title rise d1">
+            <span class="hero__line">رقمك.</span>
+            <span class="hero__line">من غير <mark>فاتورة</mark></span>
+            <span class="hero__line"><mark>لكل رسالة.</mark></span>
+          </h1>
+
+          <p class="hero__lede rise d2">
+            تأكيد الطلب، والشحن، والتسليم — رسائل تطلع لعملائك تلقائيًا من رقم واتساب متجرك الحالي، عن طريق
+            <span class="ltr">REST API</span> أو لوحة تحكم عربية.
+          </p>
+
+          <div class="hero__price rise d3">
+            <p class="price-tag">
+              <span class="price-tag__amount ltr">6<span class="price-tag__cur">$</span></span>
+              <span class="price-tag__label">
+                <b>شهريًا للرقم · باقة Basic</b>
+                <span>بدون رسوم لكل رسالة وبدون حد يومي</span>
+              </span>
+            </p>
+            <p class="trial-pill"><span class="ltr">3</span> أيام تجربة مجانية</p>
+          </div>
+
+          <div class="hero__ctas rise d4">
+            <a class="btn btn--brand btn--lg" href="/register">
+              ابدأ تجربة 3 أيام مجانًا
+              <svg class="icon flip" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6"/></svg>
+            </a>
+            <a class="btn btn--ghost btn--lg" href="#how">
+              شاهد طريقة العمل
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14m-6-6 6 6 6-6"/></svg>
+            </a>
+          </div>
+
+          <ul class="hero__trust rise d5">
+            <li><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7"/></svg>بدون بطاقة ائتمان</li>
+            <li><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7"/></svg>نساعدك تربط رقمك في حوالي <span class="ltr">15</span> دقيقة</li>
+            <li><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7"/></svg>فودافون كاش · InstaPay · تحويل بنكي</li>
+          </ul>
+        </div>
+
+        <!-- Illustration: one order, three automatic updates. Not a messenger UI on purpose. -->
+        <div class="hero__visual rise d3" aria-label="مثال: ثلاث رسائل تحديث لطلب واحد تُرسل تلقائيًا من رقم المتجر">
+          <div class="plate">
+            <article class="ticket">
+              <header class="ticket__head">
+                <div>
+                  <p class="ticket__store">متجر الأمل</p>
+                  <p class="ticket__order">طلب <span class="mono ltr">#4821</span> · سارة م.</p>
+                </div>
+                <span class="live"><span class="live__dot" aria-hidden="true"></span>متصل</span>
+              </header>
+
+              <ol class="timeline">
+                <li class="timeline__item is-done">
+                  <div class="timeline__meta">
+                    <span class="timeline__event">تأكيد الطلب</span>
+                    <time class="mono ltr">10:02</time>
+                  </div>
+                  <div class="note">
+                    <p>أهلاً سارة، تم تأكيد طلبك <b class="ltr">#4821</b> بإجمالي <b class="ltr">1,250</b> ج.م. هنبلغك أول ما يتشحن.</p>
+                    <p class="note__foot"><span class="tpl mono">order_confirmed</span><span class="state state--read">اتقرت</span></p>
+                  </div>
+                </li>
+                <li class="timeline__item is-done">
+                  <div class="timeline__meta">
+                    <span class="timeline__event">خرج للشحن</span>
+                    <time class="mono ltr">16:40</time>
+                  </div>
+                  <div class="note">
+                    <p>طلبك خرج مع شركة الشحن 🚚 رقم التتبع <b class="ltr">EG-30917</b>، والتسليم المتوقع خلال يومين.</p>
+                    <p class="note__foot"><span class="tpl mono">order_shipped</span><span class="state">وصلت</span></p>
+                  </div>
+                </li>
+                <li class="timeline__item is-live">
+                  <div class="timeline__meta">
+                    <span class="timeline__event">تم التسليم</span>
+                    <span class="typing" aria-label="جاري الإرسال"><i></i><i></i><i></i></span>
+                  </div>
+                  <div class="note note--pending">
+                    <p>تم تسليم طلبك. شكرًا لثقتك في متجر الأمل 🤍</p>
+                    <p class="note__foot"><span class="tpl mono">order_delivered</span><span class="state state--queued">في الطابور</span></p>
+                  </div>
+                </li>
+              </ol>
+
+              <footer class="ticket__foot">
+                <span>من رقم المتجر <span class="ltr mono">+20 10 •••• 5521</span></span>
+                <span class="ticket__cost">رسوم لكل رسالة <b class="ltr">0$</b></span>
+              </footer>
+            </article>
+
+            <div class="api-chip" aria-hidden="true">
+              <p class="mono ltr"><span class="api-chip__verb">POST</span> /api/send-message</p>
+              <p class="mono ltr api-chip__body">{ "template": "order_delivered" }</p>
+              <p class="mono ltr api-chip__ok">200 · queued</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="container">
+        <p class="stores">
+          <span class="stores__label">توصّله بمتجرك عن طريق الـ API:</span>
+          <span class="stores__list ltr">Shopify</span>
+          <span class="stores__sep" aria-hidden="true">/</span>
+          <span class="stores__list ltr">WooCommerce</span>
+          <span class="stores__sep" aria-hidden="true">/</span>
+          <span class="stores__list ltr">Easy Orders</span>
+          <span class="stores__sep" aria-hidden="true">/</span>
+          <span class="stores__list">أي نظام يرسل طلب <span class="ltr">HTTP</span></span>
+        </p>
+      </div>
+    </section>
+
+    <!-- ============ Problem → Solution (→ Problem) ============ -->
+    <section class="section" id="problem">
+      <div class="container">
+        <header class="section-head">
+          <p class="kicker"><span class="mono">00</span> المشكلة والحل</p>
+          <h2 class="section-head__title">كل طلب يعني <span class="ltr">3</span> رسائل.<br>ليه تكتبهم بإيدك؟</h2>
+          <p class="section-head__lede">العميل عايز يعرف طلبه وصل لفين. الفرق بين إنك تبعتها واحدة واحدة وإن المتجر يبعتها لوحده هو ساعات من يومك.</p>
+        </header>
+
+        <div class="compare">
+          <article class="compare__col compare__col--manual">
+            <p class="compare__tag">يدويًا</p>
+            <ol class="steps-list">
+              <li>تفتح الطلب وتنسخ رقم العميل.</li>
+              <li>تفتح واتساب وتكتب رسالة التأكيد.</li>
+              <li>ترجع بعد الشحن وتكتب رسالة تانية برقم التتبع.</li>
+              <li>وتكرر نفس الكلام عند التسليم… لكل طلب.</li>
+            </ol>
+            <p class="compare__sum">
+              <span class="compare__num ltr">240</span>
+              <span>رسالة بإيدك في اليوم<br><small>مثال: <span class="ltr">80</span> طلب × <span class="ltr">3</span> تحديثات</small></span>
+            </p>
+          </article>
+
+          <div class="compare__arrow" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M19 12H5m6-6-6 6 6 6"/></svg>
+          </div>
+
+          <article class="compare__col compare__col--auto">
+            <p class="compare__tag">تلقائيًا</p>
+            <ol class="steps-list">
+              <li>حالة الطلب تتغير في متجرك.</li>
+              <li>متجرك يبعت طلب <span class="ltr">API</span> واحد: اسم القالب وبيانات العميل.</li>
+              <li>الرسالة تدخل طابور الإرسال وتطلع من رقمك.</li>
+              <li>تتابع حالتها: اتبعتت، وصلت، اتقرت.</li>
+            </ol>
+            <p class="compare__sum">
+              <span class="compare__num ltr">0</span>
+              <span>رسائل بإيدك<br><small>وسعر الباقة ثابت مهما كان عدد الطلبات</small></span>
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ How it works (→ How) ============ -->
+    <section class="section section--tint" id="how">
+      <div class="container">
+        <header class="section-head">
+          <p class="kicker"><span class="mono">01</span> طريقة العمل</p>
+          <h2 class="section-head__title">ثلاث خطوات، وأول رسالة تطلع النهارده.</h2>
+          <p class="section-head__lede">مش محتاج رقم جديد ولا موافقة من حد. ولو وقفت في أي خطوة، فريقنا يربطه معاك في حوالي <span class="ltr">15</span> دقيقة.</p>
+        </header>
+
+        <ol class="how">
+          <li class="how__step">
+            <span class="how__num ltr" aria-hidden="true">1</span>
+            <div class="how__art">
+              <svg class="qr" viewBox="0 0 21 21" role="img" aria-label="رمز QR توضيحي">
+                <path d="M0 0h7v7H0zM1 1v5h5V1zM2 2h3v3H2zM14 0h7v7h-7zm1 1v5h5V1zm1 1h3v3h-3zM0 14h7v7H0zm1 1v5h5v-5zm1 1h3v3H2zM9 0h2v2H9zm2 2h1v2h-1zM8 4h2v1H8zm2 2h2v2h-2zM9 8h1v2H9zm-1 3h2v1H8zM0 8h2v1H0zm3 0h2v2H3zM5 11h2v1H5zM1 10h1v2H1zm11-2h2v1h-2zm3 0h1v2h-1zm2 1h2v1h-2zm2 2h2v2h-2zm-6 0h3v1h-3zm-1 2h2v2h-2zm3 1h1v3h-1zm2 0h3v1h-3zm-1 3h2v2h-2zm3 0h1v2h-1zm-9 1h2v2h-2zm1-3h1v2h-1z"/>
+              </svg>
+            </div>
+            <h3 class="how__title">اربط رقمك بمسح QR</h3>
+            <p class="how__text">من واتساب في موبايلك: الأجهزة المرتبطة ← ربط جهاز، وامسح الرمز. أو اطلب رمز ربط وادخله بدل المسح.</p>
+          </li>
+
+          <li class="how__step">
+            <span class="how__num ltr" aria-hidden="true">2</span>
+            <div class="how__art">
+              <div class="tpl-card">
+                <p class="tpl-card__name mono ltr">order_shipped</p>
+                <p class="tpl-card__body">أهلاً <span class="var ltr">{{name}}</span>، طلبك <span class="var ltr">{{order}}</span> خرج للشحن 🚚</p>
+              </div>
+            </div>
+            <h3 class="how__title">جهّز قالب حالة الطلب</h3>
+            <p class="how__text">اكتب الرسالة مرة واحدة بمتغيرات زي الاسم ورقم الطلب، وممكن تضيف صورة مع القالب.</p>
+          </li>
+
+          <li class="how__step">
+            <span class="how__num ltr" aria-hidden="true">3</span>
+            <div class="how__art">
+              <div class="flow">
+                <p class="flow__src"><span>من اللوحة</span><span class="flow__or">أو</span><span class="ltr">API</span></p>
+                <p class="flow__chain">
+                  <span>في الطابور</span><i aria-hidden="true"></i><span>اتبعتت</span><i aria-hidden="true"></i><span>وصلت</span><i aria-hidden="true"></i><span class="is-on">اتقرت</span>
+                </p>
+              </div>
+            </div>
+            <h3 class="how__title">ابعت التحديثات تلقائيًا</h3>
+            <p class="how__text">متجرك يستدعي الـ <span class="ltr">API</span> عند كل تغيير في حالة الطلب، أو ابعت من صفحة الرقم في اللوحة، وتابع حالة كل رسالة.</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ============ Features (→ Features) ============ -->
+    <section class="section" id="features">
+      <div class="container">
+        <header class="section-head">
+          <p class="kicker"><span class="mono">02</span> المميزات</p>
+          <h2 class="section-head__title">اللي محتاجه متجرك. ولا حاجة زيادة.</h2>
+          <p class="section-head__lede">كل اللي تحت ده شغال فعلًا في المنصة النهارده.</p>
+        </header>
+
+        <div class="features">
+          <article class="feature feature--lead">
+            <p class="feature__idx mono">F/01</p>
+            <h3 class="feature__title">رقمك الحالي، نفس الاسم ونفس المحادثات</h3>
+            <p class="feature__text">الرسائل بتطلع من رقم متجرك اللي عملاؤك عارفينه، وبتظهر لهم زي أي رسالة منك. مفيش رقم جديد ولا اسم غريب.</p>
+          </article>
+
+          <article class="feature">
+            <p class="feature__idx mono">F/02</p>
+            <h3 class="feature__title">نصوص ووسائط</h3>
+            <p class="feature__text">ابعت نص، صورة، فيديو، رسالة صوتية، مستند، موقع، أو جهة اتصال — للأفراد والمجموعات.</p>
+            <p class="types">
+              <span>نص</span><span>صورة</span><span>فيديو</span><span>صوت</span><span>مستند <span class="ltr">PDF</span></span><span>موقع</span><span>جهة اتصال</span>
+            </p>
+          </article>
+
+          <article class="feature">
+            <p class="feature__idx mono">F/03</p>
+            <h3 class="feature__title">قوالب قابلة لإعادة الاستخدام</h3>
+            <p class="feature__text">اكتب الرسالة مرة بمتغيرات <span class="ltr mono">{{name}}</span> و<span class="ltr mono">{{order}}</span>، واستدعِها بالاسم من الـ <span class="ltr">API</span>.</p>
+          </article>
+
+          <article class="feature">
+            <p class="feature__idx mono">F/04</p>
+            <h3 class="feature__title"><span class="ltr">REST API</span> بتوثيق تفاعلي</h3>
+            <p class="feature__text">مفتاح لكل رقم، طلب واحد للإرسال، ومرجع <span class="ltr">OpenAPI</span> كامل تجرّب منه من المتصفح.</p>
+          </article>
+
+          <article class="feature">
+            <p class="feature__idx mono">F/05</p>
+            <h3 class="feature__title">حالة كل رسالة</h3>
+            <p class="feature__text">اعرف كل رسالة فين: في الطابور، اتبعتت، وصلت، اتقرت — من اللوحة أو من الـ <span class="ltr">API</span>.</p>
+          </article>
+
+          <article class="feature">
+            <p class="feature__idx mono">F/06</p>
+            <h3 class="feature__title">لوحة تحكم عربية</h3>
+            <p class="feature__text">الأرقام والقوالب والمفاتيح والاشتراك في مكان واحد، بالعربي (أو الإنجليزي)، بوضع فاتح أو داكن.</p>
+          </article>
+
+          <article class="feature">
+            <p class="feature__idx mono">F/07</p>
+            <h3 class="feature__title">إيقاع إرسال هادي</h3>
+            <p class="feature__text">فواصل بين الرسائل وحالة «يكتب…» قبل الإرسال، عشان رقمك ما يبانش كأنه بيرش رسائل.</p>
+          </article>
+
+          <article class="feature">
+            <p class="feature__idx mono">F/08</p>
+            <h3 class="feature__title">رموز تحقق <span class="ltr">OTP</span></h3>
+            <p class="feature__text">طلب واحد يولّد الرمز ويبعته على واتساب ويرجّعه لك — لتأكيد الطلبات أو تسجيل الدخول.</p>
+          </article>
+
+          <article class="feature">
+            <p class="feature__idx mono">F/09</p>
+            <h3 class="feature__title">بيانات الجلسة مشفّرة</h3>
+            <p class="feature__text">بيانات ربط رقمك محفوظة مشفّرة بـ <span class="ltr">AES-256-GCM</span>، ومحدش بيقرأ محادثاتك الخاصة.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ Pricing (→ Pricing; data = PLANS in packages/shared/src/plans.ts) ============ -->
+    <section class="section section--tint" id="pricing">
+      <div class="container">
+        <header class="section-head">
+          <p class="kicker"><span class="mono">03</span> الأسعار</p>
+          <h2 class="section-head__title">بتدفع على الرقم، مش على الرسالة.</h2>
+          <p class="section-head__lede">ابدأ بتجربة <span class="ltr">3</span> أيام مجانًا، وبعدها اختار الباقة على عدد أرقامك. الباقات شهرية، وتقدر تدفع شهر أو <span class="ltr">3</span> أو <span class="ltr">6</span> أو <span class="ltr">12</span> شهر مرة واحدة.</p>
+        </header>
+
+        <!-- Trial: not a paid plan, so it gets a band instead of a card. -->
+        <article class="trial-band" aria-labelledby="plan-trial">
+          <div class="trial-band__lead">
+            <p class="trial-band__tag"><span class="ltr">Trial</span> · تجربة مجانية</p>
+            <h3 class="trial-band__title" id="plan-trial"><span class="ltr">0$</span> لمدة <span class="ltr">3</span> أيام</h3>
+          </div>
+          <ul class="trial-band__specs">
+            <li><b class="ltr">1</b> رقم واتساب</li>
+            <li><b class="ltr">50</b> رسالة في اليوم</li>
+            <li><b class="ltr">10</b> طلبات <span class="ltr">API</span> في الدقيقة</li>
+            <li>سجل الرسائل <b class="ltr">7</b> أيام</li>
+          </ul>
+          <div class="trial-band__cta">
+            <a class="btn btn--ink" href="/register">ابدأ التجربة المجانية</a>
+            <p>بدون بطاقة ائتمان. الإرسال يقف بعد التجربة لحد ما تفعّل باقة.</p>
+          </div>
+        </article>
+
+        <div class="plans">
+          <article class="plan plan--featured" aria-labelledby="plan-basic">
+            <p class="plan__badge">عرض الحملة</p>
+            <header class="plan__head">
+              <h3 class="plan__name ltr" id="plan-basic">Basic</h3>
+              <span class="plan__per"><span class="mono ltr">6.00$</span> للرقم</span>
+            </header>
+            <p class="plan__blurb">لمتجر أو فريق صغير محتاج رقم واتساب واحد للتواصل مع العملاء.</p>
+            <p class="plan__price"><span class="plan__amount ltr">6$</span><span>شهريًا</span></p>
+            <dl class="plan__specs">
+              <div><dt>الأرقام</dt><dd><span class="ltr">1</span> رقم</dd></div>
+              <div><dt>طلبات الـ <span class="ltr">API</span></dt><dd><span class="ltr">60</span> / دقيقة</dd></div>
+              <div><dt>الرسائل اليومية</dt><dd>بدون حد</dd></div>
+              <div><dt>حفظ السجل</dt><dd><span class="ltr">30</span> يوم</dd></div>
+            </dl>
+            <ul class="plan__extras">
+              <li>كل أساسيات الإرسال والـ <span class="ltr">API</span></li>
+            </ul>
+            <a class="btn btn--brand btn--block" href="/register">ابدأ التجربة ثم Basic</a>
+          </article>
+
+          <article class="plan" aria-labelledby="plan-pro">
+            <header class="plan__head">
+              <h3 class="plan__name ltr" id="plan-pro">Pro</h3>
+              <span class="plan__per"><span class="mono ltr">5.00$</span> للرقم</span>
+            </header>
+            <p class="plan__blurb">للأعمال النامية اللي بتدير لحد <span class="ltr">3</span> أرقام واتساب.</p>
+            <p class="plan__price"><span class="plan__amount ltr">15$</span><span>شهريًا</span></p>
+            <dl class="plan__specs">
+              <div><dt>الأرقام</dt><dd><span class="ltr">3</span> أرقام</dd></div>
+              <div><dt>طلبات الـ <span class="ltr">API</span></dt><dd><span class="ltr">120</span> / دقيقة</dd></div>
+              <div><dt>الرسائل اليومية</dt><dd>بدون حد</dd></div>
+              <div><dt>حفظ السجل</dt><dd><span class="ltr">60</span> يوم</dd></div>
+            </dl>
+            <ul class="plan__extras">
+              <li>كل أساسيات الإرسال والـ <span class="ltr">API</span></li>
+            </ul>
+            <a class="btn btn--ghost btn--block" href="/register">اختر Pro</a>
+          </article>
+
+          <article class="plan" aria-labelledby="plan-plus">
+            <header class="plan__head">
+              <h3 class="plan__name ltr" id="plan-plus">Plus</h3>
+              <span class="plan__per"><span class="mono ltr">5.00$</span> للرقم</span>
+            </header>
+            <p class="plan__blurb">للفرق المتوسّعة اللي محتاجة <span class="ltr">6</span> أرقام لتغطية أكبر.</p>
+            <p class="plan__price"><span class="plan__amount ltr">30$</span><span>شهريًا</span></p>
+            <dl class="plan__specs">
+              <div><dt>الأرقام</dt><dd><span class="ltr">6</span> أرقام</dd></div>
+              <div><dt>طلبات الـ <span class="ltr">API</span></dt><dd><span class="ltr">120</span> / دقيقة</dd></div>
+              <div><dt>الرسائل اليومية</dt><dd>بدون حد</dd></div>
+              <div><dt>حفظ السجل</dt><dd><span class="ltr">60</span> يوم</dd></div>
+            </dl>
+            <ul class="plan__extras">
+              <li class="is-extra">حملات إعلانية جماعية</li>
+            </ul>
+            <a class="btn btn--ghost btn--block" href="/register">اختر Plus</a>
+          </article>
+
+          <article class="plan" aria-labelledby="plan-business">
+            <header class="plan__head">
+              <h3 class="plan__name ltr" id="plan-business">Business</h3>
+              <span class="plan__per"><span class="mono ltr">4.50$</span> للرقم</span>
+            </header>
+            <p class="plan__blurb">حل متكامل للأعمال بـ <span class="ltr">10</span> أرقام ومزايا متقدمة.</p>
+            <p class="plan__price"><span class="plan__amount ltr">45$</span><span>شهريًا</span></p>
+            <dl class="plan__specs">
+              <div><dt>الأرقام</dt><dd><span class="ltr">10</span> أرقام</dd></div>
+              <div><dt>طلبات الـ <span class="ltr">API</span></dt><dd><span class="ltr">120</span> / دقيقة</dd></div>
+              <div><dt>الرسائل اليومية</dt><dd>بدون حد</dd></div>
+              <div><dt>حفظ السجل</dt><dd><span class="ltr">90</span> يوم</dd></div>
+            </dl>
+            <ul class="plan__extras">
+              <li class="is-extra">حملات إعلانية جماعية</li>
+              <li class="is-extra">صندوق محادثات مباشر</li>
+              <li class="is-extra">دعم أولوية</li>
+            </ul>
+            <a class="btn btn--ghost btn--block" href="/register">اختر Business</a>
+          </article>
+        </div>
+
+        <!-- Enterprise: priceUsd is null in the catalog — custom pricing, never a fixed number. -->
+        <article class="enterprise" aria-labelledby="plan-enterprise">
+          <div class="enterprise__lead">
+            <h3 class="enterprise__name ltr" id="plan-enterprise">Enterprise</h3>
+            <p class="enterprise__price">تسعير مخصص حسب الاتفاق</p>
+          </div>
+          <ul class="enterprise__specs">
+            <li><b class="ltr">25</b> رقم</li>
+            <li><b class="ltr">300</b> طلب <span class="ltr">API</span> / دقيقة</li>
+            <li>رسائل بدون حد يومي</li>
+            <li>سجل <b class="ltr">90</b> يوم</li>
+            <li>حملات جماعية</li>
+            <li>صندوق محادثات</li>
+          </ul>
+          <div class="enterprise__cta">
+            <!-- Placeholder address: brand.ts still has support@example.com. -->
+            <a class="btn btn--ghost" href="mailto:support@example.com">تواصل معنا</a>
+            <p>أو اطلبها من صفحة الاشتراك بعد التسجيل.</p>
+          </div>
+        </article>
+
+        <div class="plans-foot">
+          <div>
+            <h3 class="plans-foot__title">في كل الباقات المدفوعة</h3>
+            <ul class="plans-foot__list">
+              <li>رسائل غير محدودة</li>
+              <li>جهات اتصال غير محدودة</li>
+              <li>إرسال للأفراد والمجموعات</li>
+              <li>نصوص وصور وفيديو وصوت</li>
+              <li>مستندات وجهات اتصال ومواقع</li>
+              <li>وصول كامل للـ <span class="ltr">API</span></li>
+            </ul>
+          </div>
+          <div>
+            <h3 class="plans-foot__title">الدفع من مصر</h3>
+            <p class="pay"><span>فودافون كاش</span><span class="ltr">InstaPay</span><span>تحويل بنكي</span></p>
+            <p class="plans-foot__muted">المبلغ يظهر بالجنيه وقت الدفع. ترفع صورة التحويل، والباقة تتفعّل بعد المراجعة. الوسائل المتاحة تظهر في صفحة الاشتراك.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ Developers & agencies (→ Developers) ============ -->
+    <section class="section section--ink" id="developers">
+      <div class="container">
+        <header class="section-head section-head--ink">
+          <p class="kicker"><span class="mono">04</span> للمطوّرين والوكالات</p>
+          <h2 class="section-head__title">طلب واحد في كود المتجر.<br>وخدمة جديدة تبيعها لعملائك.</h2>
+        </header>
+
+        <div class="dev">
+          <div class="code" dir="ltr">
+            <div class="code__bar">
+              <span class="code__dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span class="mono">order-status-changed.sh</span>
+            </div>
+<pre class="code__pre"><code><span class="c-cmd">curl</span> -X POST <span class="c-str">"$WA_API/api/send-message"</span> \
+  -H <span class="c-str">"Authorization: Bearer was_••••••••"</span> \
+  -H <span class="c-str">"Content-Type: application/json"</span> \
+  -d <span class="c-str">'{
+    "to": "+201012345678",
+    "template": "order_shipped",
+    "variables": { "name": "سارة", "order": "#4821" }
+  }'</span>
+
+<span class="c-com"># → 200</span>
+<span class="c-punc">{</span> <span class="c-key">"success"</span>: <span class="c-bool">true</span>, <span class="c-key">"data"</span>: <span class="c-punc">{</span> <span class="c-key">"msgId"</span>: <span class="c-num">10482</span>, <span class="c-key">"status"</span>: <span class="c-str">"queued"</span> <span class="c-punc">} }</span></code></pre>
+          </div>
+
+          <div class="dev__cols">
+            <article class="dev__block">
+              <p class="dev__tag">للمطوّر</p>
+              <h3 class="dev__title">طلب واحد عند كل تغيير في حالة الطلب</h3>
+              <ul class="dev__list">
+                <li><span class="mono ltr">POST /api/send-message</span> نص أو وسائط أو قالب بالاسم ومتغيراته.</li>
+                <li><span class="mono ltr">GET /api/messages/:id</span> حالة الرسالة: اتبعتت، وصلت، اتقرت.</li>
+                <li><span class="mono ltr">POST /api/send-otp</span> رمز تحقق جاهز في طلب واحد.</li>
+                <li>بث مباشر للأحداث <span class="ltr">(SSE)</span>، ومرجع <span class="ltr">OpenAPI</span> تفاعلي على <span class="mono ltr">/docs</span>.</li>
+              </ul>
+              <a class="link-arrow" href="/docs">افتح التوثيق
+                <svg class="icon flip" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6"/></svg>
+              </a>
+            </article>
+
+            <article class="dev__block">
+              <p class="dev__tag">للوكالة</p>
+              <h3 class="dev__title">أضفه لباقة المتاجر اللي بتبنيها</h3>
+              <ul class="dev__list">
+                <li>لكل عميل رقمه ومفتاح <span class="ltr">API</span> مستقل، فبيانات كل متجر منفصلة.</li>
+                <li>توكن مساحة عمل <span class="mono ltr">wap_…</span> واحد يدير كل الأرقام من سكريبت واحد.</li>
+                <li>اربطه مع المتجر وقت التسليم، وقدّمه كخدمة شهرية إضافية بالسعر اللي تحدده.</li>
+              </ul>
+              <a class="link-arrow" href="/guide">دليل الربط خطوة بخطوة
+                <svg class="icon flip" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6"/></svg>
+              </a>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ FAQ (→ Faq) ============ -->
+    <section class="section" id="faq">
+      <div class="container faq-wrap">
+        <header class="section-head section-head--stack">
+          <p class="kicker"><span class="mono">05</span> الأسئلة الشائعة</p>
+          <h2 class="section-head__title">قبل ما تبدأ.</h2>
+          <p class="section-head__lede">لو سؤالك مش هنا، فريق الدعم بيرد عليك ويساعدك في الربط.</p>
+        </header>
+
+        <div class="faq">
+          <details class="faq__item" open>
+            <summary>إزاي أربط رقمي؟ ومحتاج وقت قد إيه؟</summary>
+            <div class="faq__a"><p>من صفحة «الجلسات» اضغط «ربط رقم»، وافتح واتساب على موبايلك: الإعدادات ← الأجهزة المرتبطة ← ربط جهاز، وامسح رمز الـ <span class="ltr">QR</span>. وتقدر تطلب رمز ربط وتدخله في الموبايل بدل المسح. الربط نفسه بياخد دقيقة، ولو احتجت مساعدة بنربطه معاك في حوالي <span class="ltr">15</span> دقيقة.</p></div>
+          </details>
+          <details class="faq__item">
+            <summary>التجربة المجانية فيها إيه؟</summary>
+            <div class="faq__a"><p><span class="ltr">3</span> أيام على رقم واحد، بحد <span class="ltr">50</span> رسالة في اليوم و<span class="ltr">10</span> طلبات <span class="ltr">API</span> في الدقيقة، ومن غير بطاقة ائتمان. التجربة مش اشتراك مدفوع: لما تخلص، الإرسال بيقف لحد ما تفعّل أي باقة.</p></div>
+          </details>
+          <details class="faq__item">
+            <summary>الأسعار بتشمل إيه؟ وإزاي أدفع؟</summary>
+            <div class="faq__a"><p>كل باقة بعدد أرقام ثابت في الشهر (من رقم واحد في Basic لحد <span class="ltr">10</span> في Business)، بدون رسوم لكل رسالة وبدون حد يومي. بتدفع شهر أو <span class="ltr">3</span> أو <span class="ltr">6</span> أو <span class="ltr">12</span> شهر عن طريق فودافون كاش أو InstaPay أو تحويل بنكي (حسب الوسائل المتاحة وقت الدفع). المبلغ بيظهر بالجنيه المصري، ترفع صورة التحويل، والباقة بتتفعّل بعد مراجعتها.</p></div>
+          </details>
+          <details class="faq__item">
+            <summary>بيشتغل مع Shopify وWooCommerce وEasy Orders؟</summary>
+            <div class="faq__a"><p>مفيش إضافة جاهزة لأي منصة حاليًا. الربط بيتم عن طريق الـ <span class="ltr">REST API</span>: أي متجر أو نظام أو أداة أتمتة تقدر تبعت طلب <span class="ltr">HTTP</span> لما حالة الطلب تتغير تقدر تستخدم الخدمة. لو مش مطوّر، مطوّر متجرك أو الوكالة اللي شغالة معاك تقدر تعملها.</p></div>
+          </details>
+          <details class="faq__item">
+            <summary>الجلسة بتفضل متصلة؟ ولو النت فصل؟</summary>
+            <div class="faq__a"><p>لو الاتصال قطع، المنصة بتعيد الاتصال تلقائيًا. لو سجّلت خروج الجهاز المرتبط من موبايلك، الجلسة بتقف وبترجّعها بمسح <span class="ltr">QR</span> جديد. خلي واتساب شغال على موبايلك بانتظام عشان ما يفصلش الأجهزة المرتبطة.</p></div>
+          </details>
+          <details class="faq__item">
+            <summary>ممكن رقمي يتحظر؟</summary>
+            <div class="faq__a"><p>أيوه، الخطر موجود. الخدمة بتشتغل عن طريق واتساب ويب ومش تابعة لـ Meta، والإرسال المزعج أو لناس ما طلبوش يتواصلوا معاك ممكن يخلّي واتساب يوقف رقمك. بنقلل الخطر بفواصل بين الرسائل وحالة «يكتب…»، لكن ما بنضمنش عدم الحظر ولا وصول كل رسالة. ابعت لعملائك اللي طلبوا منك بس.</p></div>
+          </details>
+          <details class="faq__item">
+            <summary>العميل هيعرف إن الرسالة أوتوماتيك؟</summary>
+            <div class="faq__a"><p>الرسالة بتطلع من رقمك وبتظهر للعميل زي أي رسالة بتبعتها من موبايلك.</p></div>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ Final CTA (→ Closing) ============ -->
+    <section class="final">
+      <div class="container final__inner">
+        <h2 class="final__title">جرّب <span class="ltr">3</span> أيام.<br>وبعدها <span class="ltr">6$</span> في الشهر للرقم.</h2>
+        <div class="final__side">
+          <a class="btn btn--light btn--lg" href="/register">ابدأ تجربتك المجانية
+            <svg class="icon flip" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6"/></svg>
+          </a>
+          <p>بدون بطاقة ائتمان · مساعدة في الربط</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============ Footer (→ SiteFooter) ============ -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer__top">
+        <div class="footer__brand">
+          <a class="brand" href="#top" aria-label="WA CodeFiye">
+            <img class="brand__mark" src="assets/logo-mark.svg" width="32" height="32" alt="">
+            <span class="brand__name" dir="ltr"><span class="brand__wa">WA</span> CodeFiye</span>
+          </a>
+          <p>ربط رقم واتساب متجرك بـ <span class="ltr">REST API</span> ولوحة تحكم عربية.</p>
+        </div>
+
+        <nav class="footer__cols" aria-label="روابط الموقع">
+          <div>
+            <p class="footer__head">المنتج</p>
+            <a href="#how">طريقة العمل</a>
+            <a href="#features">المميزات</a>
+            <a href="#pricing">الأسعار</a>
+          </div>
+          <div>
+            <p class="footer__head">المطوّرون</p>
+            <a href="/docs">توثيق الـ <span class="ltr">API</span></a>
+            <a href="/guide">دليل الربط</a>
+            <a href="/dashboard">لوحة التحكم</a>
+          </div>
+          <div>
+            <p class="footer__head">الدعم</p>
+            <a href="#faq">الأسئلة الشائعة</a>
+            <!-- Placeholder: brand.ts still has support@example.com. -->
+            <a href="mailto:support@example.com" class="is-placeholder">تواصل معنا <small>(بريد مؤقت)</small></a>
+            <a href="/privacy">سياسة الخصوصية</a>
+            <!-- Placeholder: the terms page doesn't exist yet (README §10). -->
+            <span class="is-placeholder" aria-disabled="true">الشروط والأحكام <small>(قريبًا)</small></span>
+          </div>
+        </nav>
+      </div>
+
+      <p class="footer__notice">
+        WA CodeFiye خدمة مستقلة وغير تابعة لـ WhatsApp أو Meta. إرسال رسائل غير مرغوب فيها قد يؤدي إلى إيقاف رقمك من واتساب. لا نضمن عدم الحظر ولا وصول كل الرسائل.
+      </p>
+
+      <div class="footer__bottom">
+        <p>© <span class="ltr">2026</span> WA CodeFiye. جميع الحقوق محفوظة.</p>
+        <a href="#top" class="link-quiet">للأعلى ↑</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    var themeBtn = document.getElementById('theme');
+    function paintTheme(theme) {
+      document.documentElement.dataset.theme = theme;
+      var meta = document.querySelector('meta[name=theme-color]');
+      if (meta) meta.content = theme === 'dark' ? '#171f1c' : '#f7f4ee';
+      themeBtn.setAttribute('aria-label', theme === 'dark' ? 'تفعيل المظهر الفاتح' : 'تفعيل المظهر الداكن');
+      try { localStorage.setItem('wa.homepage-v2.theme', theme); } catch (e) {}
+    }
+    paintTheme(document.documentElement.dataset.theme || 'light');
+    themeBtn.addEventListener('click', function () {
+      paintTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+    });
+  </script>
+</body>
+</html>

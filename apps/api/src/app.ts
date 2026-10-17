@@ -33,12 +33,15 @@ import { keyRoutes } from './routes/keys';
 import { messageRoutes } from './routes/messages';
 import { planPricingRoutes } from './routes/plan-pricing';
 import { sessionRoutes } from './routes/sessions';
+import { siteRoutes } from './routes/site';
 import { templateRoutes } from './routes/templates';
 
 /** Floor for dashboard sessions, so browsing the console on a small plan doesn't trip the API limit. */
 const CONSOLE_RPM = 240;
 /** What a dashboard session may still reach before its user sets up two-factor authentication. */
 const TWO_FACTOR_EXEMPT = /^\/api\/(me|account\/2fa(\/[^?]*)?|events)(\?.*)?$/;
+/** GET routes inside /api that need no key: the landing page reads them before anyone signs in. */
+const PUBLIC_READS = new Set(['/api/plan-pricing', '/api/site']);
 /** No request may hang: anything still running after this gets a 503 (SSE streams excepted). */
 const HANDLER_TIMEOUT_MS = 60_000;
 const REQUEST_ID_RE = /^[A-Za-z0-9._-]{8,64}$/;
@@ -69,6 +72,8 @@ function dashboardCsp(indexHtml: string) {
     // Ad-library videos play from the networks' CDNs; files about to be sent preview from blob: URLs.
     "media-src 'self' blob: https:",
     "connect-src 'self'",
+    // The landing page's explainer video (loaded only when the visitor presses play).
+    'frame-src https://www.youtube-nocookie.com',
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -234,8 +239,8 @@ export async function buildApp(deps: Deps, options: AppOptions) {
   await app.register(
     async (api) => {
       api.addHook('onRequest', async (req) => {
-        // Prices are shown on the public landing page, before anyone is signed in.
-        if (req.method === 'GET' && req.url.split('?')[0] === '/api/plan-pricing') return;
+        // Prices and the explainer video are shown on the public landing page, before anyone is signed in.
+        if (req.method === 'GET' && PUBLIC_READS.has(req.url.split('?')[0]!)) return;
         await deps.auth.authenticate(req);
         // Two-factor is mandatory, with one 48-hour skip. After that a dashboard session can only set it up.
         const grace = twoFactorGraceUntil(req.auth.twoFactorSkippedAt);
@@ -266,6 +271,7 @@ export async function buildApp(deps: Deps, options: AppOptions) {
       await api.register(eventRoutes(deps));
       await api.register(accountRoutes(deps));
       await api.register(planPricingRoutes(deps));
+      await api.register(siteRoutes(deps));
       await api.register(adminRoutes(deps), { prefix: '/admin' });
       await api.register(broadcastRoutes(deps), { prefix: '/broadcasts' });
       await api.register(chatRoutes(deps), { prefix: '/chats' });

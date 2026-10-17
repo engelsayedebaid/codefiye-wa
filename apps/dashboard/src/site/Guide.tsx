@@ -1,11 +1,13 @@
 import { DEFAULT_OTP_TEMPLATES } from '@wa/shared';
-import { ArrowLeft, ArrowUpRight, BookOpen, Check, Copy } from 'lucide-react';
-import { useState } from 'react';
+import { ArrowUpRight, BookOpen, Check, ChevronRight, Copy, KeyRound, LayoutTemplate, LifeBuoy, Mail, ShieldCheck, Smartphone } from 'lucide-react';
+import { type ReactNode, useState } from 'react';
 import { sessionHint } from '../api';
 import { BRAND } from '../brand';
 import { useI18n } from '../i18n';
 import { Link } from '../router';
-import { buttonClass, CopyField, cx, flip, LangSwitch, Logo, LogoMark, ThemeSwitch } from '../ui';
+import { buttonClass, CopyField, cx, delay, flip, Reveal } from '../ui';
+import { Arrow, SiteFooter, SiteHeader } from './SiteChrome';
+import { TocAside, TocFold, useActiveSection } from './TocNav';
 
 const origin = typeof window !== 'undefined' ? window.location.origin : 'https://api.example.com';
 
@@ -19,7 +21,35 @@ const CODE_LANGS: { id: CodeLang; label: string }[] = [
   { id: 'curl', label: 'cURL' },
 ];
 
-function CodeBlock({ title, code }: { title?: string; code: string }) {
+const OTP_RESPONSE = `{
+  "success": true,
+  "data": {
+    "msgId": 1042,
+    "jid": "201012345678@s.whatsapp.net",
+    "status": "queued",
+    "code": "482910"
+  }
+}`;
+
+/** Copy with `backticks` around code: those parts render as inline code, left-to-right inside Arabic. */
+function Rich({ text }: { text: string }) {
+  const parts = text.split('`');
+  return (
+    <>
+      {parts.map((part, i) =>
+        i % 2 ? (
+          <code key={i} className="ltr rounded-md border border-line bg-raised/60 px-1.5 py-px font-mono text-[0.85em] whitespace-nowrap text-ink">
+            {part}
+          </code>
+        ) : (
+          part
+        ),
+      )}
+    </>
+  );
+}
+
+function CodeBlock({ title, code }: { title: string; code: string }) {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
 
@@ -29,20 +59,20 @@ function CodeBlock({ title, code }: { title?: string; code: string }) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
-      // ignore
+      // clipboard unavailable
     }
   };
 
   return (
-    <div dir="ltr" className="my-4 overflow-hidden rounded-lg border border-line bg-[#111312] text-[#e5e7eb]">
-      <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.03] px-4 py-2 text-xs text-white/60">
-        <span className="font-mono">{title ?? 'Code'}</span>
+    <div dir="ltr" className="mt-4 overflow-hidden rounded-xl border border-white/10 bg-[#0a0e0d] text-[#e5e7eb] shadow-[0_24px_60px_-36px_rgb(0_0_0/0.8)]">
+      <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/[0.03] px-4 py-2 text-xs text-white/60">
+        <bdi className="truncate font-mono">{title}</bdi>
         <button
           type="button"
           onClick={copy}
-          className="inline-flex cursor-pointer items-center gap-1.5 rounded px-2 py-1 text-xs text-white/75 transition hover:bg-white/10 hover:text-white"
+          className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-xs text-white/70 transition hover:bg-white/10 hover:text-white"
         >
-          {copied ? <Check className="size-3.5 text-brand" /> : <Copy className="size-3.5" />}
+          {copied ? <Check className="size-3.5 text-[#34d399]" /> : <Copy className="size-3.5" />}
           <span>{copied ? t.guide.codeSection.copied : t.guide.codeSection.copy}</span>
         </button>
       </div>
@@ -50,6 +80,49 @@ function CodeBlock({ title, code }: { title?: string; code: string }) {
         <code>{code}</code>
       </pre>
     </div>
+  );
+}
+
+function LangTabs({ value, onChange, className }: { value: CodeLang; onChange: (lang: CodeLang) => void; className?: string }) {
+  return (
+    <div role="tablist" dir="ltr" className={cx('inline-flex max-w-full flex-wrap gap-1 rounded-lg border border-line bg-surface/60 p-1', className)}>
+      {CODE_LANGS.map((l) => (
+        <button
+          key={l.id}
+          type="button"
+          role="tab"
+          aria-selected={value === l.id}
+          onClick={() => onChange(l.id)}
+          className={cx(
+            'cursor-pointer rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+            value === l.id ? 'bg-card text-ink shadow-xs ring-1 ring-line' : 'text-muted hover:text-ink',
+          )}
+        >
+          {l.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function DocSection({ id, title, lead, children }: { id: string; title: string; lead?: string; children: ReactNode }) {
+  return (
+    <section id={id} className="scroll-mt-24">
+      <h2 className="group flex items-baseline gap-2 text-2xl font-semibold tracking-tight sm:text-[1.75rem]">
+        <span>
+          <Rich text={title} />
+        </span>
+        <a href={`#${id}`} aria-hidden tabIndex={-1} className="text-lg text-faint opacity-0 transition-opacity group-hover:opacity-100 hover:text-brand">
+          #
+        </a>
+      </h2>
+      {lead && (
+        <p className="mt-3 leading-relaxed text-ink-2">
+          <Rich text={lead} />
+        </p>
+      )}
+      {children}
+    </section>
   );
 }
 
@@ -240,7 +313,7 @@ class OtpController extends Controller
         }
 
         Cache::forget("otp:{$phone}");
-        return response()->json(['valid: true']);
+        return response()->json(['valid' => true]);
     }
 }`;
 
@@ -323,332 +396,349 @@ curl -X POST ${origin}/api/send-otp \\
   }
 }
 
+const METHOD_TINT: Record<string, string> = {
+  POST: 'bg-good/12 text-good',
+  GET: 'bg-info/12 text-info',
+};
+
 export function GuidePage() {
-  const { t, lang } = useI18n();
+  const { t } = useI18n();
   const g = t.guide;
   const signedIn = sessionHint.get();
   const [codeLang, setCodeLang] = useState<CodeLang>('nodejs');
-  const isAr = lang === 'ar';
+  const langLabel = CODE_LANGS.find((l) => l.id === codeLang)!.label;
 
-  const sections = isAr
-    ? [
-        { id: 'overview', label: 'نظرة عامة' },
-        { id: 'step-1', label: 'الخطوة 1: استخراج مفتاح API' },
-        { id: 'step-2', label: 'الخطوة 2: إرسال رمز الـ OTP' },
-        { id: 'step-3', label: 'الخطوة 3: التحقق من الرمز في موقعك' },
-        { id: 'params', label: 'جدول الحقول (Parameters)' },
-        { id: 'custom-template', label: 'تخصيص نص الرسالة' },
-        { id: 'errors', label: 'أكواد الأخطاء الشائعة' },
-      ]
-    : [
-        { id: 'overview', label: 'Overview' },
-        { id: 'step-1', label: 'Step 1: Get your API key' },
-        { id: 'step-2', label: 'Step 2: Send an OTP code' },
-        { id: 'step-3', label: 'Step 3: Verify the code in your app' },
-        { id: 'params', label: 'Request & Response fields' },
-        { id: 'custom-template', label: 'Customize message text' },
-        { id: 'errors', label: 'Error codes' },
-      ];
+  const toc = [
+    { id: 'flow', label: g.toc.flow },
+    { id: 'get-key', label: g.toc.key },
+    { id: 'send', label: g.toc.send },
+    { id: 'verify', label: g.toc.verify },
+    { id: 'params', label: g.toc.params },
+    { id: 'templates', label: g.toc.templates },
+    { id: 'endpoints', label: g.toc.endpoints },
+    { id: 'practices', label: g.toc.practices },
+    { id: 'errors', label: g.toc.errors },
+  ];
+  const active = useActiveSection(toc.map((item) => item.id));
+
+  const quickLinks = [
+    { href: '/sessions', label: g.links.sessions, icon: Smartphone },
+    { href: '/keys', label: g.links.keys, icon: KeyRound },
+    { href: '/templates', label: g.links.templates, icon: LayoutTemplate },
+  ];
 
   return (
-    <div className="min-h-svh bg-bg text-ink">
-      {/* Simple Documentation Top Bar */}
-      <header className="sticky top-0 z-30 border-b border-line bg-bg/95 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
-          <div className="flex min-w-0 items-center gap-3">
-            <Link href="/" aria-label={BRAND.name} className="shrink-0">
-              <span className="sm:hidden">
-                <LogoMark />
-              </span>
-              <span className="hidden sm:inline">
-                <Logo />
-              </span>
-            </Link>
-            {/* The page's own title says it below; the bar keeps room for the buttons on phones. */}
-            <span className="hidden h-4 w-px bg-line md:block" />
-            <span className="hidden items-center gap-1.5 text-sm font-medium text-muted md:flex">
+    <div className="min-h-svh overflow-x-clip">
+      <SiteHeader />
+      <main id="main">
+        <header className="relative isolate overflow-hidden border-b border-line">
+          <div aria-hidden className="hero-aura absolute inset-0 -z-10" />
+          <div aria-hidden className="site-grid absolute inset-0 -z-10" />
+          <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-20 lg:px-8">
+            <p className="animate-fade-up flex items-center gap-2 text-sm text-muted">
               <BookOpen className="size-4" />
-              <span>{ isAr ? 'التوثيق ودليل الربط' : 'Documentation' }</span>
-            </span>
-          </div>
-
-          {/* Phones: icon-only buttons (names kept for screen readers). */}
-          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-            <a href="/docs" target="_blank" rel="noreferrer" aria-label="OpenAPI" className={buttonClass('outline', 'sm')}>
-              <span className="hidden sm:inline">OpenAPI</span>
-              <ArrowUpRight className={cx('size-3.5 text-muted', flip)} />
-            </a>
-            <ThemeSwitch />
-            <LangSwitch />
-            <Link href={signedIn ? '/dashboard' : '/login'} aria-label={signedIn ? g.backDashboard : t.landing.login} className={buttonClass('white', 'sm')}>
-              <ArrowLeft className={cx('size-3.5', flip)} />
-              <span className="hidden sm:inline">{signedIn ? g.backDashboard : t.landing.login}</span>
-            </Link>
-          </div>
-        </div>
-      </header>
-
-      {/* Classic 2-Column Documentation Layout */}
-      <div className="mx-auto grid max-w-6xl gap-10 px-4 py-10 sm:px-6 lg:grid-cols-[220px_minmax(0,1fr)]">
-        {/* Sidebar Navigation */}
-        <aside className="hidden lg:block">
-          <nav aria-label={g.tocTitle} className="sticky top-22 space-y-1 border-e border-line pe-4 text-sm">
-            <p className="mb-2 px-2.5 text-xs font-semibold text-muted uppercase">{g.tocTitle}</p>
-            {sections.map((s) => (
-              <a
-                key={s.id}
-                href={`#${s.id}`}
-                className="block rounded-md px-2.5 py-1.5 text-ink-2 transition-colors hover:bg-raised hover:text-ink"
-              >
-                {s.label}
-              </a>
-            ))}
-          </nav>
-        </aside>
-
-        {/* Main Documentation Article */}
-        <main className="min-w-0 max-w-3xl space-y-12 leading-relaxed">
-          {/* Overview */}
-          <section id="overview" className="scroll-mt-20 border-b border-line pb-8">
-            <p className="text-xs font-semibold text-brand uppercase">{isAr ? 'دليل ربط المطورين' : 'Developer Guide'}</p>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">
-              {isAr ? 'تفعيل خدمة رسائل التحقق (OTP) عبر واتساب' : ' WhatsApp OTP Integration Guide'}
+              {g.crumb}
+              <ChevronRight className={cx('size-3.5 text-faint', flip)} />
+              <span className="font-medium text-ink-2">{g.crumbPage}</span>
+            </p>
+            <h1 className="animate-fade-up mt-4 max-w-3xl text-4xl font-semibold tracking-tight text-balance sm:text-5xl" style={delay(60)}>
+              {g.title}
             </h1>
-            <p className="mt-3 text-base text-ink-2">{g.subtitle}</p>
-
-            <div className="mt-6 rounded-lg border border-line bg-card p-4">
-              <p className="mb-1.5 text-xs font-medium text-muted">
-                {isAr ? 'رابط مسار إرسال الـ OTP (Endpoint URL):' : 'OTP Endpoint URL:'}
-              </p>
+            <p className="animate-fade-up mt-5 max-w-2xl text-lg leading-relaxed text-muted" style={delay(120)}>
+              {g.subtitle}
+            </p>
+            <div className="animate-fade-up mt-8 max-w-2xl" style={delay(180)}>
+              <p className="mb-2 text-xs font-medium text-muted">{g.endpointLabel}</p>
               <CopyField value={`POST ${origin}/api/send-otp`} />
             </div>
-          </section>
+            <div className="animate-fade-up mt-6 flex flex-wrap gap-3" style={delay(240)}>
+              <Link href={signedIn ? '/dashboard' : '/register'} className={buttonClass('brand', 'md', 'rounded-lg px-4')}>
+                {signedIn ? g.backDashboard : g.startFree} <Arrow />
+              </Link>
+              <a href="/docs" target="_blank" rel="noreferrer" className={buttonClass('outline', 'md', 'rounded-lg')}>
+                <BookOpen className="size-4 text-muted" />
+                {g.openReference}
+                <ArrowUpRight className={cx('size-3.5 text-muted', flip)} />
+              </a>
+            </div>
+          </div>
+        </header>
 
-          {/* STEP 1 */}
-          <section id="step-1" className="scroll-mt-20 space-y-5 border-b border-line pb-10">
-            <h2 className="text-xl font-bold sm:text-2xl">
-              {isAr ? 'الخطوة 1: كيف تحصل على مفتاح الـ API من المنصة' : 'Step 1: Get your API key from the dashboard'}
-            </h2>
-            <p className="text-sm text-ink-2">
-              {isAr
-                ? 'لإرسال رسائل من موقعك أو تطبيقك، تحتاج أولاً إلى ربط رقم واتساب واستخراج مفتاح الجلسة الخاص به:'
-                : 'To send messages from your website or app, connect a WhatsApp number and copy its session key:'}
-            </p>
+        <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 sm:py-16 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-12 lg:px-8 xl:grid-cols-[220px_minmax(0,1fr)_240px]">
+          <TocAside title={g.tocTitle} items={toc} active={active} />
 
-            <ol className="space-y-4 text-sm">
-              {g.getKey.steps.map((s, i) => (
-                <li key={s.step} className="flex items-start gap-3.5 rounded-lg border border-line bg-card p-4">
-                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-ink text-xs font-bold text-bg">
-                    {i + 1}
-                  </span>
-                  <div className="space-y-1">
-                    <h3 className="font-semibold text-ink">{s.title}</h3>
-                    <p className="text-ink-2">{s.text}</p>
-                    <Link href={s.href} className="inline-block pt-1 text-xs font-semibold text-brand hover:underline">
-                      {s.cta} ←
-                    </Link>
+          <article className="max-w-3xl min-w-0">
+            <TocFold title={g.tocTitle} items={toc} active={active} className="mb-10" />
+            <div className="space-y-16">
+              <DocSection id="flow" title={g.flow.title} lead={g.flow.subtitle}>
+                <ol className="mt-6 grid gap-4 sm:grid-cols-2">
+                  {g.flow.stages.map((s, i) => (
+                    <li key={s.title}>
+                      <Reveal delay={i * 70} className="site-card h-full rounded-xl p-5">
+                        <span className="flex items-center gap-3">
+                          <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-brand text-xs font-bold text-on-brand">{i + 1}</span>
+                          <span className="text-xs font-medium text-muted">{s.actor}</span>
+                        </span>
+                        <span className="mt-3 block font-semibold">
+                          <Rich text={s.title} />
+                        </span>
+                        <span className="mt-1.5 block text-sm leading-relaxed text-muted">
+                          <Rich text={s.desc} />
+                        </span>
+                      </Reveal>
+                    </li>
+                  ))}
+                </ol>
+              </DocSection>
+
+              <DocSection id="get-key" title={g.getKey.title} lead={g.getKey.subtitle}>
+                <ol className="mt-6 space-y-3">
+                  {g.getKey.steps.map((s, i) => (
+                    <li key={s.title} className="site-card flex gap-4 rounded-xl p-5">
+                      <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-line bg-raised font-mono text-sm font-semibold">{i + 1}</span>
+                      <div className="min-w-0">
+                        <h3 className="font-semibold">
+                          <Rich text={s.title} />
+                        </h3>
+                        <p className="mt-1 text-sm leading-relaxed text-muted">
+                          <Rich text={s.text} />
+                        </p>
+                        <Link href={s.href} className="group mt-2.5 inline-flex items-center gap-1.5 text-sm font-semibold text-brand hover:text-brand-strong">
+                          {s.cta} <Arrow className="size-3.5" />
+                        </Link>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+
+                <h3 className="mt-10 text-lg font-semibold">{g.getKey.keyTypesTitle}</h3>
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  {[g.getKey.sessionKey, g.getKey.workspaceKey].map((k, i) => (
+                    <div key={k.prefix} className={cx('site-card flex flex-col rounded-xl p-5', i === 0 && 'border-brand/50 ring-1 ring-brand/20')}>
+                      <div className="flex items-center justify-between gap-2">
+                        <code className="ltr rounded-md bg-raised px-2 py-0.5 font-mono text-sm font-semibold">{k.prefix}</code>
+                        <span className={cx('rounded-full px-2.5 py-0.5 text-[11px] font-medium', i === 0 ? 'bg-brand/12 text-brand' : 'bg-raised text-muted')}>{k.badge}</span>
+                      </div>
+                      <h4 className="mt-4 font-semibold">{k.title}</h4>
+                      <p className="mt-1.5 flex-1 text-sm leading-relaxed text-muted">
+                        <Rich text={k.desc} />
+                      </p>
+                      <pre dir="ltr" className="code-scroll mt-4 overflow-x-auto rounded-lg bg-[#0a0e0d] px-3 py-2.5 font-mono text-[11.5px] leading-5 text-[#9cdcfe]">
+                        {k.header}
+                      </pre>
+                    </div>
+                  ))}
+                </div>
+              </DocSection>
+
+              <DocSection id="send" title={g.send.title} lead={g.send.text}>
+                <LangTabs value={codeLang} onChange={setCodeLang} className="mt-6" />
+                <CodeBlock title={`POST ${origin}/api/send-otp`} code={getQuickCode(codeLang)} />
+                <p className="mt-8 text-sm font-semibold">{g.send.responseLabel}</p>
+                <CodeBlock title="application/json" code={OTP_RESPONSE} />
+              </DocSection>
+
+              <DocSection id="verify" title={g.verify.title} lead={g.verify.text}>
+                <ul className="mt-5 space-y-3">
+                  {g.verify.routes.map((r) => (
+                    <li key={r.path} className="flex flex-col gap-2 rounded-xl border border-line bg-surface/40 p-4 sm:flex-row sm:gap-4">
+                      <code className="ltr h-fit w-fit shrink-0 rounded-md bg-raised px-2 py-0.5 font-mono text-xs font-semibold">{r.path}</code>
+                      <p className="text-sm leading-relaxed text-ink-2">
+                        <Rich text={r.text} />
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+                <LangTabs value={codeLang} onChange={setCodeLang} className="mt-6" />
+                <CodeBlock title={g.verify.codeTitle(langLabel)} code={getFullBackendCode(codeLang)} />
+              </DocSection>
+
+              <DocSection id="params" title={g.params.title} lead={g.params.subtitle}>
+                <h3 className="mt-6 text-sm font-semibold text-muted">
+                  <Rich text={g.params.reqTitle} />
+                </h3>
+                <div className="table-stack site-card mt-3 overflow-hidden rounded-xl">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-line bg-surface/60 text-xs text-muted">
+                        <th className="px-4 py-2.5 text-start font-medium">{g.params.colField}</th>
+                        <th className="px-4 py-2.5 text-start font-medium">{g.params.colType}</th>
+                        <th className="px-4 py-2.5 text-start font-medium">{g.params.colReq}</th>
+                        <th className="px-4 py-2.5 text-start font-medium">{g.params.colDesc}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-line">
+                      {g.params.requestRows.map((r) => (
+                        <tr key={r.field} className="px-4 align-top">
+                          <td data-label={g.params.colField} className="px-4 py-3 font-mono text-xs font-semibold">
+                            <span className="ltr">{r.field}</span>
+                          </td>
+                          <td data-label={g.params.colType} className="px-4 py-3 font-mono text-xs whitespace-nowrap text-muted">
+                            <span className="ltr">{r.type}</span>
+                          </td>
+                          <td data-label={g.params.colReq} className="px-4 py-3 text-xs">
+                            {r.req ? <span className="font-medium text-brand">{g.params.required}</span> : <span className="text-muted">{g.params.optional}</span>}
+                          </td>
+                          <td data-label={g.params.colDesc} className="px-4 py-3 text-xs leading-relaxed text-ink-2">
+                            <Rich text={r.desc} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <h3 className="mt-8 text-sm font-semibold text-muted">
+                  <Rich text={g.params.resTitle} />
+                </h3>
+                <div className="table-stack site-card mt-3 overflow-hidden rounded-xl">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-line bg-surface/60 text-xs text-muted">
+                        <th className="px-4 py-2.5 text-start font-medium">{g.params.colField}</th>
+                        <th className="px-4 py-2.5 text-start font-medium">{g.params.colType}</th>
+                        <th className="px-4 py-2.5 text-start font-medium">{g.params.colDesc}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-line">
+                      {g.params.responseRows.map((r) => (
+                        <tr key={r.field} className="px-4 align-top">
+                          <td data-label={g.params.colField} className="px-4 py-3 font-mono text-xs font-semibold">
+                            <span className="ltr">{r.field}</span>
+                          </td>
+                          <td data-label={g.params.colType} className="px-4 py-3 font-mono text-xs whitespace-nowrap text-muted">
+                            <span className="ltr">{r.type}</span>
+                          </td>
+                          <td data-label={g.params.colDesc} className="px-4 py-3 text-xs leading-relaxed text-ink-2">
+                            <Rich text={r.desc} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </DocSection>
+
+              <DocSection id="templates" title={g.templates.title} lead={g.templates.subtitle}>
+                <ol className="mt-5 list-decimal space-y-2 ps-5 text-sm leading-relaxed text-ink-2 marker:font-semibold marker:text-brand">
+                  {g.templates.steps.map((s) => (
+                    <li key={s}>
+                      <Rich text={s} />
+                    </li>
+                  ))}
+                </ol>
+                <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                  <div className="site-card rounded-xl p-5">
+                    <p className="text-xs font-medium text-muted">{g.templates.defaultArLabel}</p>
+                    <pre dir="rtl" className="mt-3 font-sans text-sm leading-relaxed whitespace-pre-line text-ink">
+                      {DEFAULT_OTP_TEMPLATES.ar}
+                    </pre>
                   </div>
-                </li>
-              ))}
-            </ol>
+                  <div className="site-card rounded-xl border-brand/40 p-5">
+                    <p className="text-xs font-medium text-muted">{g.templates.customLabel}</p>
+                    <pre className="mt-3 font-sans text-sm leading-relaxed whitespace-pre-line text-ink">{g.templates.customExample}</pre>
+                  </div>
+                </div>
+                <Link href="/templates" className="group mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-brand hover:text-brand-strong">
+                  {g.templates.openTemplates} <Arrow className="size-3.5" />
+                </Link>
+              </DocSection>
 
-            <div className="rounded-lg border border-line bg-surface/50 p-4 text-sm">
-              <p className="font-semibold">{isAr ? 'ملاحظة حول أنواع المفاتيح:' : 'Note on API Key types:'}</p>
-              <ul className="mt-2 list-disc space-y-1.5 ps-5 text-ink-2">
-                <li>
-                  <code className="ltr font-mono text-ink">was_...</code> —{' '}
-                  {isAr
-                    ? 'مفتاح جلسة (Session Key): خاص برقم واتساب واحد، وهو الأسهل للـ OTP لأنه لا يحتاج أي ترويسة إضافية.'
-                    : 'Session Key: tied to a single WhatsApp number. Easiest for OTP — only requires the Authorization header.'}
-                </li>
-                <li>
-                  <code className="ltr font-mono text-ink">wap_...</code> —{' '}
-                  {isAr
-                    ? 'رمز مساحة العمل (Workspace Token): يدير كل الأرقام، ويتطلب إرسال ترويسة إضافية X-Session-Id مع الطلب.'
-                    : 'Workspace Token: manages all sessions; requires passing an additional X-Session-Id header.'}
-                </li>
-              </ul>
-            </div>
-          </section>
-
-          {/* STEP 2 */}
-          <section id="step-2" className="scroll-mt-20 space-y-5 border-b border-line pb-10">
-            <h2 className="text-xl font-bold sm:text-2xl">
-              {isAr ? 'الخطوة 2: إرسال رمز التحقق (OTP) إلى رقم العميل' : 'Step 2: Send an OTP code to the user'}
-            </h2>
-            <p className="text-sm text-ink-2">
-              {isAr
-                ? 'أرسل طلب POST إلى المسار /api/send-otp مع تمرير مفتاح الجلسة في ترويسة Authorization ورقم هاتف العميل بالصيغة الدولية. ستقوم المنصة بتوليد الرمز وإرساله عبر واتساب وإرجاع الرمز لك في الاستجابة:'
-                : 'Send a POST request to /api/send-otp with your session key in the Authorization header and the recipient phone number. The platform generates the code, sends it on WhatsApp, and returns it in the response:'}
-            </p>
-
-            {/* Language Tabs */}
-            <div className="flex flex-wrap gap-1.5 border-b border-line pb-2" dir="ltr">
-              {CODE_LANGS.map((l) => (
-                <button
-                  key={l.id}
-                  type="button"
-                  onClick={() => setCodeLang(l.id)}
-                  className={cx(
-                    'cursor-pointer rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                    codeLang === l.id ? 'bg-ink text-bg' : 'bg-raised/60 text-ink-2 hover:bg-raised',
-                  )}
-                >
-                  {l.label}
-                </button>
-              ))}
-            </div>
-
-            <CodeBlock title={`POST ${origin}/api/send-otp`} code={getQuickCode(codeLang)} />
-
-            <p className="text-sm font-semibold">
-              {isAr ? 'شكل الاستجابة من المنصة (Response 200 OK):' : 'Response from the platform (200 OK):'}
-            </p>
-            <CodeBlock
-              title="JSON Response"
-              code={`{
-  "success": true,
-  "data": {
-    "msgId": 1042,
-    "jid": "201012345678@s.whatsapp.net",
-    "status": "queued",
-    "code": "482910"
-  }
-}`}
-            />
-          </section>
-
-          {/* STEP 3 */}
-          <section id="step-3" className="scroll-mt-20 space-y-5 border-b border-line pb-10">
-            <h2 className="text-xl font-bold sm:text-2xl">
-              {isAr ? 'الخطوة 3: كيف تتحقق من الرمز في موقعك أو تطبيقك (مثال كامل)' : 'Step 3: Verify the OTP code in your backend (Full Example)'}
-            </h2>
-            <p className="text-sm text-ink-2">
-              {isAr
-                ? 'لتفعيل الـ OTP بشكل آمن في موقعك، أنشئ مسارين في الباك-إند الخاص بك:'
-                : 'To implement OTP verification safely in your website or app, create two routes in your backend:'}
-            </p>
-
-            <ol className="list-decimal space-y-2 ps-5 text-sm text-ink-2">
-              <li>
-                <strong className="text-ink">{isAr ? 'مسار إرسال الرمز (/auth/send-otp):' : 'Send route (/auth/send-otp):'}</strong>{' '}
-                {isAr
-                  ? 'يستقبل رقم هاتف العميل من واجهة موقعك، يستدعي /api/send-otp، ويحفظ الرمز الراجع (data.code) مؤقتاً في الكاش أو قاعدة البيانات لمدة 5 دقائق.'
-                  : 'Receives the phone number from your frontend, calls /api/send-otp, and stores the returned data.code in cache/DB for 5 minutes.'}
-              </li>
-              <li>
-                <strong className="text-ink">{isAr ? 'مسار التحقق من الرمز (/auth/verify-otp):' : 'Verify route (/auth/verify-otp):'}</strong>{' '}
-                {isAr
-                  ? 'يستقبل الرمز الذي كتبه العميل في موقعك ويقارنه بالرمز المحفوظ لديك. إذا تطابقا، يتم تسجيل دخول العميل وحذف الرمز.'
-                  : 'Compares the code typed by the user with the stored code. If they match, logs the user in and deletes the code.'}
-              </li>
-            </ol>
-
-            <div className="flex flex-wrap gap-1.5 border-b border-line pb-2" dir="ltr">
-              {CODE_LANGS.map((l) => (
-                <button
-                  key={l.id}
-                  type="button"
-                  onClick={() => setCodeLang(l.id)}
-                  className={cx(
-                    'cursor-pointer rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                    codeLang === l.id ? 'bg-ink text-bg' : 'bg-raised/60 text-ink-2 hover:bg-raised',
-                  )}
-                >
-                  {l.label}
-                </button>
-              ))}
-            </div>
-
-            <CodeBlock title={`Full Backend Flow (${CODE_LANGS.find((x) => x.id === codeLang)?.label})`} code={getFullBackendCode(codeLang)} />
-          </section>
-
-          {/* PARAMETERS */}
-          <section id="params" className="scroll-mt-20 space-y-5 border-b border-line pb-10">
-            <h2 className="text-xl font-bold sm:text-2xl">{g.params.title}</h2>
-            <p className="text-sm text-ink-2">{g.params.subtitle}</p>
-
-            <div className="overflow-x-auto rounded-lg border border-line bg-card">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-line bg-surface/60 text-xs text-muted">
-                    <th className="px-4 py-2.5 text-start font-semibold">{g.params.colField}</th>
-                    <th className="px-4 py-2.5 text-start font-semibold">{g.params.colType}</th>
-                    <th className="px-4 py-2.5 text-start font-semibold">{g.params.colReq}</th>
-                    <th className="px-4 py-2.5 text-start font-semibold">{g.params.colDesc}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-line">
-                  {g.params.requestRows.map((r) => (
-                    <tr key={r.field}>
-                      <td className="px-4 py-3 font-mono text-xs font-bold text-ink">
-                        <span className="ltr">{r.field}</span>
-                      </td>
-                      <td className="px-4 py-3 font-mono text-xs text-muted">
-                        <span className="ltr">{r.type}</span>
-                      </td>
-                      <td className="px-4 py-3 text-xs font-medium">
-                        {r.req ? <span className="text-brand">{g.params.required}</span> : <span className="text-muted">{g.params.optional}</span>}
-                      </td>
-                      <td className="px-4 py-3 text-xs text-ink-2">{r.desc}</td>
-                    </tr>
+              <DocSection id="endpoints" title={g.other.title} lead={g.other.subtitle}>
+                <ul className="mt-6 space-y-3">
+                  {g.other.endpoints.map((e) => (
+                    <li key={e.path} className="site-card rounded-xl p-5">
+                      <p className="flex flex-wrap items-center gap-2.5" dir="ltr">
+                        <span className={cx('rounded-md px-2 py-0.5 font-mono text-[11px] font-bold', METHOD_TINT[e.method] ?? 'bg-raised text-muted')}>{e.method}</span>
+                        <code className="font-mono text-sm font-semibold break-all">{e.path}</code>
+                      </p>
+                      <h3 className="mt-3 font-semibold">{e.title}</h3>
+                      <p className="mt-1 text-sm leading-relaxed text-muted">
+                        <Rich text={e.desc} />
+                      </p>
+                    </li>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
+                </ul>
+              </DocSection>
 
-          {/* CUSTOM TEMPLATE */}
-          <section id="custom-template" className="scroll-mt-20 space-y-4 border-b border-line pb-10">
-            <h2 className="text-xl font-bold sm:text-2xl">{g.templates.title}</h2>
-            <p className="text-sm text-ink-2">{g.templates.subtitle}</p>
-
-            <ol className="list-decimal space-y-2 ps-5 text-sm text-ink-2">
-              {g.templates.steps.map((s) => (
-                <li key={s}>{s}</li>
-              ))}
-            </ol>
-
-            <div className="grid gap-4 pt-2 sm:grid-cols-2">
-              <div className="rounded-lg border border-line bg-card p-4">
-                <p className="text-xs font-semibold text-muted">{g.templates.defaultArLabel}</p>
-                <pre dir="rtl" className="mt-2 font-sans text-xs whitespace-pre-line text-ink">
-                  {DEFAULT_OTP_TEMPLATES.ar}
-                </pre>
-              </div>
-              <div className="rounded-lg border border-line bg-card p-4">
-                <p className="text-xs font-semibold text-muted">{g.templates.customLabel}</p>
-                <pre className="mt-2 font-sans text-xs whitespace-pre-line text-ink">{g.templates.customExample}</pre>
-              </div>
-            </div>
-          </section>
-
-          {/* ERRORS */}
-          <section id="errors" className="scroll-mt-20 space-y-4">
-            <h2 className="text-xl font-bold sm:text-2xl">{g.other.errorsTitle}</h2>
-            <div className="overflow-x-auto rounded-lg border border-line bg-card">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-line bg-surface/60 text-xs text-muted">
-                    <th className="px-4 py-2.5 text-start font-semibold">HTTP Status</th>
-                    <th className="px-4 py-2.5 text-start font-semibold">{isAr ? 'السبب والحل' : 'Meaning & Solution'}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-line">
-                  {g.other.errors.map((err) => (
-                    <tr key={err.code}>
-                      <td className="px-4 py-3 font-mono text-xs font-bold whitespace-nowrap text-ink">
-                        <span className="ltr">{err.code}</span>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-ink-2">{err.desc}</td>
-                    </tr>
+              <DocSection id="practices" title={g.other.securityTitle}>
+                <ul className="mt-6 space-y-3">
+                  {g.other.securityItems.map((s) => (
+                    <li key={s.title} className="flex gap-4 rounded-xl border border-line bg-surface/40 p-5">
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-brand ring-1 ring-brand/20">
+                        <ShieldCheck className="size-4.5" />
+                      </span>
+                      <div className="min-w-0">
+                        <h3 className="font-semibold">{s.title}</h3>
+                        <p className="mt-1 text-sm leading-relaxed text-muted">
+                          <Rich text={s.text} />
+                        </p>
+                      </div>
+                    </li>
                   ))}
-                </tbody>
-              </table>
+                </ul>
+              </DocSection>
+
+              <DocSection id="errors" title={g.other.errorsTitle}>
+                <div className="table-stack site-card mt-6 overflow-hidden rounded-xl">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-line bg-surface/60 text-xs text-muted">
+                        <th className="px-4 py-2.5 text-start font-medium">{g.other.colStatus}</th>
+                        <th className="px-4 py-2.5 text-start font-medium">{g.other.colMeaning}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-line">
+                      {g.other.errors.map((e) => (
+                        <tr key={e.code} className="px-4 align-top">
+                          <td data-label={g.other.colStatus} className="px-4 py-3 whitespace-nowrap">
+                            <span className="ltr block font-mono text-xs font-bold">{e.code}</span>
+                            <span className="mt-0.5 block text-[11px] text-muted">{e.status}</span>
+                          </td>
+                          <td data-label={g.other.colMeaning} className="px-4 py-3 text-xs leading-relaxed text-ink-2">
+                            <Rich text={e.desc} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </DocSection>
             </div>
-          </section>
-        </main>
-      </div>
+          </article>
+
+          <aside className="hidden xl:block">
+            <div className="sticky top-24 space-y-4">
+              <div className="site-card rounded-xl p-5">
+                <span className="flex size-9 items-center justify-center rounded-lg bg-brand/10 text-brand ring-1 ring-brand/20">
+                  <LifeBuoy className="size-4.5" />
+                </span>
+                <p className="mt-3 font-semibold">{g.help.title}</p>
+                <p className="mt-1 text-sm leading-relaxed text-muted">{g.help.text}</p>
+                <a href={`mailto:${BRAND.supportEmail}`} className={buttonClass('outline', 'sm', 'mt-4 w-full rounded-lg')}>
+                  <Mail className="size-3.5" />
+                  {g.help.cta}
+                </a>
+              </div>
+              <nav aria-label={g.links.title} className="site-card rounded-xl p-2">
+                <p className="px-3 pt-2 pb-1 text-xs font-semibold text-faint">{g.links.title}</p>
+                <a href="/docs" target="_blank" rel="noreferrer" className="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-ink-2 transition-colors hover:bg-raised hover:text-ink">
+                  <BookOpen className="size-4 text-muted" />
+                  <span className="flex-1">{g.links.reference}</span>
+                  <ArrowUpRight className={cx('size-3.5 text-faint', flip)} />
+                </a>
+                {quickLinks.map(({ href, label, icon: Icon }) => (
+                  <Link key={href} href={href} className="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-ink-2 transition-colors hover:bg-raised hover:text-ink">
+                    <Icon className="size-4 text-muted" />
+                    {label}
+                  </Link>
+                ))}
+              </nav>
+            </div>
+          </aside>
+        </div>
+      </main>
+      <SiteFooter />
     </div>
   );
 }

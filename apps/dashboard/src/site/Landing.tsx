@@ -1,434 +1,117 @@
-import {
-  Activity,
-  ArrowRight,
-  ArrowUpRight,
-  Check,
-  CheckCheck,
-  ChevronDown,
-  CircleHelp,
-  Clock,
-  Code2,
-  CreditCard,
-  Menu,
-  Shield,
-  Sparkles,
-  Terminal,
-  Users,
-  Webhook,
-  X,
-  Zap,
-} from 'lucide-react';
-import { type ReactNode, useState } from 'react';
-import { sessionHint } from '../api';
+import { ArrowUpRight, BookOpen, Building2, Check, ChevronRight, Mail, Play, Plus, ShieldCheck } from 'lucide-react';
+import { useEffect } from 'react';
 import { BRAND } from '../brand';
 import { useI18n } from '../i18n';
-import { Link } from '../router';
-import { buttonClass, cx, delay, flip, LangSwitch, Logo, Reveal, ThemeSwitch } from '../ui';
+import { Link, scrollToHash } from '../router';
+import { buttonClass, cx, delay, flip, Reveal } from '../ui';
 import { CodeTabs } from './CodeTabs';
-import { FOOTER_HREFS, LANGUAGES, MESSAGE_TYPE_ICONS, NAV_HREFS, RECIPIENTS, RESOURCES, STEP_ICONS, USE_CASE_ICONS } from './content';
-import { PhoneMock } from './PhoneMock';
+import { LANGUAGES, SECURITY_BADGES, SECURITY_ICONS, SOLUTION_ICONS, STEP_ICONS } from './content';
+import { DemoVideo, playDemo } from './DemoVideo';
+import { Platform } from './Platform';
 import { PlanCards } from './Pricing';
-
-/** "Forward" arrow: points right in LTR, left in RTL, and nudges forward on hover. */
-const Arrow = () => (
-  <ArrowRight className={cx('size-4.5 transition-transform duration-300 group-hover:translate-x-1 rtl:group-hover:-translate-x-1', flip)} />
-);
-
-/** Diagonal light beam behind the hero headline (mirrored for RTL; see .animate-spotlight). */
-function Spotlight() {
-  return (
-    <svg
-      aria-hidden
-      className="animate-spotlight pointer-events-none absolute z-[1] h-[169%] w-[138%] opacity-0 lg:w-[84%]"
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 3787 2842"
-      fill="none"
-    >
-      <g filter="url(#hero-spotlight)">
-        <ellipse
-          cx="1924.71"
-          cy="273.501"
-          rx="1924.71"
-          ry="273.501"
-          transform="matrix(-0.822377 -0.568943 -0.568943 0.822377 3631.88 2291.09)"
-          fill="white"
-          fillOpacity="0.21"
-        />
-      </g>
-      <defs>
-        <filter id="hero-spotlight" x="0.860352" y="0.838989" width="3785.16" height="2840.26" filterUnits="userSpaceOnUse" colorInterpolationFilters="sRGB">
-          <feFlood floodOpacity="0" result="BackgroundImageFix" />
-          <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
-          <feGaussianBlur stdDeviation="151" />
-        </filter>
-      </defs>
-    </svg>
-  );
-}
-
-function Heading({ top, accent, accentFirst, className }: { top: ReactNode; accent: ReactNode; accentFirst?: boolean; className?: string }) {
-  return (
-    <h2 className={cx('text-4xl leading-[1.12] font-bold tracking-tight text-balance sm:text-5xl lg:text-6xl', className)}>
-      {accentFirst ? (
-        <>
-          <span className="text-shimmer">{accent}</span> {top}
-        </>
-      ) : (
-        <>
-          {top}
-          <br />
-          <span className="text-shimmer">{accent}</span>
-        </>
-      )}
-    </h2>
-  );
-}
-
-function SectionIntro({ eyebrow, top, accent, text, accentFirst }: { eyebrow: ReactNode; top: ReactNode; accent: ReactNode; text: ReactNode; accentFirst?: boolean }) {
-  return (
-    <Reveal className="mx-auto max-w-3xl text-center">
-      <span className="eyebrow">
-        <span className="size-1.5 rounded-full bg-brand" />
-        {eyebrow}
-      </span>
-      <Heading top={top} accent={accent} accentFirst={accentFirst} className="mt-6" />
-      <p className="mx-auto mt-5 max-w-2xl text-lg leading-relaxed text-ink-2 sm:text-xl">{text}</p>
-    </Reveal>
-  );
-}
-
-export function SiteHeader() {
-  const { t } = useI18n();
-  const [open, setOpen] = useState(false);
-  // A UI hint only: the session itself is an HttpOnly cookie the page can't read.
-  const signedIn = sessionHint.get();
-
-  return (
-    <header className="animate-fade-in sticky top-0 z-40 px-3 pt-3 sm:px-6">
-      <div className="mx-auto max-w-7xl rounded-2xl border border-line/80 bg-card/80 px-4 py-3 shadow-[0_12px_40px_-16px_rgba(0,0,0,0.35)] backdrop-blur-xl sm:px-6">
-        <div className="relative flex items-center justify-between gap-3 sm:gap-6">
-          <Link href="/" aria-label={BRAND.name}>
-            <Logo />
-          </Link>
-          <nav className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-1 rounded-full border border-line/70 bg-ink/[0.03] p-1 lg:flex">
-            {t.landing.nav.map((label, i) => (
-              <Link
-                key={label}
-                href={NAV_HREFS[i]!}
-                className="rounded-full px-4 py-1.5 text-sm font-medium whitespace-nowrap text-ink-2 transition-all duration-200 hover:bg-raised/80 hover:text-ink"
-              >
-                {label}
-              </Link>
-            ))}
-          </nav>
-          <div className="hidden min-w-[200px] items-center justify-end gap-2 lg:flex">
-            <ThemeSwitch />
-            <LangSwitch />
-            {signedIn ? (
-              <Link href="/dashboard" className={buttonClass('brand', 'md', 'shine rounded-xl bg-gradient-to-r from-brand to-teal text-on-brand')}>
-                {t.landing.dashboard} <Arrow />
-              </Link>
-            ) : (
-              <>
-                <Link href="/login" className={buttonClass('ghost', 'md', 'rounded-xl text-ink-2 hover:bg-ink/[0.06] hover:text-ink')}>
-                  {t.landing.login}
-                </Link>
-                <Link href="/register" className={buttonClass('brand', 'md', 'shine rounded-xl bg-gradient-to-r from-brand to-teal text-on-brand')}>
-                  {t.landing.getStarted} <Arrow />
-                </Link>
-              </>
-            )}
-          </div>
-          <div className="flex items-center gap-1 lg:hidden">
-            {/* Below 640px the logo and three buttons don't fit one row: theme and language move into the menu. */}
-            <div className="hidden items-center gap-1 sm:flex">
-              <ThemeSwitch />
-              <LangSwitch />
-            </div>
-            <button className="rounded-lg p-2 text-ink-2 hover:bg-raised" onClick={() => setOpen((o) => !o)} aria-label={t.common.menu} aria-expanded={open}>
-              {open ? <X className="size-5" /> : <Menu className="size-5" />}
-            </button>
-          </div>
-        </div>
-        {open && (
-          <div className="animate-fade-up mt-3 border-t border-line pt-3 pb-2 lg:hidden">
-            <nav className="flex flex-col py-1">
-              {t.landing.nav.map((label, i) => (
-                <Link key={label} href={NAV_HREFS[i]!} onClick={() => setOpen(false)} className="rounded-lg px-3 py-2.5 text-ink-2 hover:bg-raised hover:text-ink">
-                  {label}
-                </Link>
-              ))}
-            </nav>
-            <div className="mt-2 grid grid-cols-2 gap-3">
-              <Link href={signedIn ? '/dashboard' : '/login'} className={buttonClass('outline', 'md', 'rounded-xl')}>
-                {signedIn ? t.landing.dashboard : t.landing.login}
-              </Link>
-              <Link href="/register" className={buttonClass('brand', 'md', 'rounded-xl bg-gradient-to-r from-brand to-teal text-on-brand')}>
-                {t.landing.getStarted}
-              </Link>
-            </div>
-            {/* Theme last: its popup opens toward the start from the button's end edge. */}
-            <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3 sm:hidden">
-              <LangSwitch />
-              <ThemeSwitch />
-            </div>
-          </div>
-        )}
-      </div>
-    </header>
-  );
-}
-
-function HeroShowcase() {
-  const { t } = useI18n();
-  const h = t.landing.hero;
-  const p = t.landing.phone;
-  return (
-    <div className="animate-fade-up relative z-[2] mt-14 w-full max-w-6xl" style={delay(650)}>
-      <div className="card-luxury relative overflow-hidden rounded-3xl border border-line-strong/80 p-3 sm:p-5">
-        <div aria-hidden className="pointer-events-none absolute -top-32 left-1/2 h-64 w-3/4 -translate-x-1/2 rounded-full bg-brand/15 blur-3xl" />
-
-        {/* Architectural Console Top Bar */}
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-surface/70 px-4 py-2.5 text-xs">
-          <div className="flex items-center gap-2.5">
-            <span className="relative flex size-2.5">
-              <span className="absolute inset-0 animate-ping rounded-full bg-good opacity-75" />
-              <span className="relative size-2.5 rounded-full bg-good" />
-            </span>
-            <span className="font-semibold text-ink">{h.preview.liveStatus}</span>
-          </div>
-          <div className="flex items-center gap-3 font-mono text-[11px] text-muted" dir="ltr">
-            <span className="rounded-md border border-line bg-card px-2 py-0.5">TLS 1.3 · AES-256-GCM</span>
-            <span className="hidden rounded-md border border-brand/30 bg-brand/10 px-2 py-0.5 text-brand sm:inline">v1 REST + Webhooks</span>
-          </div>
-        </div>
-
-        {/* 2-Column Live Request → WhatsApp Delivery & Webhook */}
-        <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]" dir="ltr">
-          {/* Request Terminal */}
-          <div className="flex flex-col justify-between rounded-2xl border border-white/10 bg-[#0b0f0e] p-5 text-start font-mono text-xs text-white/85 shadow-xl">
-            <div>
-              <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                <span className="inline-flex items-center gap-2 text-white/70">
-                  <Terminal className="size-3.5 text-brand" />
-                  <span>{h.preview.requestLabel}</span>
-                </span>
-                <span className="rounded-md bg-emerald-500/15 px-2 py-0.5 text-[11px] font-bold text-emerald-400">POST /api/send-message</span>
-              </div>
-              <pre className="mt-4 overflow-x-auto leading-6 text-[#d4d4d4]">
-                <code>
-                  <span className="text-[#569cd6]">await</span> <span className="text-[#dcdcaa]">fetch</span>(
-                  <span className="text-[#ce9178]">'/api/send-message'</span>, {'{\n'}
-                  {'  '}headers: {'{ '}Authorization: <span className="text-[#ce9178]">'Bearer was_live_9f8a…'</span>
-                  {' },\n'}
-                  {'  '}body: JSON.<span className="text-[#dcdcaa]">stringify</span>({'{'}
-                  {'\n'}
-                  {'    '}to: <span className="text-[#ce9178]">'+201012345678'</span>,{'\n'}
-                  {'    '}text: <span className="text-[#ce9178]">'Your OTP code is 482910 🔐'</span>
-                  {'\n'}
-                  {'  }'}){'\n'}
-                  {'}'});
-                </code>
-              </pre>
-            </div>
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/[0.07] px-3.5 py-2.5 text-[11px]">
-              <span className="text-emerald-300">HTTP/1.1 200 OK · msgId: "3EB08F19A2"</span>
-              <span className="font-semibold text-emerald-400">38 ms</span>
-            </div>
-          </div>
-
-          {/* Instant WhatsApp + Webhook Output */}
-          <div className="flex flex-col gap-3">
-            {/* Simulated WhatsApp Message Card */}
-            <div className="rounded-2xl border border-line bg-[#efeae2] p-4 text-start shadow-md dark:bg-[#111715]">
-              <div className="mb-2.5 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="flex size-7 items-center justify-center rounded-full bg-[#008069] text-xs font-bold text-white">{p.initial}</span>
-                  <span className="text-xs font-semibold text-[#111b21] dark:text-white">{p.contact}</span>
-                </div>
-                <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
-                  {h.preview.deliveredBadge}
-                </span>
-              </div>
-              <div className="ms-auto max-w-[92%] rounded-xl rounded-se-xs bg-[#d9fdd3] px-3.5 py-2.5 text-[13px] text-[#111b21] shadow-xs dark:bg-[#10402d] dark:text-white">
-                <p className="font-mono text-xs sm:text-[13px]">Your OTP code is 482910 🔐</p>
-                <div className="mt-1 flex items-center justify-end gap-1 text-[10px] opacity-70">
-                  <span>10:42</span>
-                  <CheckCheck className="size-3.5 text-[#53bdeb]" />
-                </div>
-              </div>
-            </div>
-
-            {/* Webhook Event Stream Card */}
-            <div className="flex-1 rounded-2xl border border-line bg-surface/90 p-4 text-start font-mono text-xs">
-              <div className="flex items-center justify-between text-[11px] text-muted">
-                <span className="inline-flex items-center gap-1.5 font-sans font-semibold text-ink-2">
-                  <Webhook className="size-3.5 text-brand" />
-                  {h.preview.webhookLabel}
-                </span>
-                <span className="text-brand">event: messages.update</span>
-              </div>
-              <pre className="mt-2.5 overflow-x-auto rounded-lg border border-line bg-card/90 p-3 text-[11px] leading-5 text-ink-2">
-                <code>{`{ "msgId": "3EB08F19A2", "status": "delivered", "to": "+201012345678" }`}</code>
-              </pre>
-            </div>
-          </div>
-        </div>
-
-        {/* Bottom Telemetry Metrics Strip */}
-        <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-          {h.metrics.map((m) => (
-            <div key={m.label} className="rounded-2xl border border-line bg-surface/60 px-4 py-3 text-center transition-colors hover:border-brand/40">
-              <p className="ltr font-mono text-xl font-bold tracking-tight text-ink sm:text-2xl">{m.value}</p>
-              <p className="mt-0.5 text-xs font-medium text-muted">{m.label}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
+import { ProductShot } from './ProductShot';
+import { Arrow, SectionHeading, SiteFooter, SiteHeader } from './SiteChrome';
 
 function Hero() {
   const { t } = useI18n();
   const h = t.landing.hero;
-  const icons = [CreditCard, Clock, Shield];
   return (
-    <section className="relative overflow-hidden pt-10 pb-20 sm:pt-16 sm:pb-28">
-      <div aria-hidden className="pointer-events-none absolute inset-0">
-        <div className="hero-grid absolute inset-0" />
-        <div className="animate-glow absolute -end-72 -top-72 size-[540px] rounded-full bg-brand/12 blur-[130px]" />
-        <div className="absolute start-0 top-1/3 size-[420px] rounded-full bg-teal/10 blur-[120px]" />
-      </div>
-      <div className="relative z-10 mx-auto flex max-w-7xl flex-col items-center px-4 text-center sm:px-6">
-        <Spotlight />
+    <section className="relative isolate overflow-hidden pt-14 sm:pt-20 lg:pt-24">
+      <div aria-hidden className="hero-aura absolute inset-0 -z-10" />
+      <div aria-hidden className="site-grid absolute inset-x-0 top-0 -z-10 h-[760px]" />
 
-        <div className="animate-fade-up relative z-[2]" style={delay(50)}>
-          <span className="eyebrow">
-            <span className="relative flex size-2">
-              <span className="absolute inset-0 animate-ping rounded-full bg-brand opacity-75" />
-              <span className="relative size-2 rounded-full bg-brand" />
-            </span>
-            {h.badge}
-          </span>
-        </div>
+      <div className="mx-auto max-w-7xl px-4 text-center sm:px-6 lg:px-8">
+        <Link
+          href="#pricing"
+          className="animate-fade-up group inline-flex max-w-full items-center gap-2.5 rounded-full border border-line bg-card/70 py-1 ps-1 pe-3 text-sm text-ink-2 shadow-xs backdrop-blur transition-colors hover:border-line-strong hover:text-ink"
+        >
+          <span className="shrink-0 rounded-full bg-brand px-2.5 py-0.5 text-xs font-semibold text-on-brand">{h.announceTag}</span>
+          <span className="truncate">{h.announce}</span>
+          <ChevronRight className={cx('size-4 shrink-0 text-muted transition-transform group-hover:translate-x-0.5 rtl:group-hover:-translate-x-0.5', flip)} />
+        </Link>
 
-        <h1 className="relative z-[2] mt-7 max-w-4xl text-5xl leading-[1.08] font-bold tracking-tight text-balance sm:text-7xl sm:leading-[1.08]">
-          <span className="animate-fade-up block" style={delay(140)}>
-            {h.title}
-          </span>
-          <span className="animate-fade-up mt-1 block" style={delay(260)}>
-            <span className="text-shimmer">{h.accent}</span>
-          </span>
+        <h1 className="animate-fade-up mx-auto mt-7 max-w-5xl text-4xl leading-[1.14] font-semibold tracking-tight text-balance sm:text-6xl lg:text-[4.25rem]" style={delay(80)}>
+          {h.title}
+          <span className="text-brand-gradient block pb-1">{h.accent}</span>
         </h1>
 
-        <p className="animate-fade-up relative z-[2] mx-auto mt-7 max-w-2xl text-lg leading-relaxed text-ink-2 sm:text-xl" style={delay(380)}>
+        <p className="animate-fade-up mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-muted sm:text-xl" style={delay(160)}>
           {h.text}
         </p>
 
-        <div className="animate-fade-up relative z-[2] mt-9 flex flex-wrap items-center justify-center gap-4" style={delay(500)}>
-          <Link
-            href="/register"
-            className={buttonClass(
-              'brand',
-              'lg',
-              'shine-auto h-13 rounded-2xl bg-gradient-to-r from-brand to-teal px-8 text-base font-semibold text-on-brand shadow-[0_14px_40px_-10px] shadow-brand/50',
-            )}
-          >
+        {/* The most asked-for use: WhatsApp verification codes, with a way into the guide. */}
+        <Link
+          href="/guide"
+          className="animate-fade-up group mx-auto mt-6 flex w-fit max-w-2xl items-center gap-3 rounded-xl border border-brand/30 bg-brand/[0.07] px-4 py-2.5 text-start text-sm leading-relaxed text-ink-2 transition-colors hover:border-brand/55 hover:bg-brand/[0.1]"
+          style={delay(200)}
+        >
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-brand/15 text-brand">
+            <ShieldCheck className="size-4" />
+          </span>
+          <span>
+            <span className="font-semibold text-ink">{h.otpTitle}</span> {h.otpText}
+          </span>
+          <span className="hidden shrink-0 items-center gap-1 font-semibold whitespace-nowrap text-brand sm:inline-flex">
+            {h.otpCta} <Arrow className="size-3.5" />
+          </span>
+        </Link>
+
+        <div className="animate-fade-up mt-9 flex flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center" style={delay(240)}>
+          <Link href="/register" className={buttonClass('brand', 'lg', 'h-12 rounded-lg px-7 font-semibold shadow-[0_14px_34px_-14px] shadow-brand/70')}>
             {h.cta} <Arrow />
           </Link>
-          <Link href="/guide" className={buttonClass('outline', 'lg', 'h-13 rounded-2xl border-line-strong bg-card/80 px-7 text-base backdrop-blur')}>
-            <Code2 className="size-4.5 text-brand" />
-            {h.docs} <Arrow />
-          </Link>
+          <button type="button" onClick={playDemo} className={buttonClass('outline', 'lg', 'h-12 rounded-lg bg-card/70 px-6 backdrop-blur')}>
+            <span className="flex size-6 items-center justify-center rounded-full bg-brand/15 text-brand">
+              <Play className="size-3 translate-x-px fill-current" />
+            </span>
+            {h.watch}
+          </button>
         </div>
 
-        <ul
-          className="animate-fade-up relative z-[2] mx-auto mt-8 inline-flex flex-wrap items-center justify-center gap-x-5 gap-y-2 rounded-full border border-line bg-card/75 px-6 py-2.5 text-sm font-medium text-ink-2 shadow-xs backdrop-blur"
-          style={delay(600)}
-        >
-          {h.trust.map((item, i) => {
-            const Icon = icons[i]!;
-            return (
-              <li key={item} className="flex items-center gap-2">
-                {i > 0 && <span className="me-3 hidden h-3.5 w-px bg-line-strong sm:block" />}
-                <Icon className={cx('size-4', i === 0 ? 'text-brand' : i === 1 ? 'text-info' : 'text-good')} />
-                {item}
-              </li>
-            );
-          })}
+        <ul className="animate-fade-up mt-7 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-muted" style={delay(320)}>
+          {h.trust.map((item) => (
+            <li key={item} className="flex items-center gap-2">
+              <Check className="size-4 text-brand" strokeWidth={2.5} />
+              {item}
+            </li>
+          ))}
         </ul>
+      </div>
 
-        <HeroShowcase />
+      <div className="animate-fade-up relative mx-auto mt-14 max-w-6xl px-4 sm:mt-16 sm:px-6 lg:px-8" style={delay(420)}>
+        <ProductShot />
       </div>
     </section>
   );
 }
 
-function Integration() {
+function TrustStrip() {
   const { t } = useI18n();
-  const s = t.landing.integration;
   return (
-    <section id="features" className="section-wash scroll-mt-20 py-24 sm:py-32">
-      <div className="mx-auto max-w-6xl px-4 sm:px-6">
-        <SectionIntro eyebrow={s.eyebrow} top={s.top} accent={s.accent} text={s.text} />
-        <Reveal delay={100}>
-          <CodeTabs className="mt-14" />
-        </Reveal>
-        <Reveal>
-          <ul className="mt-9 flex flex-wrap items-center justify-center gap-2.5" dir="ltr">
-            {LANGUAGES.map((l) => (
-              <li key={l}>
-                <span className="block rounded-xl border border-line bg-card/80 px-3.5 py-1.5 font-mono text-xs font-semibold text-ink-2 shadow-2xs transition-all duration-300 hover:-translate-y-0.5 hover:border-brand/50 hover:text-brand">
-                  {l}
-                </span>
-              </li>
+    <section className="py-16 sm:py-20">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <dl className="grid grid-cols-2 gap-y-10 lg:grid-cols-4">
+          {t.landing.stats.map((s, i) => (
+            <Reveal key={s.label} delay={i * 70} className={cx('flex flex-col-reverse px-4 text-center', i > 0 && 'lg:border-s lg:border-line')}>
+              <dt className="mt-2 text-sm text-muted">{s.label}</dt>
+              <dd className="ltr text-3xl font-semibold tracking-tight sm:text-4xl">{s.value}</dd>
+            </Reveal>
+          ))}
+        </dl>
+
+        <p className="mt-16 text-center text-sm text-muted">{t.landing.integrations}</p>
+        <div className="marquee mt-6" dir="ltr">
+          <div className="marquee-track">
+            {[...LANGUAGES, ...LANGUAGES].map((name, i) => (
+              <span
+                key={i}
+                aria-hidden={i >= LANGUAGES.length || undefined}
+                className="me-3 shrink-0 rounded-full border border-line bg-card px-4 py-2 font-mono text-sm font-medium whitespace-nowrap text-ink-2"
+              >
+                {name}
+              </span>
             ))}
-          </ul>
-        </Reveal>
-        <Reveal className="mt-11 flex justify-center">
-          <Link href="/register" className={buttonClass('brand', 'lg', 'shine h-13 rounded-2xl bg-gradient-to-r from-brand to-teal px-8 text-base font-semibold')}>
-            {s.cta} <Arrow />
-          </Link>
-        </Reveal>
-      </div>
-    </section>
-  );
-}
-
-function DeveloperResources() {
-  const { t } = useI18n();
-  const s = t.landing.resources;
-  const badges = ['OpenAPI 3.1 · Scalar', 'was_*** · wap_***', 'Idempotency-Key', 'Drop-in REST'];
-  return (
-    <section className="section-wash py-24 sm:py-32">
-      <div className="mx-auto max-w-6xl px-4 sm:px-6">
-        <SectionIntro eyebrow={s.eyebrow} top={s.top} accent={s.accent} accentFirst text={s.text} />
-        <div className="mt-16 grid gap-6 sm:grid-cols-2">
-          {s.items.map((item, i) => {
-            const { icon: Icon, tint, href } = RESOURCES[i]!;
-            return (
-              <Reveal key={item.title} delay={i * 90}>
-                <article className="lift card-luxury group relative flex h-full flex-col overflow-hidden rounded-3xl border border-line p-7 sm:p-8">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="flex size-12 items-center justify-center rounded-2xl border border-line bg-surface transition-transform duration-300 group-hover:scale-110 group-hover:border-brand/40">
-                      <Icon className={cx('size-5.5', tint)} />
-                    </span>
-                    <span className="ltr rounded-full border border-line bg-surface/80 px-3 py-1 font-mono text-[11px] font-medium text-muted">
-                      {badges[i]}
-                    </span>
-                  </div>
-                  <h3 className="mt-6 text-xl font-bold tracking-tight sm:text-2xl">{item.title}</h3>
-                  <p className="mt-3 flex-1 leading-relaxed text-ink-2">{item.text}</p>
-                  <div className="mt-6 border-t border-line/70 pt-4">
-                    <Link href={href} className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand transition-colors hover:text-brand-strong">
-                      {item.cta} <ArrowUpRight className={cx('size-4 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5', flip)} />
-                    </Link>
-                  </div>
-                </article>
-              </Reveal>
-            );
-          })}
+          </div>
         </div>
       </div>
     </section>
@@ -439,31 +122,31 @@ function HowItWorks() {
   const { t } = useI18n();
   const s = t.landing.how;
   return (
-    <section id="how" className="section-wash scroll-mt-20 py-24 sm:py-32">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6">
-        <SectionIntro eyebrow={s.eyebrow} top={s.top} accent={s.accent} text={s.text} />
-        <ol className="mt-16 grid gap-6 lg:grid-cols-3">
+    <section id="how" className="band scroll-mt-20 py-20 sm:py-28">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <SectionHeading kicker={s.kicker} title={s.title} accent={s.accent} text={s.text} />
+        <div className="relative mt-16">
+          <span aria-hidden className="absolute inset-x-[17%] top-7 hidden h-px bg-gradient-to-r from-transparent via-line-strong to-transparent md:block" />
+          <ol className="grid gap-12 md:grid-cols-3 md:gap-8">
           {s.steps.map((step, i) => {
             const Icon = STEP_ICONS[i]!;
             return (
-              <Reveal key={step.title} delay={i * 120} className="h-full">
-                <li className="lift card-luxury relative flex h-full flex-col overflow-hidden rounded-3xl border border-line p-7 sm:p-8">
-                  <div className="flex items-center justify-between gap-4">
-                    <span className="flex size-14 items-center justify-center rounded-2xl bg-brand/15 text-brand ring-1 ring-brand/25">
-                      <Icon className="size-6" />
-                    </span>
-                    <span className="ltr font-mono text-4xl font-bold tracking-tighter text-ink/15">0{i + 1}</span>
-                  </div>
-                  <h3 className="mt-7 text-2xl font-bold tracking-tight">{step.title}</h3>
-                  <p className="mt-3 flex-1 leading-relaxed text-ink-2">{step.text}</p>
-                  <div className="mt-6 h-1 w-16 rounded-full bg-gradient-to-r from-brand to-teal opacity-70" />
-                </li>
-              </Reveal>
+              <li key={step.title} className="relative text-center">
+                <Reveal delay={i * 120}>
+                  <span className="relative mx-auto flex size-14 items-center justify-center rounded-2xl border border-line bg-card text-brand shadow-sm">
+                    <Icon className={cx('size-6', i === 2 && flip)} />
+                    <span className="absolute -end-2 -top-2 flex size-6 items-center justify-center rounded-full bg-brand text-[11px] font-bold text-on-brand ring-4 ring-bg">{i + 1}</span>
+                  </span>
+                  <h3 className="mt-6 text-lg font-semibold">{step.title}</h3>
+                  <p className="mx-auto mt-2 max-w-xs text-sm leading-relaxed text-muted">{step.text}</p>
+                </Reveal>
+              </li>
             );
           })}
-        </ol>
+          </ol>
+        </div>
         <Reveal className="mt-14 flex justify-center">
-          <Link href="/register" className={buttonClass('white', 'lg', 'h-13 rounded-2xl px-8 text-base font-semibold')}>
+          <Link href="/register" className={buttonClass('brand', 'lg', 'h-12 rounded-lg px-7 font-semibold')}>
             {s.cta} <Arrow />
           </Link>
         </Reveal>
@@ -472,164 +155,140 @@ function HowItWorks() {
   );
 }
 
-function SendReceive() {
+function Developers() {
   const { t } = useI18n();
-  const s = t.landing.sendReceive;
+  const s = t.landing.developers;
   return (
-    <section className="section-wash overflow-hidden py-24 sm:py-32">
-      <div className="mx-auto grid max-w-7xl items-center gap-16 px-4 sm:px-6 lg:grid-cols-[1.15fr_1fr]">
+    <section id="developers" className="scroll-mt-20 py-20 sm:py-28">
+      <div className="mx-auto grid max-w-7xl grid-cols-1 items-center gap-12 px-4 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] lg:gap-16 lg:px-8">
         <div>
-          <Reveal>
-            <span className="eyebrow">
-              <Activity className="size-3.5 text-brand" />
-              {s.eyebrow}
-            </span>
-            <h2 className="mt-6 text-4xl leading-[1.12] font-bold tracking-tight sm:text-5xl lg:text-6xl">
-              {s.title}
-              <br />
-              <span className="text-shimmer">{s.accent}</span>
-            </h2>
-            <p className="mt-5 max-w-xl text-lg leading-relaxed text-ink-2">
-              {s.textBefore}{' '}
-              <Link href="/guide" className="font-semibold text-brand underline decoration-brand/40 underline-offset-4 hover:decoration-brand">
-                {s.docs}
-              </Link>{' '}
-              {s.textAfter}
-            </p>
+          <SectionHeading align="start" kicker={s.kicker} title={s.title} accent={s.accent} text={s.text} />
+          <ul className="mt-8 space-y-3.5">
+            {s.points.map((point, i) => (
+              <li key={point}>
+                <Reveal delay={i * 60} className="flex items-start gap-3 text-[15px] text-ink-2">
+                  <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-brand/15 text-brand">
+                    <Check className="size-3" strokeWidth={3} />
+                  </span>
+                  {point}
+                </Reveal>
+              </li>
+            ))}
+          </ul>
+          <Reveal className="mt-9 flex flex-wrap gap-3">
+            <Link href="/guide" className={buttonClass('brand', 'lg', 'rounded-lg font-semibold')}>
+              {s.guide} <Arrow />
+            </Link>
+            <a href="/docs" target="_blank" rel="noreferrer" className={buttonClass('outline', 'lg', 'rounded-lg')}>
+              <BookOpen className="size-4.5 text-muted" />
+              {s.reference}
+              <ArrowUpRight className={cx('size-4 text-muted', flip)} />
+            </a>
           </Reveal>
-          <div className="mt-10 grid gap-8 sm:grid-cols-[2fr_1fr]">
-            <div>
-              <h3 className="mb-4 text-sm font-semibold tracking-wider text-muted uppercase">{s.typesTitle}</h3>
-              <div className="grid grid-cols-2 gap-3">
-                {s.types.map((type, i) => {
-                  const Icon = MESSAGE_TYPE_ICONS[i]!;
-                  return (
-                    <Reveal key={type.title} delay={i * 60}>
-                      <div className="lift card-luxury h-full rounded-2xl border border-line p-4">
-                        <p className="flex items-center gap-2.5 font-semibold">
-                          <span className="flex size-8 items-center justify-center rounded-xl bg-brand/15 text-brand">
-                            <Icon className="size-4" />
-                          </span>
-                          {type.title}
-                        </p>
-                        <p className="mt-2 text-xs leading-relaxed text-ink-2">{type.text}</p>
-                      </div>
-                    </Reveal>
-                  );
-                })}
-              </div>
-            </div>
-            <div>
-              <h3 className="mb-4 text-sm font-semibold tracking-wider text-muted uppercase">{s.recipientsTitle}</h3>
-              <div className="grid gap-3">
-                {s.recipients.map((r, i) => {
-                  const { icon: Icon, tint } = RECIPIENTS[i]!;
-                  return (
-                    <Reveal key={r.title} delay={i * 80}>
-                      <div className="lift card-luxury rounded-2xl border border-line p-4">
-                        <p className="flex items-center gap-2.5 font-semibold">
-                          <span className={cx('flex size-8 items-center justify-center rounded-xl bg-gradient-to-br text-on-brand shadow-xs', tint)}>
-                            <Icon className="size-4" />
-                          </span>
-                          {r.title}
-                        </p>
-                        <p className="mt-2 text-xs leading-relaxed text-ink-2">{r.text}</p>
-                      </div>
-                    </Reveal>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
+        </div>
+        <Reveal delay={120} className="min-w-0">
+          <CodeTabs />
+        </Reveal>
+      </div>
+    </section>
+  );
+}
+
+function Solutions() {
+  const { t } = useI18n();
+  const s = t.landing.solutions;
+  return (
+    <section id="solutions" className="band scroll-mt-20 py-20 sm:py-28">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <SectionHeading kicker={s.kicker} title={s.title} accent={s.accent} text={s.text} />
+        <Reveal className="mt-14 overflow-hidden rounded-2xl border border-line bg-card">
+          {/* Every cell draws its end and bottom edge; the grid reaches 1px past the box so the outer ones are clipped. */}
+          <ul className="-me-px -mb-px grid sm:grid-cols-2 lg:grid-cols-3 [&>li]:border-e [&>li]:border-b [&>li]:border-line">
+            {s.items.map((item, i) => {
+              const Icon = SOLUTION_ICONS[i]!;
+              return (
+                <li key={item.title} className="group p-7 transition-colors hover:bg-raised/35 sm:p-8">
+                  <span className="flex size-11 items-center justify-center rounded-xl bg-brand/10 text-brand ring-1 ring-brand/20 transition-transform duration-300 group-hover:scale-105">
+                    <Icon className="size-5" />
+                  </span>
+                  <h3 className="mt-5 text-lg font-semibold">{item.title}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-muted">{item.text}</p>
+                </li>
+              );
+            })}
+          </ul>
+        </Reveal>
+      </div>
+    </section>
+  );
+}
+
+function Security() {
+  const { t } = useI18n();
+  const s = t.landing.security;
+  return (
+    <section id="security" className="scroll-mt-20 py-20 sm:py-28">
+      <div className="mx-auto grid max-w-7xl grid-cols-1 gap-12 px-4 sm:px-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.5fr)] lg:gap-16 lg:px-8">
+        <div className="lg:sticky lg:top-28 lg:self-start">
+          <SectionHeading align="start" kicker={s.kicker} title={s.title} accent={s.accent} text={s.text} />
           <Reveal>
-            <Link href="/register" className={buttonClass('brand', 'lg', 'shine mt-10 h-13 rounded-2xl bg-gradient-to-r from-brand to-teal px-8 text-on-brand')}>
-              {s.cta} <Arrow />
+            <ul className="mt-8 flex flex-wrap gap-2">
+              {SECURITY_BADGES.map((badge) => (
+                <li key={badge} className="ltr rounded-md border border-line bg-card px-2.5 py-1 font-mono text-[11px] font-medium text-muted">
+                  {badge}
+                </li>
+              ))}
+            </ul>
+            <Link href="/privacy" className="group mt-8 inline-flex items-center gap-1.5 text-sm font-semibold text-brand hover:text-brand-strong">
+              {s.privacy} <Arrow />
             </Link>
           </Reveal>
         </div>
-        <Reveal delay={150}>
-          <div className="animate-float relative">
-            <PhoneMock className="-rotate-2 rtl:rotate-2" />
-          </div>
-        </Reveal>
-      </div>
-    </section>
-  );
-}
-
-function UseCases() {
-  const { t } = useI18n();
-  const s = t.landing.useCases;
-  const tints = ['from-teal to-brand', 'from-brand-strong to-teal', 'from-brand to-brand-deep'];
-  return (
-    <section className="section-wash py-24 sm:py-32">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6">
-        <SectionIntro eyebrow={s.eyebrow} top={s.top} accent={s.accent} text={s.text} />
-        <div className="mt-16 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {s.items.map((u, i) => {
-            const Icon = USE_CASE_ICONS[i]!;
+        <ul className="grid gap-4 sm:grid-cols-2">
+          {s.items.map((item, i) => {
+            const Icon = SECURITY_ICONS[i]!;
             return (
-              <Reveal key={u.title} delay={(i % 3) * 100}>
-                <article className="lift card-luxury group flex h-full flex-col rounded-3xl border border-line p-7 sm:p-8">
-                  <div className="flex items-center justify-between">
-                    <span
-                      className={cx(
-                        'flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br text-on-brand shadow-md transition-transform duration-500 group-hover:-rotate-6 group-hover:scale-110',
-                        tints[i % tints.length],
-                      )}
-                    >
-                      <Icon className="size-6" />
+              <li key={item.title}>
+                <Reveal delay={(i % 2) * 80} className="h-full">
+                  <div className="site-card h-full rounded-2xl p-6">
+                    <span className="flex size-10 items-center justify-center rounded-xl bg-brand/10 text-brand ring-1 ring-brand/20">
+                      <Icon className="size-5" />
                     </span>
-                    <span className="ltr font-mono text-xs font-semibold text-faint">0{i + 1}</span>
+                    <h3 className="mt-4 font-semibold">{item.title}</h3>
+                    <p className="mt-1.5 text-sm leading-relaxed text-muted">{item.text}</p>
                   </div>
-                  <h3 className="mt-6 text-xl leading-snug font-bold tracking-tight sm:text-2xl">{u.title}</h3>
-                  <p className="mt-3 flex-1 leading-relaxed text-ink-2">{u.text}</p>
-                </article>
-              </Reveal>
+                </Reveal>
+              </li>
             );
           })}
-        </div>
-        <Reveal className="mt-14 flex justify-center">
-          <Link href="/register" className={buttonClass('brand', 'lg', 'shine h-13 rounded-2xl bg-gradient-to-r from-brand to-teal px-8 text-base font-semibold')}>
-            {s.cta} <Arrow />
-          </Link>
-        </Reveal>
+        </ul>
       </div>
     </section>
   );
 }
 
-function Pricing() {
+function PricingSection() {
   const { t } = useI18n();
   const s = t.landing.pricing;
   return (
-    <section id="pricing" className="section-wash scroll-mt-20 py-24 sm:py-32">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6">
-        <SectionIntro
-          eyebrow={
-            <>
-              <Sparkles className="size-3.5 text-brand" /> {s.eyebrow}
-            </>
-          }
-          top={s.top}
-          accent={s.accent}
-          text={s.text}
-        />
-        <div className="mt-20">
+    <section id="pricing" className="band scroll-mt-20 py-20 sm:py-28">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <SectionHeading kicker={s.kicker} title={s.title} accent={s.accent} text={s.text} />
+        <div className="mt-16">
           <PlanCards />
         </div>
-        <Reveal className="mx-auto mt-14 max-w-4xl">
-          <div className="card-luxury flex flex-wrap items-center justify-between gap-5 rounded-3xl border border-line p-6 sm:p-8">
+        <Reveal className="mt-8">
+          <div className="site-card flex flex-col gap-5 rounded-2xl p-6 sm:flex-row sm:items-center sm:justify-between sm:p-8">
             <div className="flex items-center gap-4">
-              <span className="flex size-13 items-center justify-center rounded-2xl bg-brand/15 text-brand">
-                <Users className="size-6" />
+              <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-brand/10 text-brand ring-1 ring-brand/20">
+                <Building2 className="size-6" />
               </span>
               <div>
-                <h3 className="text-lg font-bold">{s.higherTitle}</h3>
-                <p className="text-sm text-ink-2">{s.higherText}</p>
+                <h3 className="text-lg font-semibold">{s.higherTitle}</h3>
+                <p className="mt-0.5 text-sm text-muted">{s.higherText}</p>
               </div>
             </div>
-            <a href={`mailto:${BRAND.supportEmail}`} className={buttonClass('brand', 'lg', 'rounded-xl')}>
+            <a href={`mailto:${BRAND.supportEmail}`} className={buttonClass('outline', 'lg', 'rounded-lg')}>
               {s.higherCta} <Arrow />
             </a>
           </div>
@@ -643,42 +302,39 @@ function Faq() {
   const { t } = useI18n();
   const s = t.landing.faq;
   return (
-    <section id="faq" className="section-wash scroll-mt-20 py-24 sm:py-32">
-      <div className="mx-auto max-w-4xl px-4 sm:px-6">
-        <SectionIntro eyebrow={s.eyebrow} top={s.top} accent={s.accent} text={s.text} />
-        <Reveal className="mt-14">
-          <div className="card-luxury space-y-3 rounded-3xl border border-line p-4 sm:p-6">
+    <section id="faq" className="scroll-mt-20 py-20 sm:py-28">
+      <div className="mx-auto grid max-w-7xl grid-cols-1 gap-12 px-4 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)] lg:gap-16 lg:px-8">
+        <div className="lg:sticky lg:top-28 lg:self-start">
+          <SectionHeading align="start" kicker={s.kicker} title={s.title} accent={s.accent} text={s.text} />
+          <Reveal className="site-card mt-8 rounded-2xl p-6">
+            <p className="font-semibold">{s.contactTitle}</p>
+            <p className="mt-1 text-sm text-muted">{s.contactText}</p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <a href={`mailto:${BRAND.supportEmail}`} className={buttonClass('brand', 'md', 'rounded-lg')}>
+                <Mail className="size-4" />
+                {s.contactCta}
+              </a>
+              <Link href="/guide" className={buttonClass('outline', 'md', 'rounded-lg')}>
+                {s.docsCta}
+              </Link>
+            </div>
+          </Reveal>
+        </div>
+        <Reveal>
+          <div className="divide-y divide-line border-y border-line">
             {s.items.map((item) => (
-              <details
-                key={item.q}
-                className="group rounded-2xl border border-line bg-surface/40 transition-all open:border-brand/40 open:bg-surface/80 hover:border-line-strong"
-              >
-                <summary className="flex cursor-pointer list-none items-center gap-4 px-5 py-4 text-base font-semibold sm:text-lg [&::-webkit-details-marker]:hidden">
-                  <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-brand/15 text-brand transition-colors group-open:bg-brand group-open:text-on-brand">
-                    <CircleHelp className="size-4" />
+              <details key={item.q} className="group">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-6 py-5 text-start text-base font-semibold transition-colors hover:text-brand sm:text-lg [&::-webkit-details-marker]:hidden">
+                  <span>{item.q}</span>
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-line text-muted transition-colors group-open:border-brand/50 group-open:text-brand">
+                    <Plus className="faq-icon size-4 transition-transform duration-300" />
                   </span>
-                  <span className="flex-1 text-start">{item.q}</span>
-                  <ChevronDown className="size-5 shrink-0 text-muted transition-transform duration-300 group-open:rotate-180 group-open:text-brand" />
                 </summary>
-                <p className="animate-fade-up px-5 pb-5 ps-[4.25rem] text-sm leading-relaxed text-ink-2 sm:text-base">{item.a}</p>
+                <p className="animate-fade-in pe-12 pb-6 text-[15px] leading-relaxed text-muted">{item.a}</p>
               </details>
             ))}
           </div>
         </Reveal>
-        <div className="mt-12 grid gap-6 sm:grid-cols-2">
-          <Reveal className="card-luxury flex flex-col items-center gap-4 rounded-2xl border border-line p-6 text-center">
-            <span className="eyebrow">{s.helpEyebrow}</span>
-            <a href={`mailto:${BRAND.supportEmail}`} className={buttonClass('white', 'lg', 'h-11 rounded-xl px-6')}>
-              {s.helpCta} <Arrow />
-            </a>
-          </Reveal>
-          <Reveal delay={100} className="card-luxury flex flex-col items-center gap-4 rounded-2xl border border-line p-6 text-center">
-            <span className="eyebrow">{s.docsEyebrow}</span>
-            <Link href="/guide" className={buttonClass('outline', 'lg', 'h-11 rounded-xl px-6')}>
-              {s.docsCta} <Arrow />
-            </Link>
-          </Reveal>
-        </div>
       </div>
     </section>
   );
@@ -687,119 +343,57 @@ function Faq() {
 function FinalCta() {
   const { t } = useI18n();
   const s = t.landing.finalCta;
-  const icons = [CreditCard, Zap, Check];
   return (
-    <section className="py-24 sm:py-32">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6">
-        <Reveal>
-          <div className="card-luxury relative grid items-center gap-12 overflow-hidden rounded-[2rem] border border-brand/30 bg-gradient-to-br from-surface via-card to-brand/10 p-8 sm:p-14 lg:grid-cols-2">
-            <div aria-hidden className="hero-grid pointer-events-none absolute inset-0 opacity-60" />
-            <div aria-hidden className="animate-glow pointer-events-none absolute -end-24 -bottom-24 size-80 rounded-full bg-brand/15 blur-3xl" />
-            <div className="relative z-10">
-              <h2 className="text-4xl leading-[1.12] font-bold tracking-tight sm:text-5xl">
-                {s.title}
-                <br />
-                <span className="text-shimmer">{s.accent}</span>
-              </h2>
-              <p className="mt-5 text-lg leading-relaxed text-ink-2">{s.text}</p>
-              <ul className="mt-8 space-y-3.5">
-                {s.points.map((text, i) => {
-                  const Icon = icons[i]!;
-                  return (
-                    <li key={text} className="flex items-center gap-3.5 text-base font-medium">
-                      <span className="flex size-7 items-center justify-center rounded-full bg-brand text-on-brand shadow-xs">
-                        <Icon className="size-3.5" />
-                      </span>
-                      {text}
-                    </li>
-                  );
-                })}
-              </ul>
-              <Link
-                href="/register"
-                className={buttonClass('brand', 'lg', 'shine-auto mt-9 h-13 w-full max-w-md rounded-2xl bg-gradient-to-r from-brand to-teal text-base font-semibold')}
-              >
-                {s.cta} <Arrow />
-              </Link>
-              <p className="mt-3 text-xs text-faint">{s.note}</p>
-            </div>
-            <div className="relative z-10 grid items-end gap-6 sm:grid-cols-2" dir="ltr">
-              <div className="rounded-2xl border border-white/10 bg-[#0b0f17] p-5 font-mono text-[12px] leading-6 shadow-2xl">
-                <div className="mb-3 flex gap-1.5">
-                  <span className="size-2.5 rounded-full bg-[#ff5f57]" />
-                  <span className="size-2.5 rounded-full bg-[#febc2e]" />
-                  <span className="size-2.5 rounded-full bg-[#28c840]" />
-                </div>
-                <p className="text-[#569cd6]">
-                  await <span className="text-[#dcdcaa]">send</span>
-                  <span className="text-white/70">({'{'}</span>
-                </p>
-                <p className="ps-4 text-white/70">
-                  to: <span className="text-[#ce9178]">'+201012345678'</span>,
-                </p>
-                <p className="ps-4 text-white/70">
-                  text: <span className="text-[#ce9178]">'Works like a charm!'</span>
-                </p>
-                <p className="text-white/70">{'});'}</p>
-                <p className="mt-3 animate-pulse text-brand">✓ Message sent</p>
-              </div>
-              <div className="animate-float" style={delay(800)}>
-                <PhoneMock variant="mini" className="w-full max-w-[260px] sm:w-full" />
-              </div>
-            </div>
+    <section className="px-4 pb-20 sm:px-6 sm:pb-28 lg:px-8">
+      <Reveal className="mx-auto max-w-7xl">
+        <div className="relative isolate overflow-hidden rounded-3xl bg-[#05241e] px-6 py-16 text-center text-white sm:px-12 sm:py-20">
+          <div aria-hidden className="absolute inset-0 -z-10 bg-[radial-gradient(60%_90%_at_50%_0%,rgb(52_211_153/0.32),transparent_70%)]" />
+          <div
+            aria-hidden
+            className="absolute inset-0 -z-10 [background-image:linear-gradient(to_right,rgb(255_255_255/0.06)_1px,transparent_1px),linear-gradient(to_bottom,rgb(255_255_255/0.06)_1px,transparent_1px)] [background-size:48px_48px] [mask-image:radial-gradient(ellipse_60%_80%_at_50%_0%,#000,transparent)]"
+          />
+          <h2 className="mx-auto max-w-2xl text-3xl leading-tight font-semibold tracking-tight sm:text-5xl">{s.title}</h2>
+          <p className="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-white/75">{s.text}</p>
+          <div className="mt-9 flex flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center">
+            <Link
+              href="/register"
+              className="group inline-flex h-12 items-center justify-center gap-2.5 rounded-lg bg-white px-7 font-semibold text-[#05241e] shadow-lg transition-[background-color,transform] duration-200 hover:bg-white/90 active:scale-[0.97]"
+            >
+              {s.cta} <Arrow />
+            </Link>
+            <a
+              href={`mailto:${BRAND.supportEmail}`}
+              className="inline-flex h-12 items-center justify-center rounded-lg border border-white/25 px-6 font-medium text-white transition-colors hover:bg-white/10"
+            >
+              {s.contact}
+            </a>
           </div>
-        </Reveal>
-      </div>
+          <p className="mt-5 text-sm text-white/60">{s.note}</p>
+        </div>
+      </Reveal>
     </section>
   );
 }
 
-export function SiteFooter() {
-  const { t } = useI18n();
-  return (
-    <footer className="border-t border-line bg-surface/30">
-      <div className="mx-auto grid max-w-7xl gap-12 px-4 py-16 sm:px-6 md:grid-cols-[1.4fr_repeat(3,1fr)]">
-        <Reveal className="space-y-4">
-          <Logo />
-          <p className="max-w-xs text-sm leading-relaxed text-ink-2">{t.brand.about}</p>
-        </Reveal>
-        {t.landing.footer.columns.map((col, c) => (
-          <Reveal key={col.title} delay={(c + 1) * 80}>
-            <h3 className="text-sm font-bold tracking-wider text-ink uppercase">{col.title}</h3>
-            <ul className="mt-4 space-y-3 text-sm">
-              {col.links.map((label, i) => (
-                <li key={label}>
-                  <Link href={FOOTER_HREFS[c]![i]!} className="text-ink-2 transition-colors hover:text-brand">
-                    {label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </Reveal>
-        ))}
-      </div>
-      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 border-t border-line px-4 py-6 text-xs text-faint sm:px-6">
-        <p>
-          © {new Date().getFullYear()} <span className="ltr font-semibold text-ink-2">{BRAND.name}</span>. {t.landing.footer.rights}
-        </p>
-        <p className="max-w-2xl">{t.brand.disclaimer}</p>
-      </div>
-    </footer>
-  );
-}
-
 export function Landing() {
+  // Opened at /#pricing, or sent here from another page: go to that section once it has rendered.
+  useEffect(() => {
+    if (location.hash.length > 1) scrollToHash(location.hash.slice(1));
+  }, []);
+
   return (
     <div className="overflow-x-clip">
       <SiteHeader />
-      <main>
+      <main id="main">
         <Hero />
-        <Integration />
-        <DeveloperResources />
+        <TrustStrip />
+        <DemoVideo />
+        <Platform />
         <HowItWorks />
-        <SendReceive />
-        <UseCases />
-        <Pricing />
+        <Developers />
+        <Solutions />
+        <Security />
+        <PricingSection />
         <Faq />
         <FinalCta />
       </main>

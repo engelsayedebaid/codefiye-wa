@@ -1,0 +1,716 @@
+<!doctype html>
+<html lang="ar" dir="rtl" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#070d0b">
+  <title>WA CodeFiye — واتساب API منخفض التكلفة للمطوّرين</title>
+  <meta name="description" content="أرسل واستقبل رسائل واتساب من تطبيقك عبر REST API بسيط: جلسات متعددة، رسائل غير محدودة، وبدون رسوم على كل رسالة.">
+  <script>
+    (function () {
+      var t = null;
+      try { t = localStorage.getItem('wa.theme'); } catch (e) {}
+      if (t !== 'light' && t !== 'dark') t = 'dark';
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="grain" aria-hidden="true"></div>
+
+  <!-- ============ Header ============ -->
+  <header class="site-header">
+    <div class="container">
+      <div class="nav-shell">
+        <a class="logo" href="index.html" aria-label="WA CodeFiye">
+          <svg viewBox="0 0 40 40" fill="none" aria-hidden="true">
+            <defs><linearGradient id="lg" x1="4" y1="2" x2="36" y2="38" gradientUnits="userSpaceOnUse"><stop stop-color="#3BE37F"/><stop offset="1" stop-color="#0E9488"/></linearGradient></defs>
+            <rect width="40" height="40" rx="11" fill="url(#lg)"/>
+            <path d="M7 19.5 33 6.5 25.5 33.5 19.5 23Z" fill="#fff"/>
+            <path d="M19.5 23 33 6.5" stroke="#0B8F6B" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+          <span class="logo-word"><b>WA</b> CodeFiye</span>
+        </a>
+
+        <nav class="nav-links" aria-label="الرئيسية">
+          <a href="#features">المزايا</a>
+          <a href="#how">كيف يعمل</a>
+          <a href="#pricing">الأسعار</a>
+          <a href="guide.html">التوثيق</a>
+          <a href="#faq">الأسئلة الشائعة</a>
+        </nav>
+
+        <div class="nav-actions">
+          <button class="icon-btn theme-btn" data-theme-toggle aria-label="المظهر">
+            <svg class="i moon"><use href="#i-moon"/></svg>
+            <svg class="i sun"><use href="#i-sun"/></svg>
+          </button>
+          <a class="lang-btn desk" href="#" lang="en"><svg class="i"><use href="#i-globe"/></svg>English</a>
+          <a class="btn btn-plain btn-sm desk" href="/login">تسجيل الدخول</a>
+          <a class="btn btn-primary btn-sm desk" href="/register">ابدأ الآن <svg class="i flip"><use href="#i-arrow"/></svg></a>
+          <button class="icon-btn menu-btn" aria-label="القائمة" aria-expanded="false">
+            <svg class="i open"><use href="#i-menu"/></svg>
+            <svg class="i close"><use href="#i-x"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="mobile-menu">
+        <nav>
+          <a href="#features">المزايا</a>
+          <a href="#how">كيف يعمل</a>
+          <a href="#pricing">الأسعار</a>
+          <a href="guide.html">التوثيق</a>
+          <a href="#faq">الأسئلة الشائعة</a>
+          <a href="#" lang="en">English</a>
+        </nav>
+        <div class="row">
+          <a class="btn btn-ghost" href="/login">تسجيل الدخول</a>
+          <a class="btn btn-primary" href="/register">ابدأ الآن</a>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- ============ Hero (bento) ============ -->
+    <section class="hero hero-bento">
+      <div class="container bento-hero">
+        <div class="card bh-main fade-up" style="--d:50ms">
+          <a class="announce" href="#pricing">
+            <span class="tag">جديد</span>
+            صندوق محادثات مباشر في خطة Business
+            <svg class="i flip"><use href="#i-chevron"/></svg>
+          </a>
+          <h1 class="display">
+            <span class="text-heading">واتساب API منخفض التكلفة</span>
+            <span class="text-grad">للمطوّرين</span>
+          </h1>
+          <p class="lead">رسائل غير محدودة، جلسات واتساب متعددة، Webhooks، وواجهة برمجية سهلة للمطوّرين — بدون أي رسوم على كل رسالة.</p>
+          <div class="hero-ctas">
+            <a class="btn btn-primary btn-lg" href="/register">ابدأ تجربتك المجانية <svg class="i flip"><use href="#i-arrow"/></svg></a>
+            <a class="btn btn-ghost btn-lg" href="guide.html"><svg class="i"><use href="#i-code"/></svg>توثيق الـ API</a>
+          </div>
+          <ul class="trust">
+            <li><svg class="i"><use href="#i-check"/></svg>بدون بطاقة ائتمان</li>
+            <li><svg class="i"><use href="#i-check"/></svg>تجربة مجانية 3 أيام</li>
+            <li><svg class="i"><use href="#i-check"/></svg>إلغاء في أي وقت</li>
+          </ul>
+        </div>
+
+        <div class="card bh-stat fade-up" style="--d:160ms">
+          <p class="bh-head"><span class="bh-ico"><svg class="i"><use href="#i-card"/></svg></span>رسوم على الرسالة</p>
+          <div>
+            <strong>$0</strong>
+            <span>رسائل غير محدودة · بدون حد يومي</span>
+          </div>
+          <svg class="i bh-mark" aria-hidden="true"><use href="#i-card"/></svg>
+        </div>
+
+        <div class="card bh-stat bh-speed fade-up" style="--d:240ms">
+          <p class="bh-head"><span class="bh-ico"><svg class="i"><use href="#i-zap"/></svg></span>استجابة الـ API</p>
+          <div>
+            <strong>&lt; 50ms</strong>
+            <span>Webhooks فورية · HMAC-SHA256</span>
+          </div>
+          <svg class="i bh-mark" aria-hidden="true"><use href="#i-zap"/></svg>
+        </div>
+
+        <div class="card bh-langs fade-up" style="--d:320ms">
+          <p class="bh-head"><span class="bh-ico"><svg class="i"><use href="#i-code"/></svg></span>يعمل مع لغتك وأدواتك المفضّلة</p>
+          <ul dir="ltr">
+            <li class="lang-pill"><i style="--c:#7cc36e"></i>Node.js</li>
+            <li class="lang-pill"><i style="--c:#4b8bbe"></i>Python</li>
+            <li class="lang-pill"><i style="--c:#8892bf"></i>PHP</li>
+            <li class="lang-pill"><i style="--c:#ff2d20"></i>Laravel</li>
+            <li class="lang-pill"><i style="--c:#00add8"></i>Go</li>
+            <li class="lang-pill"><i style="--c:#f89820"></i>Java</li>
+            <li class="lang-pill"><i style="--c:#9b4f96"></i>C#</li>
+            <li class="lang-pill"><i style="--c:#cc342d"></i>Ruby</li>
+            <li class="lang-pill"><i style="--c:#ea4b71"></i>n8n</li>
+            <li class="lang-pill"><i style="--c:#6d00cc"></i>Make</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ Features (bento) ============ -->
+    <section id="features" class="section">
+      <div class="container">
+        <div class="section-head" data-reveal>
+          <span class="eyebrow"><span class="dot"></span>موارد المطوّرين</span>
+          <h2 class="h2"><span class="text-grad">أدوات تكامل</span> لمنصّتك المفضّلة</h2>
+          <p class="lead">كل ما تحتاجه لدمج واتساب في تطبيقك بسرعة وثقة.</p>
+        </div>
+
+        <div class="bento">
+          <!-- Code tile -->
+          <article class="card spot tile-code" data-reveal>
+            <div class="tile-copy">
+              <span class="ico-tile solid"><svg class="i"><use href="#i-code"/></svg></span>
+              <h3 class="h3">ربط واتساب بتطبيقك بلا عناء</h3>
+              <p>أرسل رسالتك الأولى ببضعة أسطر من الكود. اختر لغتك وابدأ التكامل اليوم.</p>
+            </div>
+            <div class="code-window" data-tabs>
+              <div class="tabs" role="tablist">
+                <button class="tab" role="tab" aria-selected="false" aria-controls="snip-curl">cURL</button>
+                <button class="tab" role="tab" aria-selected="true" aria-controls="snip-js">JavaScript</button>
+                <button class="tab" role="tab" aria-selected="false" aria-controls="snip-py">Python</button>
+                <button class="tab" role="tab" aria-selected="false" aria-controls="snip-php">PHP</button>
+                <button class="copy-btn" data-copy="active" data-done="تم النسخ"><svg class="i"><use href="#i-copy"/></svg><span>نسخ الكود</span></button>
+              </div>
+              <div class="panel" role="tabpanel" id="snip-curl" hidden>
+<pre class="pre"><span class="tk-k">curl</span> -X POST https://api.example.com/api/send-message \
+  -H <span class="tk-s">"Authorization: Bearer YOUR_API_KEY"</span> \
+  -H <span class="tk-s">"Content-Type: application/json"</span> \
+  -d <span class="tk-s">'{"to": "+201012345678", "text": "Hello from the API 👋"}'</span></pre>
+              </div>
+              <div class="panel" role="tabpanel" id="snip-js">
+<pre class="pre"><span class="tk-c">// Your session API key</span>
+<span class="tk-k">const</span> apiKey <span class="tk-p">=</span> <span class="tk-s">'YOUR_API_KEY'</span>;
+
+<span class="tk-c">// Send a text message</span>
+<span class="tk-k">const</span> res <span class="tk-p">=</span> <span class="tk-k">await</span> <span class="tk-f">fetch</span>(<span class="tk-s">'https://api.example.com/api/send-message'</span>, {
+  method: <span class="tk-s">'POST'</span>,
+  headers: {
+    Authorization: <span class="tk-s">`Bearer ${apiKey}`</span>,
+    <span class="tk-s">'Content-Type'</span>: <span class="tk-s">'application/json'</span>,
+  },
+  body: <span class="tk-v">JSON</span>.<span class="tk-f">stringify</span>({ to: <span class="tk-s">'+201012345678'</span>, text: <span class="tk-s">'Hello from the API 👋'</span> }),
+});
+
+console.<span class="tk-f">log</span>(<span class="tk-k">await</span> res.<span class="tk-f">json</span>());</pre>
+              </div>
+              <div class="panel" role="tabpanel" id="snip-py" hidden>
+<pre class="pre"><span class="tk-k">import</span> requests
+
+<span class="tk-c"># Your session API key</span>
+api_key <span class="tk-p">=</span> <span class="tk-s">"YOUR_API_KEY"</span>
+
+<span class="tk-c"># Send a text message</span>
+response <span class="tk-p">=</span> requests.<span class="tk-f">post</span>(
+    <span class="tk-s">"https://api.example.com/api/send-message"</span>,
+    headers<span class="tk-p">=</span>{<span class="tk-s">"Authorization"</span>: <span class="tk-s">f"Bearer {api_key}"</span>},
+    json<span class="tk-p">=</span>{<span class="tk-s">"to"</span>: <span class="tk-s">"+201012345678"</span>, <span class="tk-s">"text"</span>: <span class="tk-s">"Hello from the API 👋"</span>},
+)
+<span class="tk-k">print</span>(response.<span class="tk-f">json</span>())</pre>
+              </div>
+              <div class="panel" role="tabpanel" id="snip-php" hidden>
+<pre class="pre"><span class="tk-k">&lt;?php</span>
+<span class="tk-c">// Your session API key</span>
+<span class="tk-v">$apiKey</span> <span class="tk-p">=</span> <span class="tk-s">'YOUR_API_KEY'</span>;
+
+<span class="tk-c">// Send a text message</span>
+<span class="tk-v">$ch</span> <span class="tk-p">=</span> <span class="tk-f">curl_init</span>(<span class="tk-s">'https://api.example.com/api/send-message'</span>);
+<span class="tk-f">curl_setopt_array</span>(<span class="tk-v">$ch</span>, [
+    CURLOPT_POST <span class="tk-p">=&gt;</span> <span class="tk-k">true</span>,
+    CURLOPT_RETURNTRANSFER <span class="tk-p">=&gt;</span> <span class="tk-k">true</span>,
+    CURLOPT_HTTPHEADER <span class="tk-p">=&gt;</span> [
+        <span class="tk-s">"Authorization: Bearer $apiKey"</span>,
+        <span class="tk-s">'Content-Type: application/json'</span>,
+    ],
+    CURLOPT_POSTFIELDS <span class="tk-p">=&gt;</span> <span class="tk-f">json_encode</span>([<span class="tk-s">'to'</span> <span class="tk-p">=&gt;</span> <span class="tk-s">'+201012345678'</span>, <span class="tk-s">'text'</span> <span class="tk-p">=&gt;</span> <span class="tk-s">'Hello from the API 👋'</span>]),
+]);
+<span class="tk-k">echo</span> <span class="tk-f">curl_exec</span>(<span class="tk-v">$ch</span>);</pre>
+              </div>
+              <div class="code-foot">
+                <span dir="rtl">الاستجابة الفورية · 200 OK</span>
+                <span><b>{ "success": true, "data": { "msgId": 10482 } }</b></span>
+              </div>
+            </div>
+          </article>
+
+          <article class="card spot lift" data-reveal style="--d:80ms">
+            <span class="ico-tile"><svg class="i"><use href="#i-book"/></svg></span>
+            <h3 class="h3">توثيق تفاعلي</h3>
+            <p>مرجع OpenAPI كامل لكل مسار مع أمثلة جاهزة للتجربة مباشرة من المتصفح.</p>
+            <div class="badge-row">
+              <span class="badge brand">OpenAPI 3.1</span>
+              <span class="badge">Scalar · /docs</span>
+            </div>
+            <p style="margin-top:20px"><a class="link-arrow" href="guide.html">عرض التوثيق <svg class="i flip"><use href="#i-arrow-up-right"/></svg></a></p>
+          </article>
+
+          <article class="card spot lift" data-reveal style="--d:140ms">
+            <span class="ico-tile"><svg class="i"><use href="#i-key"/></svg></span>
+            <h3 class="h3">مفتاح لكل جلسة</h3>
+            <p>مفاتيح API مستقلة لكل رقم، ورموز وصول لإدارة مساحة العمل بالكامل.</p>
+            <div class="key-stack">
+              <div class="key-row"><span>was_<span class="mask">••••••••</span>9f8a</span><em>session</em></div>
+              <div class="key-row"><span>wap_<span class="mask">••••••••</span>7b3e</span><em>workspace</em></div>
+            </div>
+          </article>
+
+          <article class="card spot lift" data-reveal>
+            <span class="ico-tile"><svg class="i"><use href="#i-repeat"/></svg></span>
+            <h3 class="h3">إرسال آمن ومتكرر</h3>
+            <p>ترويسة Idempotency-Key تمنع تكرار الرسائل عند إعادة المحاولة من خادمك.</p>
+<div class="mini-terminal"><span class="dim">POST /api/send-message</span>
+Idempotency-Key: order-4821
+<span class="ok">✓ 200</span> <span class="dim">msgId 10482</span>
+<span class="dim">retry →</span> <span class="ok">✓ 200</span> <span class="dim">msgId 10482 (same)</span></div>
+          </article>
+
+          <article class="card spot lift" data-reveal style="--d:80ms">
+            <span class="ico-tile"><svg class="i"><use href="#i-webhook"/></svg></span>
+            <h3 class="h3">Webhooks موقّعة</h3>
+            <p>تصل إلى خادمك عند كل رسالة واردة أو تغيّر في حالة التسليم، موقّعة (HMAC) مع إعادة محاولة تلقائية.</p>
+            <div class="badge-row">
+              <span class="badge brand">HMAC-SHA256</span>
+              <span class="badge">messages.update</span>
+            </div>
+          </article>
+
+          <article class="card spot lift" data-reveal style="--d:140ms">
+            <span class="ico-tile"><svg class="i"><use href="#i-swap"/></svg></span>
+            <h3 class="h3">انتقال سهل</h3>
+            <p>مسارات متوافقة مع واجهات واتساب الشائعة في السوق — انتقل بتغيير الرابط والمفتاح فقط.</p>
+            <div class="route-map">
+              <div><b>POST</b>/api/send-message</div>
+              <div><b class="get">GET</b>/api/messages/:id</div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <!-- ============ How it works ============ -->
+    <section id="how" class="section">
+      <div class="container">
+        <div class="section-head" data-reveal>
+          <span class="eyebrow"><span class="dot"></span>خطوات بسيطة · بدون خبرة تقنية</span>
+          <h2 class="h2">كيف تعمل المنصّة <span class="text-grad">من أجلك</span></h2>
+          <p class="lead">ابدأ خلال دقائق عبر ثلاث خطوات بسيطة.</p>
+        </div>
+
+        <ol class="steps">
+          <li class="card spot step" data-reveal>
+            <div class="step-top">
+              <span class="step-num">1</span>
+              <span class="ico-tile"><svg class="i"><use href="#i-qr"/></svg></span>
+            </div>
+            <h3 class="h3">اربط واتساب</h3>
+            <p>امسح رمز QR من هاتفك لربط حسابك بالمنصّة بأمان خلال ثوانٍ.</p>
+            <div class="step-visual" aria-hidden="true"><div class="qr"></div></div>
+          </li>
+          <li class="card spot step" data-reveal style="--d:120ms">
+            <div class="step-top">
+              <span class="step-num">2</span>
+              <span class="ico-tile"><svg class="i"><use href="#i-message"/></svg></span>
+            </div>
+            <h3 class="h3">أنشئ رسالتك</h3>
+            <p>اكتب نصاً أو أرفق صوراً ومستندات وموقعاً عبر الـ API أو من لوحة التحكم.</p>
+            <div class="step-visual" aria-hidden="true">
+              <div class="composer">
+                <div class="bar">مرحباً أحمد، طلبك في الطريق 🚚<span class="send"><svg class="i flip"><use href="#i-send"/></svg></span></div>
+                <div class="types">
+                  <span><svg class="i"><use href="#i-image"/></svg></span>
+                  <span><svg class="i"><use href="#i-file"/></svg></span>
+                  <span><svg class="i"><use href="#i-mic"/></svg></span>
+                  <span><svg class="i"><use href="#i-pin"/></svg></span>
+                  <span><svg class="i"><use href="#i-contact"/></svg></span>
+                </div>
+              </div>
+            </div>
+          </li>
+          <li class="card spot step" data-reveal style="--d:240ms">
+            <div class="step-top">
+              <span class="step-num">3</span>
+              <span class="ico-tile"><svg class="i"><use href="#i-chart"/></svg></span>
+            </div>
+            <h3 class="h3">أرسل وتابع</h3>
+            <p>أرسل رسائلك وتابع حالة التسليم والقراءة لحظة بلحظة.</p>
+            <div class="step-visual" aria-hidden="true">
+              <div class="ticks">
+                <div class="done">queued<span>10:42:01</span></div>
+                <div class="done">sent<span>10:42:02</span></div>
+                <div class="done">delivered<span>10:42:02</span></div>
+                <div>read<span>—</span></div>
+              </div>
+            </div>
+          </li>
+        </ol>
+
+        <div style="display:flex;justify-content:center;margin-top:48px" data-reveal>
+          <a class="btn btn-invert btn-lg" href="/register">ابدأ تجربتك المجانية <svg class="i flip"><use href="#i-arrow"/></svg></a>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ Send & receive ============ -->
+    <section class="section tint">
+      <div class="container split">
+        <div>
+          <div class="section-head start" data-reveal>
+            <span class="eyebrow"><span class="dot"></span>تكامل قوي · تواصل سلس</span>
+            <h2 class="h2">أرسل واستقبل رسائل واتساب <span class="text-grad">من داخل تطبيقك</span></h2>
+            <p class="lead">ادمج رسائل واتساب في نظامك بسهولة واستقبل الرسائل والأحداث لحظياً — راجع <a href="guide.html" style="color:var(--brand);text-decoration:underline;text-underline-offset:4px">التوثيق</a> لترى بساطة التكامل.</p>
+          </div>
+
+          <div style="margin-top:36px" data-reveal>
+            <p class="label-sm">أنواع الرسائل المدعومة</p>
+            <div class="types-grid">
+              <div class="card type-item"><span class="ico"><svg class="i"><use href="#i-type"/></svg></span><div><b>نص</b><small>رسائل نصية منسّقة.</small></div></div>
+              <div class="card type-item"><span class="ico"><svg class="i"><use href="#i-image"/></svg></span><div><b>صور وفيديو</b><small>شارك الصور والفيديوهات.</small></div></div>
+              <div class="card type-item"><span class="ico"><svg class="i"><use href="#i-file"/></svg></span><div><b>مستند</b><small>أرسل الملفات والمستندات.</small></div></div>
+              <div class="card type-item"><span class="ico"><svg class="i"><use href="#i-mic"/></svg></span><div><b>صوت</b><small>رسائل صوتية وملاحظات صوتية.</small></div></div>
+              <div class="card type-item"><span class="ico"><svg class="i"><use href="#i-contact"/></svg></span><div><b>جهة اتصال</b><small>شارك بطاقات جهات الاتصال.</small></div></div>
+              <div class="card type-item"><span class="ico"><svg class="i"><use href="#i-pin"/></svg></span><div><b>موقع</b><small>أرسل المواقع على الخريطة.</small></div></div>
+            </div>
+          </div>
+
+          <div style="margin-top:28px" data-reveal>
+            <p class="label-sm">المستلمون</p>
+            <div class="recipients">
+              <div class="card type-item"><span class="ico"><svg class="i"><use href="#i-user"/></svg></span><div><b>أفراد</b><small>محادثات مباشرة فردية.</small></div></div>
+              <div class="card type-item"><span class="ico"><svg class="i"><use href="#i-users"/></svg></span><div><b>مجموعات</b><small>تواصل مع عدة مشاركين.</small></div></div>
+            </div>
+          </div>
+
+          <div style="margin-top:36px" data-reveal>
+            <a class="btn btn-primary btn-lg" href="/register">ابدأ التكامل الآن <svg class="i flip"><use href="#i-arrow"/></svg></a>
+          </div>
+        </div>
+
+        <div data-reveal style="--d:150ms">
+          <div class="device-stage" aria-hidden="true">
+            <div class="device">
+              <span class="hw hw-action"></span><span class="hw hw-vol-up"></span><span class="hw hw-vol-down"></span><span class="hw hw-power"></span>
+              <div class="device-screen">
+                <div class="island"></div>
+                <div class="statusbar" dir="ltr">
+                  <span>9:41</span>
+                  <span class="sys">
+                    <span class="signal"><i></i><i></i><i></i><i></i></span>
+                    <svg class="wifi" viewBox="0 0 16 12"><path d="M8 11.6 5.7 9.3a3.3 3.3 0 0 1 4.6 0Z"/><path d="M3.6 7.2a6.2 6.2 0 0 1 8.8 0l-1.4 1.4a4.2 4.2 0 0 0-6 0Z"/><path d="M1.4 5a9.3 9.3 0 0 1 13.2 0l-1.4 1.4a7.3 7.3 0 0 0-10.4 0Z"/></svg>
+                    <span class="battery"><i></i></span>
+                  </span>
+                </div>
+                <div class="wa-bar">
+                  <svg class="i back"><use href="#i-chevron"/></svg>
+                  <span class="wa-avatar">م</span>
+                  <div class="who"><b>متجر الأمل</b><small>متصل الآن</small></div>
+                  <span class="acts"><svg class="i"><use href="#i-video"/></svg><svg class="i"><use href="#i-phone"/></svg></span>
+                </div>
+                <div class="wa-chat">
+                  <div class="day-chip">اليوم</div>
+                  <div class="bubble out tail">مرحباً، أين طلبي رقم 4821؟<div class="meta">10:21 <svg class="i"><use href="#i-check-check"/></svg></div></div>
+                  <div class="bubble in tail">
+                    <div class="file"><span class="pdf">PDF</span><div><span dir="ltr">فاتورة-4821.pdf</span><small>صفحة واحدة · 84 KB</small></div></div>
+                    <div class="meta">10:22</div>
+                  </div>
+                  <div class="bubble in" style="width:80%">
+                    <div class="map"></div>
+                    موقع الفرع الرئيسي
+                    <div class="meta">10:22</div>
+                  </div>
+                  <div class="bubble out tail">شكراً، وصلني كل شيء 👌<div class="meta">10:24 <svg class="i"><use href="#i-check-check"/></svg></div></div>
+                </div>
+                <div class="wa-compose">
+                  <svg class="i"><use href="#i-plus"/></svg>
+                  <span class="field">اكتب رسالة</span>
+                  <svg class="i"><use href="#i-camera"/></svg>
+                  <svg class="i"><use href="#i-mic"/></svg>
+                </div>
+                <div class="home-ind"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ Use cases ============ -->
+    <section class="section">
+      <div class="container">
+        <div class="section-head" data-reveal>
+          <span class="eyebrow"><span class="dot"></span>تكامل مرن · إمكانات بلا حدود</span>
+          <h2 class="h2">حالات استخدام <span class="text-grad">تُلهم ابتكارك</span></h2>
+          <p class="lead">اكتشف كيف تستفيد الأعمال من واتساب API لتحسين تفاعل العملاء وتنمية مبيعاتها.</p>
+        </div>
+
+        <div class="cases">
+          <article class="card spot lift case" data-reveal>
+            <div class="case-top"><span class="ico-tile"><svg class="i"><use href="#i-message"/></svg></span><span class="n">01</span></div>
+            <h3 class="h3">أتمتة خدمة العملاء</h3>
+            <p>ردود فورية وذكية على واتساب: أتمت الأسئلة الشائعة وحلّ المشكلات وجمع آراء العملاء بكفاءة عالية.</p>
+          </article>
+          <article class="card spot lift case" data-reveal style="--d:90ms">
+            <div class="case-top"><span class="ico-tile"><svg class="i"><use href="#i-bell"/></svg></span><span class="n">02</span></div>
+            <h3 class="h3">تنبيهات فورية للأعمال</h3>
+            <p>أرسل الإشعارات المهمة والتذكيرات والتحديثات مباشرة لعملائك: الطلبات والمواعيد والفعاليات.</p>
+          </article>
+          <article class="card spot lift case" data-reveal style="--d:180ms">
+            <div class="case-top"><span class="ico-tile"><svg class="i"><use href="#i-bot"/></svg></span><span class="n">03</span></div>
+            <h3 class="h3">مساعدون أذكياء بالذكاء الاصطناعي</h3>
+            <p>شغّل روبوتات محادثة ذكية تجيب على الاستفسارات وتدير المرتجعات وتخدم العملاء على مدار الساعة.</p>
+          </article>
+          <article class="card spot lift case" data-reveal>
+            <div class="case-top"><span class="ico-tile"><svg class="i"><use href="#i-users"/></svg></span><span class="n">04</span></div>
+            <h3 class="h3">رعاية العملاء المحتملين</h3>
+            <p>حوّل المزيد من العملاء المحتملين بمحادثات شخصية ومتابعات مؤتمتة حتى إتمام الشراء.</p>
+          </article>
+          <article class="card spot lift case" data-reveal style="--d:90ms">
+            <div class="case-top"><span class="ico-tile"><svg class="i"><use href="#i-cart"/></svg></span><span class="n">05</span></div>
+            <h3 class="h3">التجارة الإلكترونية والمبيعات</h3>
+            <p>أتمت تحديثات الطلبات وإشعارات الشحن وتتبّع التوصيل، وامنح عملاءك تجربة شراء أسهل.</p>
+          </article>
+          <article class="card spot lift case" data-reveal style="--d:180ms">
+            <div class="case-top"><span class="ico-tile"><svg class="i"><use href="#i-send"/></svg></span><span class="n">06</span></div>
+            <h3 class="h3">التكامل مع أنظمتك</h3>
+            <p>اربط واتساب بنظام CRM أو المتجر أو أدوات الأتمتة مثل n8n وMake لتدفّق بيانات سلس.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ Pricing ============ -->
+    <section id="pricing" class="section tint">
+      <div class="container">
+        <div class="section-head" data-reveal>
+          <span class="eyebrow"><svg class="i" style="width:14px;height:14px;color:var(--brand)"><use href="#i-sparkles"/></svg>تجربة مجانية 3 أيام · إلغاء في أي وقت</span>
+          <h2 class="h2">أسعار بسيطة <span class="text-grad">وشفافة</span></h2>
+          <p class="lead">اختر الخطة المناسبة لاحتياجاتك — بدون رسوم خفية وبدون تكلفة على كل رسالة.</p>
+        </div>
+
+        <div class="plans">
+          <article class="card plan" data-reveal>
+            <div class="plan-head"><h3 class="plan-name">Basic</h3><span class="per-session"><span class="ltr">$6.00</span> لكل جلسة</span></div>
+            <p class="price"><strong>$6</strong><span>/ شهرياً</span></p>
+            <p class="billed">يُدفع شهرياً</p>
+            <p class="plan-blurb">مثالية للأفراد والفرق الصغيرة التي تحتاج رقم واتساب واحداً للتواصل مع العملاء.</p>
+            <a class="btn btn-ghost" href="/register">اختر الخطة</a>
+            <div class="plan-sep"></div>
+            <ul class="features">
+              <li class="hl"><svg class="i"><use href="#i-check"/></svg>جلسة واتساب واحدة</li>
+              <li><svg class="i"><use href="#i-check"/></svg>رسائل غير محدودة</li>
+              <li><svg class="i"><use href="#i-check"/></svg>وصول كامل للـ API</li>
+              <li><svg class="i"><use href="#i-check"/></svg>حفظ سجل الرسائل 30 يوماً</li>
+            </ul>
+          </article>
+
+          <article class="card plan featured" data-reveal style="--d:90ms">
+            <span class="ribbon">الأكثر طلباً</span>
+            <div class="plan-head"><h3 class="plan-name">Pro</h3><span class="per-session"><span class="ltr">$5.00</span> لكل جلسة</span></div>
+            <p class="price"><strong>$15</strong><span>/ شهرياً</span></p>
+            <p class="billed">يُدفع شهرياً</p>
+            <p class="plan-blurb">للأعمال النامية التي تدير حتى 3 أرقام واتساب للوصول إلى عملاء أكثر.</p>
+            <a class="btn btn-primary" href="/register">ابدأ الآن <svg class="i flip"><use href="#i-arrow"/></svg></a>
+            <div class="plan-sep"></div>
+            <ul class="features">
+              <li class="hl"><svg class="i"><use href="#i-check"/></svg>3 جلسات واتساب</li>
+              <li><svg class="i"><use href="#i-check"/></svg>رسائل غير محدودة</li>
+              <li><svg class="i"><use href="#i-check"/></svg>وصول كامل للـ API</li>
+              <li class="hl"><svg class="i"><use href="#i-check"/></svg>حفظ سجل الرسائل 60 يوماً</li>
+            </ul>
+          </article>
+
+          <article class="card plan" data-reveal style="--d:180ms">
+            <div class="plan-head"><h3 class="plan-name">Plus</h3><span class="per-session"><span class="ltr">$5.00</span> لكل جلسة</span></div>
+            <p class="price"><strong>$30</strong><span>/ شهرياً</span></p>
+            <p class="billed">يُدفع شهرياً</p>
+            <p class="plan-blurb">للفرق المتوسّعة التي تحتاج 6 أرقام لتغطية وسعة أكبر.</p>
+            <a class="btn btn-ghost" href="/register">اختر الخطة</a>
+            <div class="plan-sep"></div>
+            <ul class="features">
+              <li class="hl"><svg class="i"><use href="#i-check"/></svg>6 جلسات واتساب</li>
+              <li><svg class="i"><use href="#i-check"/></svg>رسائل غير محدودة</li>
+              <li><svg class="i"><use href="#i-check"/></svg>وصول كامل للـ API</li>
+              <li class="hl"><svg class="i"><use href="#i-check"/></svg>حملات إعلانية جماعية</li>
+              <li><svg class="i"><use href="#i-check"/></svg>حفظ سجل الرسائل 60 يوماً</li>
+            </ul>
+          </article>
+
+          <article class="card plan" data-reveal style="--d:270ms">
+            <div class="plan-head"><h3 class="plan-name">Business</h3><span class="per-session"><span class="ltr">$4.50</span> لكل جلسة</span></div>
+            <p class="price"><strong>$45</strong><span>/ شهرياً</span></p>
+            <p class="billed">يُدفع شهرياً</p>
+            <p class="plan-blurb">حل متكامل للأعمال مع 10 أرقام ومزايا متقدمة ودعم أولوية.</p>
+            <a class="btn btn-ghost" href="/register">اختر الخطة</a>
+            <div class="plan-sep"></div>
+            <ul class="features">
+              <li class="hl"><svg class="i"><use href="#i-check"/></svg>10 جلسات واتساب</li>
+              <li><svg class="i"><use href="#i-check"/></svg>رسائل غير محدودة</li>
+              <li><svg class="i"><use href="#i-check"/></svg>وصول كامل للـ API</li>
+              <li class="hl"><svg class="i"><use href="#i-check"/></svg>حملات إعلانية جماعية</li>
+              <li class="hl"><svg class="i"><use href="#i-check"/></svg>
+                <div>صندوق محادثات مباشر<span class="new">جديد</span>
+                  <div class="sub"><span>الرد بالنص والصور والملفات والصوت</span><span>الإشعارات الفورية</span><span>الأرشفة والتثبيت</span></div>
+                </div>
+              </li>
+              <li class="hl"><svg class="i"><use href="#i-check"/></svg>حفظ سجل الرسائل 90 يوماً</li>
+              <li class="hl"><svg class="i"><use href="#i-check"/></svg>دعم أولوية</li>
+            </ul>
+          </article>
+        </div>
+
+        <!-- Shared by every plan: listed once instead of four times. -->
+        <div class="card" data-reveal style="margin-top:20px;padding:24px 28px">
+          <p class="label-sm">كل الخطط تشمل</p>
+          <ul class="features" style="margin-top:16px;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px 24px">
+            <li><svg class="i"><use href="#i-check"/></svg>جهات اتصال غير محدودة</li>
+            <li><svg class="i"><use href="#i-check"/></svg>بدون حد يومي للرسائل</li>
+            <li><svg class="i"><use href="#i-check"/></svg>إرسال للأفراد والمجموعات</li>
+            <li><svg class="i"><use href="#i-check"/></svg>نصوص وصور وفيديو وصوت</li>
+            <li><svg class="i"><use href="#i-check"/></svg>مستندات وجهات اتصال ومواقع</li>
+            <li><svg class="i"><use href="#i-check"/></svg>Webhooks فورية</li>
+          </ul>
+        </div>
+
+        <div class="card enterprise" data-reveal>
+          <div class="who">
+            <span class="ico-tile"><svg class="i"><use href="#i-server"/></svg></span>
+            <div><h3 class="h3">تحتاج حجماً أكبر؟</h3><p>25 جلسة فأكثر بتسعير مخصص ودعم مخصص.</p></div>
+          </div>
+          <a class="btn btn-invert" href="mailto:support@example.com">تواصل معنا <svg class="i flip"><use href="#i-arrow"/></svg></a>
+        </div>
+
+        <div class="price-note" data-reveal>
+          <span><svg class="i"><use href="#i-card"/></svg>بدون بطاقة ائتمان</span>
+          <span><svg class="i"><use href="#i-clock"/></svg>تجربة مجانية 3 أيام</span>
+          <span><svg class="i"><use href="#i-shield"/></svg>إلغاء في أي وقت</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ FAQ ============ -->
+    <section id="faq" class="section">
+      <div class="container faq">
+        <div class="faq-aside">
+          <div class="section-head start" data-reveal>
+            <span class="eyebrow"><span class="dot"></span>الدعم · التوثيق · المساعدة</span>
+            <h2 class="h2">الأسئلة <span class="text-grad">الشائعة</span></h2>
+            <p class="lead">إجابات لأكثر الأسئلة شيوعاً عن المنصّة وخدماتها.</p>
+          </div>
+          <div class="help-cards" data-reveal style="--d:100ms">
+            <a class="card spot help-card" href="mailto:support@example.com">
+              <span class="ico-tile"><svg class="i"><use href="#i-mail"/></svg></span>
+              <span><b>تواصل مع فريق الدعم</b><small>تحتاج مساعدة إضافية؟ نحن هنا</small></span>
+              <svg class="i go flip"><use href="#i-arrow"/></svg>
+            </a>
+            <a class="card spot help-card" href="guide.html">
+              <span class="ico-tile"><svg class="i"><use href="#i-book"/></svg></span>
+              <span><b>عرض التوثيق</b><small>اطّلع على التوثيق</small></span>
+              <svg class="i go flip"><use href="#i-arrow"/></svg>
+            </a>
+          </div>
+        </div>
+
+        <div data-reveal style="--d:120ms">
+          <details class="qa" open>
+            <summary>كيف أنشئ أول جلسة واتساب؟<span class="pm"></span></summary>
+            <p class="answer">أنشئ حساباً مجانياً، ثم من «الجلسات» اضغط «جلسة جديدة» وامسح رمز QR من هاتفك عبر الإعدادات ← الأجهزة المرتبطة ← ربط جهاز. ستحصل على مفتاح API للجلسة فوراً.</p>
+          </details>
+          <details class="qa">
+            <summary>هل سيعرف المستلمون أنني أستخدم المنصّة؟<span class="pm"></span></summary>
+            <p class="answer">لا. الرسائل تُرسل من رقمك وتظهر للمستلم كأنك أرسلتها من هاتفك تماماً.</p>
+          </details>
+          <details class="qa">
+            <summary>هل يمكنني ربط أكثر من رقم واتساب؟<span class="pm"></span></summary>
+            <p class="answer">نعم. عدد الجلسات (الأرقام) يعتمد على خطتك: من جلسة واحدة حتى 10 جلسات، وأكثر في خطة المؤسسات.</p>
+          </details>
+          <details class="qa">
+            <summary>ماذا يحدث إذا سجّلت الخروج من واتساب على هاتفي؟<span class="pm"></span></summary>
+            <p class="answer">تتوقف الجلسة وتظهر بحالة «تم تسجيل الخروج». يكفي أن تضغط «ربط رقم» وتمسح رمز QR جديداً لاستئنافها.</p>
+          </details>
+          <details class="qa">
+            <summary>هل ربط حسابي آمن؟ وهل قد يُحظر رقمي؟<span class="pm"></span></summary>
+            <p class="answer">بيانات الدخول مشفّرة بمعيار AES-256 ولا نطّلع على محادثاتك الخاصة. المنصّة تعمل عبر واتساب ويب وليست تابعة لشركة Meta، لذلك يبقى خطر الحظر قائماً عند الإرسال المزعج. نخفّفه بتأخير عشوائي بين الرسائل وإظهار «يكتب…» وفحص الأرقام قبل الإرسال، لكننا لا نعد بعدم الحظر أبداً.</p>
+          </details>
+          <details class="qa">
+            <summary>ما طرق الدفع المتاحة؟<span class="pm"></span></summary>
+            <p class="answer">اختر خطتك من لوحة التحكم وأرسل طلب الاشتراك، وسيتواصل معك فريقنا لإتمام الدفع وتفعيل الخطة.</p>
+          </details>
+          <details class="qa">
+            <summary>ماذا أفعل إذا انقطع اتصال الجلسة؟<span class="pm"></span></summary>
+            <p class="answer">نعيد الاتصال تلقائياً عند انقطاع الشبكة. إذا ظهرت الجلسة «غير متصلة» أو «تحتاج تدخّلاً» فاضغط «إعادة الاتصال» من لوحة التحكم.</p>
+          </details>
+          <details class="qa">
+            <summary>هل يمكنني استقبال الرسائل لحظياً؟<span class="pm"></span></summary>
+            <p class="answer">نعم، عبر Webhooks موقّعة (HMAC) تصل إلى خادمك عند كل رسالة واردة أو تغيّر في حالة التسليم، مع إعادة محاولة تلقائية.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ Final CTA ============ -->
+    <section class="section" style="padding-top:0">
+      <div class="container">
+        <div class="cta-panel" data-reveal>
+          <div class="grid-lines" aria-hidden="true"></div>
+          <div>
+            <h2 class="h2">واتساب API<br><span class="text-grad">سريع وسهل وبتكلفة منخفضة</span></h2>
+            <p class="lead" style="margin-top:18px">انضم إلى المطوّرين والشركات الذين يرسلون رسائل واتساب من أنظمتهم دون رسوم على كل رسالة.</p>
+            <ul class="cta-points">
+              <li><svg class="i"><use href="#i-check"/></svg>ابدأ بدون بطاقة ائتمان</li>
+              <li><svg class="i"><use href="#i-check"/></svg>تجربة مجانية 3 أيام بكامل المزايا</li>
+              <li><svg class="i"><use href="#i-check"/></svg>ألغِ في أي وقت، بلا التزامات</li>
+            </ul>
+            <a class="btn btn-primary btn-lg" href="/register">ابدأ تجربتك المجانية <svg class="i flip"><use href="#i-arrow"/></svg></a>
+            <p class="cta-note">لا حاجة لبطاقة ائتمان للبدء</p>
+          </div>
+
+          <div class="terminal" aria-hidden="true">
+            <div class="stage-bar">
+              <div class="dots"><span style="background:#ff5f57"></span><span style="background:#febc2e"></span><span style="background:#28c840"></span></div>
+              <span class="title">send.js</span>
+            </div>
+<pre class="pre"><span class="tk-k">await</span> <span class="tk-f">send</span>({
+  to: <span class="tk-s">'+201012345678'</span>,
+  text: <span class="tk-s">'Works like a charm!'</span>,
+});
+
+<span class="tk-c">// → 200 OK · 38 ms</span>
+<span class="typed">✓ Message sent</span><span class="caret"></span></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============ Footer ============ -->
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div>
+          <a class="logo" href="index.html" aria-label="WA CodeFiye">
+            <svg viewBox="0 0 40 40" fill="none" aria-hidden="true">
+              <defs><linearGradient id="lg2" x1="4" y1="2" x2="36" y2="38" gradientUnits="userSpaceOnUse"><stop stop-color="#3BE37F"/><stop offset="1" stop-color="#0E9488"/></linearGradient></defs>
+              <rect width="40" height="40" rx="11" fill="url(#lg2)"/>
+              <path d="M7 19.5 33 6.5 25.5 33.5 19.5 23Z" fill="#fff"/>
+              <path d="M19.5 23 33 6.5" stroke="#0B8F6B" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+            <span class="logo-word"><b>WA</b> CodeFiye</span>
+          </a>
+          <p class="footer-about">منصّة واتساب API للأعمال بجميع أحجامها. أرسل رسائل غير محدودة بدون رسوم على كل رسالة.</p>
+        </div>
+        <div class="footer-col">
+          <h4>المنتج</h4>
+          <ul><li><a href="#features">المزايا</a></li><li><a href="#how">كيف يعمل</a></li><li><a href="#pricing">الأسعار</a></li></ul>
+        </div>
+        <div class="footer-col">
+          <h4>المطوّرون</h4>
+          <ul><li><a href="guide.html">توثيق الـ API</a></li><li><a href="/docs">ملف OpenAPI</a></li><li><a href="/dashboard">لوحة التحكم</a></li></ul>
+        </div>
+        <div class="footer-col">
+          <h4>المساعدة</h4>
+          <ul><li><a href="#faq">الأسئلة الشائعة</a></li><li><a href="/register">إنشاء حساب</a></li><li><a href="/login">تسجيل الدخول</a></li><li><a href="privacy.html">سياسة الخصوصية</a></li></ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>© 2026 <span class="ltr" style="color:var(--ink-2);font-weight:600">WA CodeFiye</span>. جميع الحقوق محفوظة.</p>
+        <p>خدمة مستقلة غير تابعة لشركة Meta أو WhatsApp. أنت مسؤول عن الالتزام بشروط واتساب وقوانين مكافحة الرسائل المزعجة.</p>
+      </div>
+    </div>
+    <div class="wordmark" aria-hidden="true">WA CodeFiye</div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

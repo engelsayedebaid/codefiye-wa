@@ -1,5 +1,19 @@
 import { and, eq, notify, planRequests, type Sql, type SqlFragment, sqlExpr, type TxSql, type UserRole, type UserStatus, workspaces, type Db } from '@wa/db';
-import { CHANNELS, enabledPaymentMethods, offerProblem, ok, paymentSettingsSchema, planPricingSchema, PLANS, preparePlanPricing, successSchema, TRIAL_DAYS } from '@wa/shared';
+import {
+  CHANNELS,
+  enabledPaymentMethods,
+  offerProblem,
+  ok,
+  paymentSettingsSchema,
+  planPricingSchema,
+  PLANS,
+  preparePlanPricing,
+  siteSettingsSchema,
+  successSchema,
+  TRIAL_DAYS,
+  youtubeChannelUrl,
+  youtubeVideoId,
+} from '@wa/shared';
 import type { FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -12,6 +26,7 @@ import { OTP_DEFAULT_TEXTS } from '../lib/otp';
 import { getOtpTexts, setOtpTexts } from '../lib/otp-text';
 import { getPaymentSettings, setPaymentSettings } from '../lib/payments';
 import { setPlanPricing } from '../lib/plan-pricing';
+import { setSiteSettings } from '../lib/site';
 import { planRequestDto, type PlanRequestRow, planRequestRowDto, toPlanRequestDto, toWorkspaceDto } from './account';
 
 // Operator endpoints: not part of the public API, so hidden from /docs.
@@ -662,6 +677,29 @@ export function adminRoutes({ sql, db, auth, workers }: Deps): FastifyPluginAsyn
           targetId: 'plan_pricing',
           details: { highlight: saved.highlight, plans: saved.plans },
         });
+        return ok(saved);
+      },
+    );
+
+    app.put(
+      '/site',
+      {
+        schema: {
+          ...schemaBase,
+          summary: 'Set the explainer video and the YouTube channel shown on the website (empty or null = none)',
+          body: siteSettingsSchema,
+          response: { 200: successSchema(siteSettingsSchema) },
+        },
+      },
+      async (req) => {
+        const video = req.body.demoVideoUrl || null;
+        const channel = req.body.youtubeChannelUrl || null;
+        const errors: Record<string, string[]> = {};
+        if (video && !youtubeVideoId(video)) errors.demoVideoUrl = ['Paste the link of a YouTube video'];
+        if (channel && !youtubeChannelUrl(channel)) errors.youtubeChannelUrl = ['Paste the link of a YouTube channel or playlist'];
+        if (Object.keys(errors).length > 0) throw unprocessable('Check the YouTube links', errors);
+        const saved = await setSiteSettings(sql, { demoVideoUrl: video, youtubeChannelUrl: channel });
+        await audit(sql, req, { action: 'site.update', targetType: 'feature', targetId: 'site', details: { ...saved } });
         return ok(saved);
       },
     );

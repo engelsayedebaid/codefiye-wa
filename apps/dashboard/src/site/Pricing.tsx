@@ -16,10 +16,9 @@ export function PlanCard({ plan, current, action, embedded }: { plan: PricedPlan
   return (
     <article
       className={cx(
-        'lift card-luxury relative flex h-full flex-col rounded-3xl border p-7',
-        plan.popular
-          ? cx('border-brand/60 bg-gradient-to-b from-brand/[0.08] via-card to-card shadow-[0_24px_70px_-25px_rgba(36,211,102,0.4)]', !embedded && 'xl:-mt-4')
-          : 'border-line',
+        'site-card relative flex h-full flex-col rounded-2xl p-7 transition-[translate,box-shadow] duration-300',
+        !embedded && 'motion-safe:hover:-translate-y-1',
+        plan.popular && 'border-brand/70 bg-gradient-to-b from-brand/[0.07] to-card ring-1 ring-brand/30',
       )}
     >
       {(plan.popular || current) && (
@@ -33,9 +32,9 @@ export function PlanCard({ plan, current, action, embedded }: { plan: PricedPlan
         </span>
       )}
       <div className="flex items-start justify-between gap-2">
-        <h3 className="text-xl font-bold tracking-tight">{plan.name}</h3>
-        <span className="rounded-full border border-line bg-ink/[0.03] px-2.5 py-0.5 font-mono text-xs font-medium text-muted">
-          <span className="ltr">${(plan.priceUsd / plan.sessions).toFixed(2)}</span> {t.plans.perSession}
+        <h3 className="text-lg font-semibold">{plan.name}</h3>
+        <span className="shrink-0 rounded-full border border-line bg-ink/[0.03] px-2.5 py-0.5 text-xs font-medium text-muted">
+          <span className="ltr font-mono">${(plan.priceUsd / plan.sessions).toFixed(2)}</span> {t.plans.perSession}
         </span>
       </div>
       {pct !== null && (
@@ -46,12 +45,12 @@ export function PlanCard({ plan, current, action, embedded }: { plan: PricedPlan
       )}
       <p className={cx('flex flex-wrap items-baseline gap-x-2 gap-y-1', pct === null ? 'mt-5' : 'mt-3')}>
         {compare !== null && <span className="ltr text-xl font-semibold text-muted line-through decoration-2 decoration-warning/80 tabular-nums">{usd(compare)}</span>}
-        <span className="ltr text-5xl font-bold tracking-tight tabular-nums">{usd(plan.priceUsd)}</span>
+        <span className="ltr text-[2.75rem] leading-none font-semibold tracking-tight tabular-nums">{usd(plan.priceUsd)}</span>
         <span className="text-sm font-medium text-muted">{t.plans.perMonth}</span>
       </p>
       <p className="mt-1 text-xs text-faint">{compare !== null ? t.plans.save(usd(roundMoney(compare - plan.priceUsd))) : t.plans.billedMonthly}</p>
       <p className="mt-5 min-h-[4.25rem] text-sm leading-relaxed text-ink-2">{t.plans.blurbs[plan.id]}</p>
-      <div className="my-6 h-px bg-gradient-to-r from-transparent via-line-strong to-transparent" />
+      <div className="my-6 h-px bg-line" />
       <ul className="flex-1 space-y-3.5">
         {t.plans.features(plan).map((f) => (
           <li key={f} className="flex items-start gap-3 text-sm">
@@ -90,7 +89,7 @@ export function PlanCard({ plan, current, action, embedded }: { plan: PricedPlan
             className={buttonClass(
               plan.popular ? 'brand' : 'outline',
               'lg',
-              cx('h-12 w-full rounded-xl font-semibold', plan.popular && 'shine bg-gradient-to-r from-brand to-teal text-on-brand'),
+              'h-11 w-full rounded-lg font-semibold',
             )}
           >
             {plan.popular ? t.plans.startNow : t.plans.choose}

@@ -8,8 +8,18 @@ export function navigate(to: string, { replace = false } = {}) {
   else history.pushState(null, '', to);
   listeners.forEach((l) => l());
   const hash = to.split('#')[1];
-  if (hash) setTimeout(() => document.getElementById(hash)?.scrollIntoView({ behavior: 'smooth' }), 50);
+  if (hash) scrollToHash(hash);
   else window.scrollTo({ top: 0 });
+}
+
+/**
+ * Scrolls to `#id` once it exists: coming from another page, the target section is in a chunk
+ * that is still loading. Gives up after a few seconds.
+ */
+export function scrollToHash(id: string, tries = 60) {
+  const el = document.getElementById(id);
+  if (el) el.scrollIntoView({ behavior: 'smooth' });
+  else if (tries > 0) setTimeout(() => scrollToHash(id, tries - 1), 50);
 }
 
 export function usePath() {

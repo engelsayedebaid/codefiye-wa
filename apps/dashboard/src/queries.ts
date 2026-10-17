@@ -16,6 +16,8 @@ export const qk = {
   paymentMethods: ['payment-methods'] as const,
   /** Customer-facing plan prices and discounts (what the admin set). */
   planPricing: ['plan-pricing'] as const,
+  /** The website's explainer video and YouTube links (what the admin set). */
+  site: ['site'] as const,
   chats: {
     all: ['chats'] as const,
     numbers: ['chats', 'numbers'] as const,

@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="ar" dir="rtl" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#070d0b">
+  <title>دليل المطورين وربط الـ OTP عبر واتساب API — WA CodeFiye</title>
+  <script>
+    (function () {
+      var t = null;
+      try { t = localStorage.getItem('wa.theme'); } catch (e) {}
+      if (t !== 'light' && t !== 'dark') t = 'dark';
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="grain" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <div class="container">
+      <div class="nav-shell">
+        <a class="logo" href="index.html" aria-label="WA CodeFiye">
+          <svg viewBox="0 0 40 40" fill="none" aria-hidden="true">
+            <defs><linearGradient id="lg" x1="4" y1="2" x2="36" y2="38" gradientUnits="userSpaceOnUse"><stop stop-color="#3BE37F"/><stop offset="1" stop-color="#0E9488"/></linearGradient></defs>
+            <rect width="40" height="40" rx="11" fill="url(#lg)"/>
+            <path d="M7 19.5 33 6.5 25.5 33.5 19.5 23Z" fill="#fff"/>
+            <path d="M19.5 23 33 6.5" stroke="#0B8F6B" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+          <span class="logo-word"><b>WA</b> CodeFiye</span>
+        </a>
+        <nav class="nav-links" aria-label="الرئيسية">
+          <a href="index.html#features">المزايا</a>
+          <a href="index.html#how">كيف يعمل</a>
+          <a href="index.html#pricing">الأسعار</a>
+          <a href="guide.html" aria-current="page">التوثيق</a>
+          <a href="index.html#faq">الأسئلة الشائعة</a>
+        </nav>
+        <div class="nav-actions">
+          <button class="icon-btn theme-btn" data-theme-toggle aria-label="المظهر">
+            <svg class="i moon"><use href="#i-moon"/></svg>
+            <svg class="i sun"><use href="#i-sun"/></svg>
+          </button>
+          <a class="lang-btn desk" href="#" lang="en"><svg class="i"><use href="#i-globe"/></svg>English</a>
+          <a class="btn btn-plain btn-sm desk" href="/login">تسجيل الدخول</a>
+          <a class="btn btn-primary btn-sm desk" href="/register">ابدأ الآن <svg class="i flip"><use href="#i-arrow"/></svg></a>
+          <button class="icon-btn menu-btn" aria-label="القائمة" aria-expanded="false">
+            <svg class="i open"><use href="#i-menu"/></svg>
+            <svg class="i close"><use href="#i-x"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="mobile-menu">
+        <nav>
+          <a href="index.html#features">المزايا</a>
+          <a href="index.html#how">كيف يعمل</a>
+          <a href="index.html#pricing">الأسعار</a>
+          <a href="guide.html">التوثيق</a>
+          <a href="index.html#faq">الأسئلة الشائعة</a>
+        </nav>
+        <div class="row">
+          <a class="btn btn-ghost" href="/login">تسجيل الدخول</a>
+          <a class="btn btn-primary" href="/register">ابدأ الآن</a>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Page hero -->
+    <section class="page-hero">
+      <div class="hero-bg" aria-hidden="true">
+        <div class="dot-field"></div>
+        <div class="eclipse" style="opacity:.7"></div>
+      </div>
+      <div class="container">
+        <nav class="crumbs fade-up" aria-label="مسار التنقل">
+          <a href="index.html">الرئيسية</a>
+          <svg class="i flip"><use href="#i-chevron"/></svg>
+          <span>التوثيق</span>
+        </nav>
+        <h1 class="display fade-up" style="--d:100ms">
+          <span class="text-heading">كيف تحصل على مفتاح API وتفعّل</span>
+          <span class="text-grad">خدمة الـ OTP في موقعك أو تطبيقك</span>
+        </h1>
+        <p class="lead fade-up" style="--d:200ms">شرح عملي خطوة بخطوة — من إنشاء جلسة واتساب واستخراج المفتاح، إلى إرسال رمز التحقق والتحقق منه في الباك-إند الخاص بك خلال دقائق.</p>
+
+        <div class="base-url fade-up" style="--d:300ms">
+          <span>الرابط الأساسي للـ API (Base URL)</span>
+          <code id="base-url">https://codefiye-wa-production.up.railway.app</code>
+          <button class="icon-btn" data-copy="#base-url" aria-label="نسخ"><svg class="i"><use href="#i-copy"/></svg></button>
+        </div>
+
+        <div class="hero-ctas fade-up" style="--d:380ms;justify-content:flex-start">
+          <a class="btn btn-primary" href="/docs"><svg class="i"><use href="#i-book"/></svg>مرجع OpenAPI التفاعلي (/docs)</a>
+          <a class="btn btn-ghost" href="/sessions">فتح صفحة الجلسات <svg class="i flip"><use href="#i-arrow"/></svg></a>
+        </div>
+      </div>
+    </section>
+
+    <div class="container doc-layout">
+      <!-- TOC -->
+      <aside class="toc">
+        <h4>محتويات الدليل</h4>
+        <ol>
+          <li><a href="#get-key" class="active">1. الحصول على مفتاح API</a></li>
+          <li><a href="#flow">2. كيف تعمل خدمة الـ OTP؟</a></li>
+          <li><a href="#playground">3. مُنشئ الطلبات والتجربة الحية</a></li>
+          <li><a href="#code">4. أكواد الربط لموقعك وتطبيقك</a></li>
+          <li><a href="#parameters">5. معاملات /api/send-otp</a></li>
+          <li><a href="#templates">6. تخصيص رسالة الـ OTP</a></li>
+          <li><a href="#endpoints">7. مسارات إضافية والأخطاء الشائعة</a></li>
+        </ol>
+        <div class="card toc-card">
+          <p>جرّب كل مسار مباشرة من المتصفح في المرجع التفاعلي.</p>
+          <a class="btn btn-ghost btn-sm" href="/docs">فتح /docs</a>
+        </div>
+      </aside>
+
+      <div class="doc">
+        <!-- 1. Get key -->
+        <section id="get-key" class="doc-section">
+          <span class="doc-eyebrow">الخطوة الأولى · من داخل لوحة التحكم</span>
+          <h2>كيف تحصل على مفتاح الـ API من المنصة؟</h2>
+          <p class="sub">لا تحتاج إلى موافقات معقدة أو حسابات Meta Business. في 3 خطوات فقط يصبح لديك مفتاح جاهز للإرسال.</p>
+
+          <div class="grid-3">
+            <article class="card spot mini-step">
+              <span class="num">01</span>
+              <h3>أنشئ جلسة واتساب جديدة</h3>
+              <p>بعد تسجيل الدخول، افتح قسم «الجلسات» (<code class="inline">/sessions</code>) من القائمة الجانبية، ثم اضغط زر «جلسة جديدة» وأدخل اسماً واضحاً مثل OTP-Server.</p>
+              <a class="link-arrow" href="/sessions?new=1">اذهب إلى الجلسات <svg class="i flip"><use href="#i-arrow-up-right"/></svg></a>
+            </article>
+            <article class="card spot mini-step">
+              <span class="num">02</span>
+              <h3>انسخ مفتاح الجلسة (<span class="ltr">was_…</span>)</h3>
+              <p>فور إنشاء الجلسة سيظهر لك مفتاح API خاص بها يبدأ بـ <code class="inline">was_…</code> — انسخه واحفظه في ملف البيئة (<code class="inline">.env</code>) في خادمك. ويمكنك دائماً توليد مفتاح جديد من داخل صفحة الجلسة.</p>
+              <a class="link-arrow" href="/keys">إدارة المفاتيح <svg class="i flip"><use href="#i-arrow-up-right"/></svg></a>
+            </article>
+            <article class="card spot mini-step">
+              <span class="num">03</span>
+              <h3>اربط رقمك بمسح رمز QR</h3>
+              <p>اضغط «ربط» داخل صفحة الجلسة، ثم افتح واتساب على هاتفك ← الإعدادات ← الأجهزة المرتبطة ← ربط جهاز، وامسح الرمز لتتحول الحالة إلى «متصل».</p>
+              <a class="link-arrow" href="/sessions">عرض الجلسات <svg class="i flip"><use href="#i-arrow-up-right"/></svg></a>
+            </article>
+          </div>
+
+          <h3 class="h-sub">أي نوع من المفاتيح يجب أن أستخدم؟</h3>
+          <div class="grid-2" style="margin-top:16px">
+            <article class="card key-card rec">
+              <div class="top"><span class="pill brand">مُوصى به لخدمة الـ OTP</span><span class="prefix">was_…</span></div>
+              <h3>مفتاح الجلسة (Session Key)</h3>
+              <p>مرتبط مباشرة برقم واتساب واحد محدد. هو الأسهل والأسرع لتفعيل الـ OTP في موقعك لأنك ترسله في ترويسة Authorization فقط دون الحاجة لتمرير معرّف الجلسة.</p>
+              <pre>Authorization: Bearer was_a8f9d2c1...</pre>
+            </article>
+            <article class="card key-card">
+              <div class="top"><span class="pill">لإدارة عدة أرقام معاً</span><span class="prefix">wap_…</span></div>
+              <h3>رمز مساحة العمل (Workspace Token)</h3>
+              <p>يُنشأ من صفحة «مفاتيح API» (<code class="inline">/keys</code>) ويصلح لإدارة جميع جلساتك وإنشاء جلسات جديدة برمجياً. عند الإرسال به يجب إضافة ترويسة <code class="inline">X-Session-Id</code>.</p>
+              <pre>Authorization: Bearer wap_7b3e... + X-Session-Id: &lt;UUID&gt;</pre>
+            </article>
+          </div>
+        </section>
+
+        <!-- 2. Flow -->
+        <section id="flow" class="doc-section">
+          <span class="doc-eyebrow">الخطوة الثانية · معمارية الربط</span>
+          <h2>كيف تعمل دورة التحقق (OTP) مع موقعك أو تطبيقك؟</h2>
+          <p class="sub">مسار <code class="inline">/api/send-otp</code> مصمم خصيصاً ليوفر عليك عناء توليد الرمز وصياغة الرسالة: المنصة تولّد الرمز وترسله للعميل وتُعيده لخادمك في نفس اللحظة.</p>
+
+          <ol class="flow">
+            <li class="card flow-item">
+              <span class="n">1</span>
+              <span class="actor">واجهة موقعك / تطبيقك</span>
+              <h3>العميل يطلب رمز التحقق</h3>
+              <p>يكتب العميل رقم هاتفه (مثل <span class="ltr">+201012345678</span>) في صفحة التسجيل أو الدخول في موقعك ويضغط «إرسال الرمز».</p>
+            </li>
+            <li class="card flow-item">
+              <span class="n">2</span>
+              <span class="actor">خادمك (Backend Server)</span>
+              <h3>طلب <span class="ltr">POST /api/send-otp</span></h3>
+              <p>يرسل خادمك طلباً إلى منصتنا بالترويسة <span class="ltr">Authorization: Bearer was_...</span> ورقم العميل. (أو يمرر الرمز الذي ولّدته بنفسك في الحقل code).</p>
+            </li>
+            <li class="card flow-item">
+              <span class="n">3</span>
+              <span class="actor">منصة واتساب API</span>
+              <h3>إرسال فوري + إرجاع الرمز</h3>
+              <p>تولّد المنصة رمزاً عشوائياً آمناً (مثلاً 482910)، ترسله فوراً لواتساب العميل، وتُعيده لخادمك في الـ JSON ليحفظه مؤقتاً لمدة 5 دقائق.</p>
+            </li>
+            <li class="card flow-item">
+              <span class="n">4</span>
+              <span class="actor">خادمك (Backend Server)</span>
+              <h3>مقارنة الرمز وتفعيل الحساب</h3>
+              <p>يدخل العميل الرمز الذي وصله على واتساب في موقعك، فيقارنه خادمك بالرمز المحفوظ، وعند التطابق يتم تسجيل الدخول بنجاح!</p>
+            </li>
+          </ol>
+        </section>
+
+        <!-- 3. Playground -->
+        <section id="playground" class="doc-section">
+          <span class="doc-eyebrow">الخطوة الثالثة · جرّب بنفسك الآن</span>
+          <h2>مُنشئ طلبات الـ OTP ومعاينة الرسالة الحية</h2>
+          <p class="sub">عدّل الإعدادات أدناه لترى شكل الرسالة التي ستصل لعميلك وكود الطلب الجاهز، أو أدخل مفتاح جلستك لإرسال رسالة OTP حقيقية لهاتفك فوراً!</p>
+
+          <div class="playground">
+            <div class="card form-card">
+              <div class="field">
+                <label for="pg-to">رقم هاتف المستلم (to)</label>
+                <input id="pg-to" class="input mono" value="+201012345678">
+                <small>بالصيغة الدولية مع رمز الدولة (مثل +2010... أو +9665...)</small>
+              </div>
+              <div class="field">
+                <label>لغة الرسالة الافتراضية (lang)</label>
+                <div class="segmented">
+                  <button type="button" aria-pressed="true">العربية (ar)</button>
+                  <button type="button" aria-pressed="false">الإنجليزية (en)</button>
+                </div>
+              </div>
+              <div class="field">
+                <label>طول الرمز (length)</label>
+                <div class="segmented">
+                  <button type="button" data-length="4" aria-pressed="false">4 أرقام</button>
+                  <button type="button" data-length="6" aria-pressed="true">6 أرقام</button>
+                  <button type="button" data-length="8" aria-pressed="false">8 أرقام</button>
+                </div>
+              </div>
+              <div class="field">
+                <label for="pg-key">مفتاح الجلسة للتجربة الحية (اختياري)</label>
+                <input id="pg-key" class="input mono" placeholder="was_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
+                <small>أدخل مفتاح was_ الحقيقي لتجربة الإرسال الفعلي من المتصفح.</small>
+              </div>
+              <button class="btn btn-primary" type="button"><svg class="i flip"><use href="#i-send"/></svg>إرسال OTP تجريبي حقيقي الآن</button>
+            </div>
+
+            <div class="preview-card">
+              <p class="label-sm"><svg class="i"><use href="#i-smartphone"/></svg>معاينة رسالة واتساب التي تصل للعميل</p>
+              <div class="wa-body" style="border-radius:16px;border:1px solid rgba(255,255,255,.07)">
+                <div class="bubble in tail">رمز التحقق الخاص بك في <span class="ltr">WA CodeFiye</span> هو: <span class="otp" data-otp>482910</span><br>صالح لمدة 5 دقائق. لا تشاركه مع أي شخص.<div class="meta">10:42</div></div>
+              </div>
+              <p class="label-sm"><svg class="i"><use href="#i-code"/></svg>جسم الطلب (Request JSON)</p>
+<pre class="json">{
+  <span class="tk-p">"to"</span>: <span class="tk-s">"+201012345678"</span>,
+  <span class="tk-p">"lang"</span>: <span class="tk-s">"ar"</span>,
+  <span class="tk-p">"length"</span>: <span class="tk-n" data-len>6</span>
+}</pre>
+              <p class="label-sm"><svg class="i"><use href="#i-check"/></svg>استجابة المنصة (200 OK)</p>
+<pre class="json">{
+  <span class="tk-p">"success"</span>: <span class="tk-k">true</span>,
+  <span class="tk-p">"data"</span>: {
+    <span class="tk-p">"code"</span>: <span class="tk-s">"<span data-otp>482910</span>"</span>,
+    <span class="tk-p">"msgId"</span>: <span class="tk-n">10482</span>,
+    <span class="tk-p">"jid"</span>: <span class="tk-s">"201012345678@s.whatsapp.net"</span>,
+    <span class="tk-p">"status"</span>: <span class="tk-s">"queued"</span>
+  }
+}</pre>
+            </div>
+          </div>
+        </section>
+
+        <!-- 4. Code -->
+        <section id="code" class="doc-section">
+          <span class="doc-eyebrow">الخطوة الرابعة · أكواد جاهزة للنسخ</span>
+          <h2>اربط الخدمة بموقعك أو تطبيقك بأي لغة برمجة</h2>
+          <p class="sub">اختر لغة الباك-إند لديك. وفرنا لك كود الإرسال المباشر، بالإضافة إلى مثال متكامل يشمل (إرسال الرمز + التحقق منه عند إدخاله من العميل).</p>
+
+          <div class="code-window" data-tabs style="margin:28px 0 0">
+            <div class="tabs" role="tablist">
+              <button class="tab" role="tab" aria-selected="true" aria-controls="g-node">Node.js</button>
+              <button class="tab" role="tab" aria-selected="false" aria-controls="g-py">Python</button>
+              <button class="tab" role="tab" aria-selected="false" aria-controls="g-php">PHP</button>
+              <button class="tab" role="tab" aria-selected="false" aria-controls="g-curl">cURL</button>
+              <button class="copy-btn" data-copy="active" data-done="تم النسخ!"><svg class="i"><use href="#i-copy"/></svg><span>نسخ الكود</span></button>
+            </div>
+            <div class="panel" role="tabpanel" id="g-node">
+<pre class="pre"><span class="tk-k">const</span> res <span class="tk-p">=</span> <span class="tk-k">await</span> <span class="tk-f">fetch</span>(<span class="tk-s">`${process.env.WA_BASE_URL}/api/send-otp`</span>, {
+  method: <span class="tk-s">'POST'</span>,
+  headers: {
+    Authorization: <span class="tk-s">`Bearer ${process.env.WA_API_KEY}`</span>,
+    <span class="tk-s">'Content-Type'</span>: <span class="tk-s">'application/json'</span>,
+  },
+  body: <span class="tk-v">JSON</span>.<span class="tk-f">stringify</span>({ to: <span class="tk-s">'+201012345678'</span>, lang: <span class="tk-s">'ar'</span>, length: <span class="tk-n">6</span> }),
+});
+
+<span class="tk-k">const</span> { data } <span class="tk-p">=</span> <span class="tk-k">await</span> res.<span class="tk-f">json</span>();
+<span class="tk-c">// Save data.code with a 5-minute expiry, then compare it with what the user types.</span></pre>
+            </div>
+            <div class="panel" role="tabpanel" id="g-py" hidden>
+<pre class="pre"><span class="tk-k">import</span> os, requests
+
+res <span class="tk-p">=</span> requests.<span class="tk-f">post</span>(
+    <span class="tk-s">f"{os.environ['WA_BASE_URL']}/api/send-otp"</span>,
+    headers<span class="tk-p">=</span>{<span class="tk-s">"Authorization"</span>: <span class="tk-s">f"Bearer {os.environ['WA_API_KEY']}"</span>},
+    json<span class="tk-p">=</span>{<span class="tk-s">"to"</span>: <span class="tk-s">"+201012345678"</span>, <span class="tk-s">"lang"</span>: <span class="tk-s">"ar"</span>, <span class="tk-s">"length"</span>: <span class="tk-n">6</span>},
+)
+code <span class="tk-p">=</span> res.<span class="tk-f">json</span>()[<span class="tk-s">"data"</span>][<span class="tk-s">"code"</span>]  <span class="tk-c"># keep it for 5 minutes</span></pre>
+            </div>
+            <div class="panel" role="tabpanel" id="g-php" hidden>
+<pre class="pre"><span class="tk-k">&lt;?php</span>
+<span class="tk-v">$ch</span> <span class="tk-p">=</span> <span class="tk-f">curl_init</span>(<span class="tk-f">getenv</span>(<span class="tk-s">'WA_BASE_URL'</span>) . <span class="tk-s">'/api/send-otp'</span>);
+<span class="tk-f">curl_setopt_array</span>(<span class="tk-v">$ch</span>, [
+    CURLOPT_POST <span class="tk-p">=&gt;</span> <span class="tk-k">true</span>,
+    CURLOPT_RETURNTRANSFER <span class="tk-p">=&gt;</span> <span class="tk-k">true</span>,
+    CURLOPT_HTTPHEADER <span class="tk-p">=&gt;</span> [<span class="tk-s">'Authorization: Bearer '</span> . <span class="tk-f">getenv</span>(<span class="tk-s">'WA_API_KEY'</span>), <span class="tk-s">'Content-Type: application/json'</span>],
+    CURLOPT_POSTFIELDS <span class="tk-p">=&gt;</span> <span class="tk-f">json_encode</span>([<span class="tk-s">'to'</span> <span class="tk-p">=&gt;</span> <span class="tk-s">'+201012345678'</span>, <span class="tk-s">'lang'</span> <span class="tk-p">=&gt;</span> <span class="tk-s">'ar'</span>, <span class="tk-s">'length'</span> <span class="tk-p">=&gt;</span> <span class="tk-n">6</span>]),
+]);
+<span class="tk-v">$code</span> <span class="tk-p">=</span> <span class="tk-f">json_decode</span>(<span class="tk-f">curl_exec</span>(<span class="tk-v">$ch</span>), <span class="tk-k">true</span>)[<span class="tk-s">'data'</span>][<span class="tk-s">'code'</span>];</pre>
+            </div>
+            <div class="panel" role="tabpanel" id="g-curl" hidden>
+<pre class="pre"><span class="tk-k">curl</span> -X POST $WA_BASE_URL/api/send-otp \
+  -H <span class="tk-s">"Authorization: Bearer $WA_API_KEY"</span> \
+  -H <span class="tk-s">"Content-Type: application/json"</span> \
+  -d <span class="tk-s">'{"to": "+201012345678", "lang": "ar", "length": 6}'</span></pre>
+            </div>
+          </div>
+        </section>
+
+        <!-- 5. Parameters -->
+        <section id="parameters" class="doc-section">
+          <span class="doc-eyebrow">الخطوة الخامسة · مرجع الحقول</span>
+          <h2>جدول معاملات مسار <span class="ltr">POST /api/send-otp</span></h2>
+          <p class="sub">جميع الحقول التي يقبلها المسار وما يعيده في الاستجابة.</p>
+
+          <h3 class="h-sub" style="margin-top:28px">حقول الطلب (Request Body)</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>الحقل</th><th>النوع</th><th>مطلوب؟</th><th>الوصف</th></tr></thead>
+              <tbody>
+                <tr><td><span class="f">to</span></td><td><span class="t">string</span></td><td><span class="req yes">نعم</span></td><td class="desc">رقم هاتف المستلم بالصيغة الدولية مثل "+201012345678" أو JID واتساب.</td></tr>
+                <tr><td><span class="f">lang</span></td><td><span class="t">"ar" | "en"</span></td><td><span class="req no">اختياري</span></td><td class="desc">لغة نص التحقق المدمج عند عدم تحديد قالب خاص (الافتراضي: "ar").</td></tr>
+                <tr><td><span class="f">length</span></td><td><span class="t">number (4..10)</span></td><td><span class="req no">اختياري</span></td><td class="desc">عدد أرقام الرمز الذي تولّده المنصة عشوائياً (الافتراضي: 6).</td></tr>
+                <tr><td><span class="f">code</span></td><td><span class="t">string (4..10 digits)</span></td><td><span class="req no">اختياري</span></td><td class="desc">مرّر رمزك الخاص (مثل "482910") إذا كنت تولّده في خادمك بدلاً من التوليد التلقائي.</td></tr>
+                <tr><td><span class="f">template</span></td><td><span class="t">string</span></td><td><span class="req no">اختياري</span></td><td class="desc">اسم قالب محفوظ في صفحة «القوالب» يحتوي على <span class="ltr">{{code}}</span>. إذا وُجد قالب باسم "otp" يُستخدم تلقائياً.</td></tr>
+                <tr><td><span class="f">variables</span></td><td><span class="t">Record&lt;string, string&gt;</span></td><td><span class="req no">اختياري</span></td><td class="desc">قيم المتغيرات الإضافية في القالب بجانب <span class="ltr">{{code}}</span> مثل <span class="ltr">{ "name": "أحمد" }</span>.</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3 class="h-sub" style="margin-top:32px">حقول الاستجابة (Response data)</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>الحقل</th><th>النوع</th><th>الوصف</th></tr></thead>
+              <tbody>
+                <tr><td><span class="f">code</span></td><td><span class="t">string</span></td><td class="desc">رمز التحقق الذي تم إرساله للمستخدم — احفظه في خادمك للتحقق منه لاحقاً.</td></tr>
+                <tr><td><span class="f">msgId</span></td><td><span class="t">number</span></td><td class="desc">المعرّف الرقمي للرسالة في المنصة لمتابعة حالة التسليم عبر <span class="ltr">GET /api/messages/:id</span>.</td></tr>
+                <tr><td><span class="f">jid</span></td><td><span class="t">string</span></td><td class="desc">معرّف واتساب القياسي للمستلم (مثل <span class="ltr">201012345678@s.whatsapp.net</span>).</td></tr>
+                <tr><td><span class="f">status</span></td><td><span class="t">"queued"</span></td><td class="desc">حالة الرسالة المبدئية فور وضعها في طابور الإرسال السريع.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- 6. Templates -->
+        <section id="templates" class="doc-section">
+          <span class="doc-eyebrow">الخطوة السادسة · تخصيص نص الرسالة</span>
+          <h2>كيف تغيّر نص رسالة الـ OTP باسم شركتك؟</h2>
+          <p class="sub">بشكل افتراضي ترسل المنصة نصاً جاهزاً باللغة العربية أو الإنجليزية. لتخصيصه باسم علامتك التجارية:</p>
+
+          <ol class="ol-steps">
+            <li>افتح صفحة «القوالب» (/templates) من لوحة التحكم واضغط «قالب جديد».</li>
+            <li>اجعل اسم القالب otp (ليتم استخدامه تلقائياً في كل طلبات /api/send-otp دون الحاجة لتمرير اسمه في الكود!).</li>
+            <li>اكتب نص رسالتك مع وضع المتغير الإجباري <span class="ltr">{{code}}</span> في المكان الذي سيظهر فيه الرقم، ويمكنك إضافة متغيرات أخرى مثل <span class="ltr">{{name}}</span>.</li>
+          </ol>
+
+          <div class="card tpl" style="margin-top:24px">
+            <span class="label-sm">مثال لقالب مخصص باسم شركتك (template: "otp")</span>
+            <div class="wa-body">
+              <div class="bubble in">مرحباً <span class="var">{{name}}</span> 👋
+رمز التحقق للدخول إلى <b>متجر النخبة</b> هو: <b><span class="var">{{code}}</span></b>
+صالح لمدة 5 دقائق — لا تشاركه مع أحد.<div class="meta">10:42</div></div>
+            </div>
+          </div>
+          <p style="margin-top:20px"><a class="btn btn-ghost" href="/templates">إنشاء قالب OTP مخصص الآن <svg class="i flip"><use href="#i-arrow"/></svg></a></p>
+        </section>
+
+        <!-- 7. Endpoints -->
+        <section id="endpoints" class="doc-section">
+          <span class="doc-eyebrow">الخطوة السابعة · مسارات إضافية والأمان</span>
+          <h2>مسارات مكملة ونصائح ذهبية للإنتاج</h2>
+          <p class="sub">إلى جانب <code class="inline">/api/send-otp</code>، يمكنك استخدام المسارات التالية بنفس مفتاح الـ API:</p>
+
+          <div class="grid-2">
+            <article class="card endpoint">
+              <div class="path"><span class="verb post">POST</span>/api/send-message</div>
+              <h3>إرسال رسائل عامة وفواتير</h3>
+              <p>أرسل نصوصاً، صوراً (imageUrl)، ملفات PDF وفواتير (documentUrl)، مقاطع صوتية، أو مواقع جغرافية. يدعم ترويسة Idempotency-Key لمنع تكرار الرسائل.</p>
+            </article>
+            <article class="card endpoint">
+              <div class="path"><span class="verb get">GET</span>/api/on-whatsapp/:phone</div>
+              <h3>فحص الرقم على واتساب قبل الإرسال</h3>
+              <p>تحقق مما إذا كان رقم العميل يمتلك حساب واتساب فعّالاً (<span class="ltr">{ exists: true, jid }</span>) قبل إرسال رمز التحقق إليه.</p>
+            </article>
+            <article class="card endpoint">
+              <div class="path"><span class="verb get">GET</span>/api/messages/:id</div>
+              <h3>متابعة حالة تسليم وقراءة الرسالة</h3>
+              <p>استعلم عن حالة الرسالة (<span class="ltr">queued → sending → sent → delivered → read</span>) باستخدام msgId، أو استقبلها لحظياً عبر Webhooks.</p>
+            </article>
+            <article class="card endpoint">
+              <div class="path"><span class="verb get">GET</span>/api/status</div>
+              <h3>فحص حالة اتصال الجلسة</h3>
+              <p>تأكد برمجياً من أن جلسة الواتساب متصلة (<span class="ltr">status: "connected"</span>) ورقم الهاتف المرتبط بها.</p>
+            </article>
+          </div>
+
+          <h3 class="h-sub">قواعد ذهبية للأمان والاعتمادية</h3>
+          <div class="rules">
+            <div class="card rule">
+              <span class="ico-tile"><svg class="i"><use href="#i-lock"/></svg></span>
+              <div><b>لا تضع مفتاح الـ API في كود الواجهة الأمامية (Frontend)</b><p>استدعِ /api/send-otp دائماً من خادمك الخلفي (Backend) حتى لا يتمكن الزوار من قراءة مفتاح was_… أو معرفة الرمز من تبويب الشبكة (Network Tab).</p></div>
+            </div>
+            <div class="card rule">
+              <span class="ico-tile"><svg class="i"><use href="#i-timer"/></svg></span>
+              <div><b>حدد صلاحية زمنية للرمز (5 دقائق)</b><p>احفظ الرمز المُرجع في الاستجابة مع وقت انتهاء (Expires At) بعد 5 دقائق، واحذفه فور استخدامه لمرة واحدة.</p></div>
+            </div>
+            <div class="card rule">
+              <span class="ico-tile"><svg class="i"><use href="#i-shield"/></svg></span>
+              <div><b>قيّد عدد محاولات الإدخال والإرسال</b><p>اسمح بحد أقصى 5 محاولات لإدخال الرمز الخاطئ، وضع مهلة 60 ثانية قبل السماح بطلب إعادة إرسال رمز جديد لنفس الرقم.</p></div>
+            </div>
+          </div>
+
+          <h3 class="h-sub">أكواد الاستجابة والأخطاء الشائعة</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>الكود</th><th>الحالة</th><th>الوصف</th></tr></thead>
+              <tbody>
+                <tr><td><span class="code-chip c-ok">200 OK</span></td><td>نجاح</td><td class="desc">تم قبول الطلب ووضع رسالة الـ OTP في طابور الإرسال الفوري وإرجاع الرمز في data.code.</td></tr>
+                <tr><td><span class="code-chip c-err">401 Unauthorized</span></td><td>مفتاح غير صالح</td><td class="desc">تأكد من إرسال الترويسة <span class="ltr">Authorization: Bearer was_...</span> بشكل صحيح وأن المفتاح لم يتم إلغاؤه.</td></tr>
+                <tr><td><span class="code-chip c-warn">409 Conflict</span></td><td><span class="ltr">session_not_connected</span></td><td class="desc">جلسة الواتساب غير متصلة حالياً. افتح صفحة «الجلسات» وتأكد أن حالتها «متصل».</td></tr>
+                <tr><td><span class="code-chip c-warn">422 Unprocessable</span></td><td>بيانات غير مكتملة</td><td class="desc">رقم الهاتف غير صالح (يجب أن يكون بالصيغة الدولية مثل <span class="ltr">+201012345678</span>) أو القالب يفتقد <span class="ltr">{{code}}</span>.</td></tr>
+                <tr><td><span class="code-chip c-err">402 / 429</span></td><td>الباقة أو معدل الطلبات</td><td class="desc">انتهت صلاحية الاشتراك (402) أو تم تجاوز الحد المسموح للطلبات في الدقيقة حسب خطتك (429).</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div>
+          <a class="logo" href="index.html" aria-label="WA CodeFiye">
+            <svg viewBox="0 0 40 40" fill="none" aria-hidden="true">
+              <defs><linearGradient id="lg2" x1="4" y1="2" x2="36" y2="38" gradientUnits="userSpaceOnUse"><stop stop-color="#3BE37F"/><stop offset="1" stop-color="#0E9488"/></linearGradient></defs>
+              <rect width="40" height="40" rx="11" fill="url(#lg2)"/>
+              <path d="M7 19.5 33 6.5 25.5 33.5 19.5 23Z" fill="#fff"/>
+              <path d="M19.5 23 33 6.5" stroke="#0B8F6B" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+            <span class="logo-word"><b>WA</b> CodeFiye</span>
+          </a>
+          <p class="footer-about">منصّة واتساب API للأعمال بجميع أحجامها. أرسل رسائل غير محدودة بدون رسوم على كل رسالة.</p>
+        </div>
+        <div class="footer-col"><h4>المنتج</h4><ul><li><a href="index.html#features">المزايا</a></li><li><a href="index.html#how">كيف يعمل</a></li><li><a href="index.html#pricing">الأسعار</a></li></ul></div>
+        <div class="footer-col"><h4>المطوّرون</h4><ul><li><a href="guide.html">توثيق الـ API</a></li><li><a href="/docs">ملف OpenAPI</a></li><li><a href="/dashboard">لوحة التحكم</a></li></ul></div>
+        <div class="footer-col"><h4>المساعدة</h4><ul><li><a href="index.html#faq">الأسئلة الشائعة</a></li><li><a href="/register">إنشاء حساب</a></li><li><a href="/login">تسجيل الدخول</a></li><li><a href="privacy.html">سياسة الخصوصية</a></li></ul></div>
+      </div>
+      <div class="footer-bottom">
+        <p>© 2026 <span class="ltr" style="color:var(--ink-2);font-weight:600">WA CodeFiye</span>. جميع الحقوق محفوظة.</p>
+        <p>خدمة مستقلة غير تابعة لشركة Meta أو WhatsApp. أنت مسؤول عن الالتزام بشروط واتساب وقوانين مكافحة الرسائل المزعجة.</p>
+      </div>
+    </div>
+    <div class="wordmark" aria-hidden="true">WA CodeFiye</div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

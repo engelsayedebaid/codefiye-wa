@@ -1,0 +1,1289 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0c1210">
+  <title>WA CodeFiye — معاينة الصفحة الرئيسية</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Instrument+Sans:wght@500;600;700&display=swap" rel="stylesheet">
+  <script>
+    (function () {
+      var saved = null;
+      try { saved = localStorage.getItem('wa.preview.theme'); } catch (e) {}
+      var q = new URLSearchParams(location.search).get('theme');
+      var t = q || saved || 'dark';
+      if (t !== 'dark' && t !== 'light') t = 'dark';
+      document.documentElement.dataset.theme = t;
+      var m = document.querySelector('meta[name=theme-color]');
+      if (m) m.content = t === 'light' ? '#f3f6f4' : '#0c1210';
+    })();
+  </script>
+  <style>
+    :root {
+      --bg: #0c1210;
+      --surface: #141c19;
+      --ink: #f4f7f5;
+      --muted: #b7c4be;
+      --faint: #9aada6;
+      --line: rgba(244, 247, 245, 0.12);
+      --line-strong: rgba(244, 247, 245, 0.22);
+      --accent: #7ee0c3;
+      --on-accent: #06241c;
+      --mark: rgba(126, 224, 195, 0.32);
+      --glow: rgba(126, 224, 195, 0.16);
+      --grid: rgba(244, 247, 245, 0.045);
+      --invert-bg: #e7f3ee;
+      --invert-ink: #10211c;
+      --invert-muted: #3c524a;
+      --invert-mark: rgba(16, 33, 28, 0.14);
+      --shadow: 0 30px 70px -36px rgba(0, 0, 0, 0.72);
+      color-scheme: dark;
+    }
+    [data-theme='light'] {
+      --bg: #f3f6f4;
+      --surface: #ffffff;
+      --ink: #12201b;
+      --muted: #3e524b;
+      --faint: #4d615a;
+      --line: #e1e8e4;
+      --line-strong: #c5d1cb;
+      --accent: #24685a;
+      --on-accent: #ffffff;
+      --mark: rgba(36, 104, 90, 0.2);
+      --glow: rgba(36, 104, 90, 0.1);
+      --grid: rgba(18, 32, 27, 0.045);
+      --invert-bg: #10211c;
+      --invert-ink: #f3f7f5;
+      --invert-muted: #c5d5cf;
+      --invert-mark: rgba(126, 224, 195, 0.34);
+      --shadow: 0 24px 50px -32px rgba(16, 33, 28, 0.28);
+      color-scheme: light;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    * { margin: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      min-height: 100%;
+      background:
+        radial-gradient(900px 520px at 88% -8%, var(--glow), transparent 60%),
+        var(--bg);
+      color: var(--ink);
+      font-family: 'IBM Plex Sans Arabic', 'Segoe UI', sans-serif;
+      font-size: 16.5px;
+      line-height: 1.75;
+      text-rendering: optimizeLegibility;
+    }
+    ::selection { background: var(--mark); }
+    :focus { outline: none; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+    button, input { font: inherit; color: inherit; }
+    a { color: inherit; }
+    ul, ol { list-style: none; padding: 0; }
+    p, h1, h2, h3 { overflow-wrap: anywhere; }
+    h1, h2, h3 { line-height: 1.2; font-weight: 700; overflow-wrap: break-word; }
+    h2 { font-size: clamp(1.85rem, 3.5vw, 2.9rem); line-height: 1.28; max-width: 16em; }
+    img, svg { display: block; }
+    .sr {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      border: 0;
+    }
+    .wrap { width: min(1120px, calc(100% - 2.5rem)); margin-inline: auto; }
+    .hero-grid > *, .split > *, .send > *, .cta-grid > *, .faq-layout > *, .term, .top-inner { min-width: 0; }
+    .skip {
+      position: absolute;
+      inset-inline-start: 1rem;
+      top: -3rem;
+      z-index: 80;
+      background: var(--surface);
+      color: var(--ink);
+      padding: 0.4rem 0.8rem;
+      border-radius: 8px;
+    }
+    .skip:focus { top: 0.6rem; }
+
+    .mark {
+      background-image: linear-gradient(var(--mark), var(--mark));
+      background-repeat: no-repeat;
+      background-size: 100% 0.42em;
+      background-position: 0 88%;
+      -webkit-box-decoration-break: clone;
+      box-decoration-break: clone;
+    }
+    .eyebrow {
+      color: var(--accent);
+      font-size: 0.92rem;
+      font-weight: 600;
+    }
+    .eyebrow .idx {
+      font-family: 'IBM Plex Mono', ui-monospace, monospace;
+      font-weight: 500;
+      margin-inline-end: 0.55rem;
+      letter-spacing: 0.08em;
+    }
+    .sec-text { margin-top: 0.9rem; max-width: 38rem; color: var(--muted); font-size: 1.05rem; }
+    .block { padding: 5.75rem 0; }
+    section[id] { scroll-margin-top: 5.5rem; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.45rem;
+      min-height: 46px;
+      padding: 0 1.2rem;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      text-decoration: none;
+      font-weight: 600;
+      cursor: pointer;
+      background: transparent;
+      transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+    }
+    .btn-fill { background: var(--accent); color: var(--on-accent); }
+    .btn-fill:hover { transform: translateY(-1px); }
+    .btn-line { border-color: var(--line-strong); color: var(--ink); }
+    .btn-line:hover { border-color: var(--accent); color: var(--accent); }
+    .arrow { display: block; }
+    [dir='rtl'] .arrow { transform: scaleX(-1); }
+    .btn:hover .arrow { transform: translateX(3px); }
+    [dir='rtl'] .btn:hover .arrow { transform: scaleX(-1) translateX(3px); }
+
+    .ok {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--accent);
+      display: inline-flex;
+      flex: none;
+      align-items: center;
+      justify-content: center;
+      direction: ltr;
+      margin-top: 0.15rem;
+    }
+    .ok::before {
+      content: '';
+      width: 8px;
+      height: 4px;
+      border-left: 2px solid var(--on-accent);
+      border-bottom: 2px solid var(--on-accent);
+      transform: rotate(-45deg) translate(0.5px, -1px);
+    }
+
+    /* Header */
+    .top {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      background: color-mix(in srgb, var(--bg) 78%, transparent);
+      backdrop-filter: blur(16px);
+    }
+    .top.is-stuck { border-bottom: 1px solid var(--line); }
+    .top-inner {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 1rem;
+      min-height: 76px;
+    }
+    .logo { display: inline-flex; align-items: center; gap: 0.6rem; min-width: 0; text-decoration: none; }
+    .logo-name {
+      font-family: 'Instrument Sans', 'IBM Plex Sans Arabic', sans-serif;
+      font-weight: 600;
+      font-size: 1.05rem;
+      letter-spacing: -0.03em;
+      direction: ltr;
+      white-space: nowrap;
+    }
+    .logo-wa { color: var(--accent); }
+    .desk-nav { display: flex; justify-content: center; gap: 0.15rem; }
+    .desk-nav a {
+      text-decoration: none;
+      color: var(--muted);
+      font-weight: 500;
+      font-size: 0.95rem;
+      padding: 0.4rem 0.7rem;
+      border-radius: 999px;
+    }
+    .desk-nav a:hover { color: var(--ink); }
+    .top-actions { display: flex; align-items: center; gap: 0.25rem; }
+    .desk-login {
+      text-decoration: none;
+      color: var(--muted);
+      font-weight: 600;
+      padding: 0.45rem 0.7rem;
+    }
+    .desk-login:hover { color: var(--ink); }
+    .desk-cta { min-height: 40px; padding-inline: 0.95rem; }
+    .icon-btn, .menu-btn {
+      width: 44px;
+      height: 44px;
+      display: grid;
+      place-items: center;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--ink);
+      cursor: pointer;
+    }
+    .icon-btn:hover, .menu-btn:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); }
+    [data-theme='dark'] .icon-sun, [data-theme='light'] .icon-moon { display: none; }
+    .menu-btn { display: none; }
+    .menu-ico, .menu-ico::before, .menu-ico::after {
+      display: block;
+      width: 18px;
+      height: 1.5px;
+      background: currentColor;
+      position: relative;
+      transition: transform 0.2s ease, top 0.2s ease;
+    }
+    .menu-ico::before, .menu-ico::after { content: ''; position: absolute; inset-inline-start: 0; }
+    .menu-ico::before { top: -6px; }
+    .menu-ico::after { top: 6px; }
+    .top.is-open .menu-ico { background: transparent; }
+    .top.is-open .menu-ico::before { top: 0; transform: rotate(45deg); }
+    .top.is-open .menu-ico::after { top: 0; transform: rotate(-45deg); }
+    .mobile {
+      display: none;
+      position: absolute;
+      inset-inline: 0;
+      top: 100%;
+      padding: 0.35rem 1.25rem 1rem;
+      background: var(--bg);
+      border-bottom: 1px solid var(--line);
+      box-shadow: 0 28px 40px -28px rgba(0, 0, 0, 0.55);
+    }
+    .top.is-open .mobile { display: grid; }
+    .mobile a {
+      text-decoration: none;
+      padding: 0.85rem 0.15rem;
+      border-bottom: 1px solid var(--line);
+      font-size: 1.05rem;
+    }
+    .mobile .btn { margin-top: 0.85rem; border-bottom: 0; }
+
+    /* Hero: two columns, title on the start side and the offer beside it. */
+    .hero { padding: 4.6rem 0 0; }
+    .hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(16rem, 0.72fr);
+      gap: 1.5rem 3rem;
+      align-items: end;
+    }
+    .hero-side { padding-bottom: 0.35rem; }
+    .kicker {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.45rem 0.55rem;
+      color: var(--muted);
+      font-size: 0.95rem;
+      font-weight: 500;
+    }
+    .pulse {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #3ddc97;
+      box-shadow: 0 0 0 0 rgba(61, 220, 151, 0.55);
+      animation: ping 2.2s ease-out infinite;
+      flex: none;
+    }
+    @keyframes ping {
+      70% { box-shadow: 0 0 0 8px transparent; }
+      100% { box-shadow: 0 0 0 0 transparent; }
+    }
+    h1 {
+      margin-top: 0.85rem;
+      font-size: clamp(1.85rem, 4.4vw + 0.45rem, 4.35rem);
+      line-height: 1.14;
+    }
+    .hero-line { display: block; overflow-wrap: normal; }
+    .hero-accent { color: var(--accent); }
+    .lede { margin: 0; color: var(--muted); font-size: 1.05rem; }
+    .actions { display: flex; flex-wrap: wrap; gap: 0.7rem; margin-top: 1.35rem; }
+    .actions .btn { max-width: 100%; }
+    .trust {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      margin: 2rem 0 0;
+      padding: 0.15rem 0 0.2rem;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+    .trust li {
+      display: flex;
+      align-items: center;
+      min-height: 3.1rem;
+      padding-inline: 1rem;
+    }
+    .trust li:first-child { padding-inline-start: 0; }
+    .trust li + li { border-inline-start: 1px solid var(--line); }
+
+    .term {
+      background: #0c1411;
+      color: #d5e4de;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 18px;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+      min-width: 0;
+    }
+    .term-top, .term-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.6rem;
+      padding: 0.7rem 0.9rem;
+      font-family: 'IBM Plex Mono', ui-monospace, monospace;
+      font-size: 0.72rem;
+    }
+    .term-top { border-bottom: 1px solid rgba(255, 255, 255, 0.08); flex-wrap: wrap; }
+    .term-foot { border-top: 1px solid rgba(255, 255, 255, 0.08); color: #9fb0aa; }
+    .term-foot span, .term-foot b { min-width: 0; }
+    .term-foot span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .term pre {
+      margin: 0;
+      padding: 0.95rem 1rem 0.35rem;
+      overflow-x: auto;
+      direction: ltr;
+      text-align: left;
+    }
+    .term code {
+      font-family: 'IBM Plex Mono', ui-monospace, monospace;
+      font-size: 0.78rem;
+      line-height: 1.7;
+      color: #d5e4de;
+      white-space: pre;
+    }
+    .tok-c { color: #8aa399; }
+    .tok-s { color: #f0d7a3; }
+    .tok-k { color: #7ee0c3; }
+    .tok-n { color: #d5e2ff; }
+    .ok-txt { color: #7ee0c3; }
+    .tabs { display: flex; flex-wrap: wrap; gap: 0.15rem; }
+    .tabs button, .copy {
+      border: 0;
+      background: transparent;
+      color: #8aa399;
+      font-family: 'IBM Plex Mono', ui-monospace, monospace;
+      font-size: 0.72rem;
+      padding: 0.32rem 0.5rem;
+      border-radius: 999px;
+      cursor: pointer;
+    }
+    .tabs button[aria-selected='true'] { color: #f4f7f5; background: rgba(255, 255, 255, 0.07); }
+    .copy:hover, .tabs button:hover { color: #f4f7f5; }
+
+    /* Metrics */
+    .metrics { border-block: 1px solid var(--line); }
+    .metrics-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .metrics-grid div { padding: 1.45rem 0.4rem; }
+    .metrics-grid div + div { border-inline-start: 1px solid var(--line); }
+    .metrics-grid strong {
+      display: block;
+      font-family: 'IBM Plex Mono', ui-monospace, monospace;
+      font-size: clamp(1.45rem, 2.4vw, 1.85rem);
+      font-weight: 500;
+      letter-spacing: -0.04em;
+      line-height: 1.1;
+    }
+    .metrics-grid span { display: block; margin-top: 0.3rem; color: var(--muted); font-size: 0.9rem; }
+    .metrics-grid div:hover strong { color: var(--accent); }
+
+    /* Shared panels */
+    .split {
+      display: grid;
+      grid-template-columns: minmax(0, 0.86fr) minmax(0, 1.14fr);
+      gap: 3.25rem;
+      align-items: start;
+    }
+    .steps {
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2rem;
+      margin-top: 3rem;
+    }
+    .steps::before {
+      content: '';
+      position: absolute;
+      top: 1.05rem;
+      left: 8%;
+      right: 8%;
+      height: 1px;
+      background: var(--line-strong);
+    }
+    .step-n {
+      position: relative;
+      z-index: 1;
+      width: 2.15rem;
+      height: 2.15rem;
+      display: grid;
+      place-items: center;
+      margin-bottom: 1.15rem;
+      border-radius: 50%;
+      border: 1px solid var(--line-strong);
+      background: var(--bg);
+      color: var(--accent);
+      font-family: 'IBM Plex Mono', ui-monospace, monospace;
+      font-size: 0.75rem;
+    }
+    .steps h3 { font-size: 1.35rem; }
+    .steps p { margin-top: 0.45rem; color: var(--muted); }
+    .after { margin-top: 2rem; }
+
+    .panel, .prices {
+      display: grid;
+      gap: 1px;
+      margin-top: 2.6rem;
+      background: var(--line);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      overflow: hidden;
+    }
+    .panel { grid-template-columns: 1fr 1fr; }
+    .prices { grid-template-columns: repeat(4, 1fr); }
+    .panel article, .price {
+      background: var(--surface);
+      padding: 1.6rem 1.45rem 1.45rem;
+      display: flex;
+      flex-direction: column;
+    }
+    .badge {
+      align-self: flex-start;
+      font-family: 'IBM Plex Mono', ui-monospace, monospace;
+      font-size: 0.72rem;
+      color: var(--faint);
+      direction: ltr;
+    }
+    .panel h3 { margin-top: 0.9rem; font-size: 1.28rem; }
+    .panel p { margin-top: 0.45rem; color: var(--muted); flex: 1; }
+    .morelink {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      margin-top: 1.15rem;
+      color: var(--accent);
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .morelink:hover { text-decoration: underline; text-underline-offset: 0.2em; }
+    .panel article:hover, .price:hover { background: color-mix(in srgb, var(--accent) 5%, var(--surface)); }
+    .price.is-pop { box-shadow: inset 0 2px 0 var(--accent); }
+    .pop {
+      color: var(--accent);
+      font-size: 0.8rem;
+      font-weight: 700;
+      min-height: 1.3rem;
+    }
+    .price h3 { font-size: 1.12rem; margin-top: 0.2rem; }
+    .amt {
+      display: flex;
+      align-items: baseline;
+      gap: 0.4rem;
+      margin-top: 0.85rem;
+    }
+    .amt b {
+      font-family: 'IBM Plex Mono', ui-monospace, monospace;
+      font-size: 2.45rem;
+      font-weight: 500;
+      letter-spacing: -0.04em;
+      line-height: 1;
+      direction: ltr;
+    }
+    .amt span, .per { color: var(--muted); }
+    .per { margin-top: 0.35rem; font-size: 0.85rem; }
+    .blurb { margin-top: 0.85rem; color: var(--muted); font-size: 0.92rem; min-height: 3.2rem; }
+    .feat { display: grid; gap: 0.65rem; margin: 1.1rem 0 1.3rem; }
+    .feat li { display: flex; gap: 0.55rem; align-items: flex-start; font-size: 0.92rem; }
+    .price .btn { width: 100%; margin-top: auto; }
+    .enterprise {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-top: 1.15rem;
+      padding-top: 1.15rem;
+    }
+    .enterprise p { color: var(--muted); }
+
+    .types {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      margin-top: 1.6rem;
+      border-top: 1px solid var(--line);
+    }
+    .types li {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 0.7rem;
+      padding: 0.85rem 0.2rem;
+      border-bottom: 1px solid var(--line);
+    }
+    .types li:nth-child(odd) { border-inline-end: 1px solid var(--line); padding-inline-end: 0.9rem; }
+    .types li:nth-child(even) { padding-inline-start: 0.9rem; }
+    .tag {
+      font-family: 'IBM Plex Mono', ui-monospace, monospace;
+      font-size: 0.68rem;
+      letter-spacing: 0.04em;
+      color: var(--accent);
+      padding-top: 0.28rem;
+      direction: ltr;
+    }
+    .types p { color: var(--muted); font-size: 0.85rem; line-height: 1.5; }
+    .who { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; margin-top: 1rem; color: var(--muted); font-size: 0.92rem; }
+    .who b { color: var(--ink); font-weight: 600; }
+
+    .cases { margin-top: 2.2rem; }
+    .cases li {
+      display: grid;
+      grid-template-columns: 3.2rem minmax(12rem, 18rem) 1fr;
+      gap: 0.4rem 1.25rem;
+      align-items: baseline;
+      padding: 1.15rem 0.7rem;
+      border-top: 1px solid var(--line);
+      transition: background 0.2s ease;
+    }
+    .cases li:last-child { border-bottom: 1px solid var(--line); }
+    .cases li:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+    .cases .n { font-family: 'IBM Plex Mono', ui-monospace, monospace; color: var(--accent); font-size: 0.85rem; }
+    .cases h3 { font-size: 1.12rem; }
+    .cases p { color: var(--muted); }
+
+    .faq-layout {
+      display: grid;
+      grid-template-columns: minmax(14rem, 0.72fr) 1.28fr;
+      gap: 3.5rem;
+      align-items: start;
+    }
+    .faq-intro { position: sticky; top: 6.2rem; }
+    .faq-list details { border-top: 1px solid var(--line); }
+    .faq-list details:last-of-type { border-bottom: 1px solid var(--line); }
+    .faq-list summary {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 1rem;
+      min-height: 64px;
+      padding: 0.85rem 0;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 1.05rem;
+      list-style: none;
+    }
+    .faq-list summary::-webkit-details-marker { display: none; }
+    .chev { margin-inline-start: auto; flex: none; color: var(--faint); transition: transform 0.25s ease; }
+    details[open] .chev { transform: rotate(180deg); color: var(--accent); }
+    .faq-list details p { padding-bottom: 1rem; color: var(--muted); max-width: 62ch; }
+    .help {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.6rem 1rem;
+      align-items: center;
+      margin-top: 1.4rem;
+      color: var(--muted);
+    }
+    .help a { color: var(--accent); font-weight: 600; }
+
+    .cta { background: var(--invert-bg); color: var(--invert-ink); padding: 5.4rem 0; }
+    .cta-grid {
+      display: grid;
+      grid-template-columns: 1.25fr 0.75fr;
+      gap: 2rem;
+      align-items: end;
+    }
+    .cta .sec-text, .points { color: var(--invert-muted); }
+    .cta .mark { background-image: linear-gradient(var(--invert-mark), var(--invert-mark)); }
+    .points { display: grid; gap: 0.55rem; margin-top: 1.3rem; }
+    .points li { display: flex; align-items: center; gap: 0.6rem; }
+    .cta .ok { background: var(--invert-ink); }
+    .cta .ok::before { border-color: var(--invert-bg); }
+    .btn-invert { background: var(--invert-ink); color: var(--invert-bg); margin-top: 1.4rem; }
+    .btn-invert:hover { transform: translateY(-1px); }
+    .fine { margin-top: 0.55rem; color: var(--invert-muted); font-size: 0.85rem; }
+    .cta-stat {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+    }
+    .cta-stat strong {
+      font-family: 'IBM Plex Mono', ui-monospace, monospace;
+      font-weight: 500;
+      font-size: clamp(5rem, 10vw, 8.2rem);
+      letter-spacing: -0.06em;
+      line-height: 0.85;
+      direction: ltr;
+    }
+    .cta-stat span { margin-top: 0.45rem; color: var(--invert-muted); }
+
+    .foot { border-top: 1px solid var(--line); padding: 3.5rem 0 1.4rem; }
+    .foot-grid { display: grid; grid-template-columns: 1.4fr repeat(3, 1fr); gap: 2rem; }
+    .foot p { color: var(--muted); font-size: 0.92rem; margin-top: 0.8rem; max-width: 22rem; }
+    .foot h3 { font-size: 0.82rem; letter-spacing: 0; margin-bottom: 0.8rem; }
+    .foot ul { display: grid; gap: 0.45rem; }
+    .foot li a { color: var(--muted); text-decoration: none; font-size: 0.92rem; }
+    .foot li a:hover { color: var(--accent); }
+    .foot-bottom {
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.7rem 2rem;
+      margin-top: 2.4rem;
+      padding-top: 1.1rem;
+      border-top: 1px solid var(--line);
+      color: var(--faint);
+      font-size: 0.8rem;
+    }
+    .foot-bottom p { margin: 0; max-width: 46rem; }
+
+    .rail { display: none; }
+
+    @media (min-width: 1380px) {
+      .rail {
+        display: grid;
+        gap: 0.85rem;
+        position: fixed;
+        z-index: 20;
+        top: 50%;
+        transform: translateY(-50%);
+        inset-inline-end: 18px;
+      }
+      .rail a {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        border: 1px solid var(--line-strong);
+        display: block;
+        position: relative;
+      }
+      .rail a.is-on { background: var(--accent); border-color: var(--accent); }
+      .rail span {
+        position: absolute;
+        top: 50%;
+        inset-inline-end: 16px;
+        transform: translateY(-50%);
+        white-space: nowrap;
+        font-size: 0.75rem;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        padding: 0.15rem 0.45rem;
+        border-radius: 6px;
+        opacity: 0;
+        pointer-events: none;
+      }
+      .rail a:hover span, .rail a:focus-visible span { opacity: 1; }
+    }
+
+    @media (min-width: 1181px) {
+      .top.is-open .mobile { display: none; }
+    }
+    @media (max-width: 1180px) {
+      .desk-nav, .desk-login, .desk-cta { display: none; }
+      .menu-btn { display: grid; }
+    }
+    @media (max-width: 1100px) {
+      .hero-grid, .split, .send, .faq-layout, .cta-grid { grid-template-columns: 1fr; }
+      .hero-side { padding-bottom: 0; }
+      .hero-grid { gap: 1.15rem; }
+      .faq-intro { position: static; }
+      .cta-stat { align-items: flex-start; }
+      h1 { max-width: none; }
+    }
+    @media (max-width: 900px) {
+      .steps { grid-template-columns: 1fr; gap: 1.6rem; }
+      .steps::before { display: none; }
+      .prices { grid-template-columns: 1fr 1fr; }
+      .metrics-grid { grid-template-columns: 1fr 1fr; }
+      .metrics-grid div + div { border-inline-start: 0; }
+      .metrics-grid div:nth-child(even) { border-inline-start: 1px solid var(--line); }
+      .metrics-grid div:nth-child(n + 3) { border-top: 1px solid var(--line); }
+      .cases li { grid-template-columns: 2.6rem minmax(0, 1fr); }
+      .cases p { grid-column: 2; }
+      .foot-grid { grid-template-columns: 1fr 1fr; }
+      .foot-grid > :first-child { grid-column: 1 / -1; }
+      .foot-bottom { flex-direction: column; align-items: flex-start; }
+    }
+    @media (max-width: 720px) {
+      .wrap { width: min(1120px, calc(100% - 1.5rem)); }
+      .block { padding: 3.6rem 0; }
+      .hero { padding-top: 2.1rem; }
+      .trust { grid-template-columns: 1fr; padding-top: 0.35rem; }
+      .trust li { min-height: 0; padding: 0.7rem 0; }
+      .trust li + li { border-inline-start: 0; border-top: 1px solid var(--line); }
+      h1 { max-width: none; }
+      .actions { display: grid; grid-template-columns: 1fr; }
+      .panel, .prices, .types, .foot-grid { grid-template-columns: 1fr; }
+      .foot-grid > :first-child { grid-column: auto; }
+      .types li:nth-child(odd) { border-inline-end: 0; padding-inline-end: 0.2rem; }
+      .types li:nth-child(even) { padding-inline-start: 0.2rem; }
+      .enterprise, .help { flex-direction: column; align-items: flex-start; }
+      .enterprise .btn, .help a { width: auto; }
+      .blurb { min-height: 0; }
+      .cta { padding: 3.4rem 0; }
+      .cta-stat strong { font-size: clamp(4rem, 26vw, 6rem); }
+      .term-top { align-items: flex-start; }
+      .faq-list summary { font-size: 1rem; min-height: 56px; }
+    }
+    @media (max-width: 420px) {
+      .top-inner { min-height: 64px; gap: 0.4rem; }
+      .logo-name { font-size: 0.95rem; }
+      .metrics-grid div { padding: 1.1rem 0.15rem; }
+      .panel article, .price { padding: 1.25rem 1.05rem 1.15rem; }
+      .amt b { font-size: 2.15rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after {
+        animation: none !important;
+        transition: none !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip" href="#main">تخطي إلى المحتوى</a>
+  <header class="top">
+    <div class="wrap top-inner">
+      <a class="logo" href="#top" aria-label="WA CodeFiye">
+        <svg viewBox="0 0 40 40" width="32" height="32" aria-hidden="true">
+          <defs>
+            <linearGradient id="waMark" x1="4" y1="2" x2="36" y2="38" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#3BE37F"/>
+              <stop offset="1" stop-color="#0E9488"/>
+            </linearGradient>
+          </defs>
+          <rect width="40" height="40" rx="11" fill="url(#waMark)"/>
+          <path d="M7 19.5 33 6.5 25.5 33.5 19.5 23Z" fill="#fff"/>
+          <path d="M19.5 23 33 6.5" stroke="#0B8F6B" stroke-width="1.8" stroke-linecap="round"/>
+        </svg>
+        <span class="logo-name"><span class="logo-wa">WA</span> CodeFiye</span>
+      </a>
+      <nav class="desk-nav" aria-label="التنقل">
+        <a href="#features">المزايا</a>
+        <a href="#how">كيف يعمل</a>
+        <a href="#pricing">الأسعار</a>
+        <a href="#integration">التوثيق</a>
+        <a href="#faq">الأسئلة الشائعة</a>
+      </nav>
+      <div class="top-actions">
+        <button class="icon-btn" id="theme" type="button" aria-label="تفعيل المظهر الفاتح">
+          <svg class="icon-sun" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <circle cx="12" cy="12" r="3.2"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M18.8 5.2l-1.4 1.4M6.6 17.4l-1.4 1.4" stroke-linecap="round"/>
+          </svg>
+          <svg class="icon-moon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path d="M16 3.2A8.2 8.2 0 1 0 20.8 14 6.4 6.4 0 0 1 16 3.2Z" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <a class="desk-login" href="/login">تسجيل الدخول</a>
+        <a class="btn btn-fill desk-cta" href="/register">ابدأ الآن <svg class="arrow" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+        <button class="menu-btn" type="button" aria-expanded="false" aria-controls="mobile-nav">
+          <span class="menu-ico"></span>
+          <span class="sr">القائمة</span>
+        </button>
+      </div>
+    </div>
+    <div class="mobile" id="mobile-nav">
+      <a href="#features">المزايا</a>
+      <a href="#how">كيف يعمل</a>
+      <a href="#pricing">الأسعار</a>
+      <a href="#integration">التوثيق</a>
+      <a href="#faq">الأسئلة الشائعة</a>
+      <a href="/login">تسجيل الدخول</a>
+      <a class="btn btn-fill" href="/register">ابدأ الآن</a>
+    </div>
+  </header>
+
+  <nav class="rail" aria-label="أقسام الصفحة">
+    <a href="#top"><span>البداية</span></a>
+    <a href="#how"><span>كيف يعمل</span></a>
+    <a href="#integration"><span>التوثيق</span></a>
+    <a href="#features"><span>المزايا</span></a>
+    <a href="#use"><span>الاستخدام</span></a>
+    <a href="#pricing"><span>الأسعار</span></a>
+    <a href="#faq"><span>الأسئلة</span></a>
+  </nav>
+
+  <main id="main">
+    <section class="hero" id="top">
+      <div class="wrap hero-grid">
+        <div>
+          <p class="kicker"><i class="pulse" aria-hidden="true"></i> بنية تحتية فورية · 0$ لكل رسالة</p>
+          <h1>
+            <span class="hero-line">واتساب API</span>
+            <span class="hero-line hero-accent">منخفض التكلفة</span>
+            <span class="hero-line">للمطوّرين</span>
+          </h1>
+        </div>
+        <div class="hero-side">
+          <p class="lede">رسائل غير محدودة، جلسات واتساب متعددة، Webhooks، وواجهة برمجية سهلة للمطوّرين — بدون أي رسوم على كل رسالة.</p>
+          <div class="actions">
+            <a class="btn btn-fill" href="/register">ابدأ تجربتك المجانية <svg class="arrow" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+            <a class="btn btn-line" href="#integration">توثيق الـ API</a>
+          </div>
+        </div>
+        <ul class="trust">
+          <li>بدون بطاقة ائتمان</li>
+          <li>تجربة مجانية 3 أيام</li>
+          <li>إلغاء في أي وقت</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="metrics" aria-label="مؤشرات">
+      <div class="wrap metrics-grid">
+        <div><strong dir="ltr">$0</strong><span>رسوم على الرسالة</span></div>
+        <div><strong dir="ltr">&lt; 50ms</strong><span>استجابة الـ API</span></div>
+        <div><strong dir="ltr">AES-256</strong><span>تشفير الجلسات</span></div>
+        <div><strong dir="ltr">99.9%</strong><span>جاهزية الخدمة</span></div>
+      </div>
+    </section>
+
+    <section class="block" id="how">
+      <div class="wrap">
+        <p class="eyebrow"><span class="idx">01</span> خطوات بسيطة · بدون خبرة تقنية</p>
+        <h2 class="sec-title">كيف تعمل المنصّة من أجلك</h2>
+        <p class="sec-text">ابدأ خلال دقائق عبر ثلاث خطوات بسيطة.</p>
+        <ol class="steps">
+          <li>
+            <div class="step-n">01</div>
+            <h3>اربط واتساب</h3>
+            <p>امسح رمز QR من هاتفك لربط حسابك بالمنصّة بأمان خلال ثوانٍ.</p>
+          </li>
+          <li>
+            <div class="step-n">02</div>
+            <h3>أنشئ رسالتك</h3>
+            <p>اكتب نصاً أو أرفق صوراً ومستندات وموقعاً عبر الـ API أو من لوحة التحكم.</p>
+          </li>
+          <li>
+            <div class="step-n">03</div>
+            <h3>أرسل وتابع</h3>
+            <p>أرسل رسائلك وتابع حالة التسليم والقراءة لحظة بلحظة.</p>
+          </li>
+        </ol>
+        <div class="after">
+          <a class="btn btn-line" href="/register">ابدأ تجربتك المجانية <svg class="arrow" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+        </div>
+      </div>
+    </section>
+
+    <section class="block" id="integration">
+      <div class="wrap split">
+        <div>
+          <p class="eyebrow"><span class="idx">02</span> تكامل بسيط · API قوي</p>
+          <h2>ربط واتساب بتطبيقك بلا عناء</h2>
+          <p class="sec-text">أرسل رسالتك الأولى ببضعة أسطر من الكود. اختر لغتك وابدأ التكامل اليوم. يعمل من أي لغة ترسل HTTP.</p>
+          <div class="after">
+            <a class="btn btn-fill" href="/register">ابدأ الآن <svg class="arrow" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+          </div>
+        </div>
+        <div class="term" id="codebox">
+          <div class="term-top">
+            <div class="tabs" role="tablist" aria-label="لغة المثال">
+              <button type="button" role="tab" id="tab-js" aria-selected="true" aria-controls="snippet" data-lang="js">JavaScript</button>
+              <button type="button" role="tab" id="tab-py" aria-selected="false" aria-controls="snippet" data-lang="py" tabindex="-1">Python</button>
+              <button type="button" role="tab" id="tab-php" aria-selected="false" aria-controls="snippet" data-lang="php" tabindex="-1">PHP</button>
+              <button type="button" role="tab" id="tab-curl" aria-selected="false" aria-controls="snippet" data-lang="curl" tabindex="-1">cURL</button>
+            </div>
+            <button class="copy" type="button" id="copy">نسخ</button>
+          </div>
+          <pre><code id="snippet"></code></pre>
+          <div class="term-foot"><span class="ok-txt">200 OK</span><span dir="ltr">{ "success": true, "msgId": "3EB08F19A2" }</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="block" id="resources">
+      <div class="wrap">
+        <p class="eyebrow"><span class="idx">03</span> موارد المطوّرين</p>
+        <h2>أدوات تكامل لمنصّتك المفضّلة</h2>
+        <p class="sec-text">كل ما تحتاجه لدمج واتساب في تطبيقك بسرعة وثقة.</p>
+        <div class="panel">
+          <article>
+            <span class="badge">OpenAPI 3.1 · Scalar</span>
+            <h3>توثيق تفاعلي</h3>
+            <p>مرجع OpenAPI كامل لكل مسار مع أمثلة جاهزة للتجربة مباشرة من المتصفح.</p>
+            <a class="morelink" href="#integration">عرض التوثيق <svg class="arrow" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+          </article>
+          <article>
+            <span class="badge">was_ · wap_</span>
+            <h3>مفتاح لكل جلسة</h3>
+            <p>مفاتيح API مستقلة لكل رقم، ورموز وصول لإدارة مساحة العمل بالكامل.</p>
+            <a class="morelink" href="/register">أنشئ مفتاحك <svg class="arrow" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+          </article>
+          <article>
+            <span class="badge">Idempotency-Key</span>
+            <h3>إرسال آمن ومتكرر</h3>
+            <p>ترويسة Idempotency-Key تمنع تكرار الرسائل عند إعادة المحاولة من خادمك.</p>
+            <a class="morelink" href="#integration">اقرأ المزيد <svg class="arrow" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+          </article>
+          <article>
+            <span class="badge">Drop-in REST</span>
+            <h3>انتقال سهل</h3>
+            <p>مسارات متوافقة مع واجهات واتساب الشائعة في السوق — انتقل بتغيير الرابط والمفتاح فقط.</p>
+            <a class="morelink" href="#integration">قارن المسارات <svg class="arrow" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="block" id="features">
+      <div class="wrap send">
+        <div>
+          <p class="eyebrow"><span class="idx">04</span> تكامل قوي · تواصل سلس</p>
+          <h2>أرسل واستقبل رسائل واتساب من داخل تطبيقك</h2>
+          <p class="sec-text">ادمج رسائل واتساب في نظامك بسهولة واستقبل الرسائل والأحداث لحظياً — راجع <a class="morelink" href="#integration">التوثيق</a> لترى بساطة التكامل.</p>
+          <ul class="types">
+            <li><span class="tag">TXT</span><div><b>نص</b><p>رسائل نصية منسّقة.</p></div></li>
+            <li><span class="tag">MEDIA</span><div><b>صور وفيديو</b><p>شارك الصور والفيديوهات.</p></div></li>
+            <li><span class="tag">DOC</span><div><b>مستند</b><p>أرسل الملفات والمستندات.</p></div></li>
+            <li><span class="tag">VOICE</span><div><b>صوت</b><p>رسائل صوتية وملاحظات صوتية.</p></div></li>
+            <li><span class="tag">CARD</span><div><b>جهة اتصال</b><p>شارك بطاقات جهات الاتصال.</p></div></li>
+            <li><span class="tag">MAP</span><div><b>موقع</b><p>أرسل المواقع على الخريطة.</p></div></li>
+          </ul>
+          <div class="who">
+            <span><b>أفراد</b> · محادثات مباشرة</span>
+            <span><b>مجموعات</b> · عدة مشاركين</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="block" id="use">
+      <div class="wrap">
+        <p class="eyebrow"><span class="idx">05</span> تكامل مرن · إمكانات بلا حدود</p>
+        <h2>حالات استخدام تُلهم ابتكارك</h2>
+        <p class="sec-text">اكتشف كيف تستفيد الأعمال من واتساب API لتحسين تفاعل العملاء وتنمية مبيعاتها.</p>
+        <ol class="cases">
+          <li><span class="n">01</span><h3>أتمتة خدمة العملاء</h3><p>ردود فورية وذكية على واتساب: أتمت الأسئلة الشائعة وحلّ المشكلات وجمع آراء العملاء بكفاءة عالية.</p></li>
+          <li><span class="n">02</span><h3>تنبيهات فورية للأعمال</h3><p>أرسل الإشعارات المهمة والتذكيرات والتحديثات مباشرة لعملائك: الطلبات والمواعيد والفعاليات.</p></li>
+          <li><span class="n">03</span><h3>مساعدون أذكياء بالذكاء الاصطناعي</h3><p>شغّل روبوتات محادثة ذكية تجيب على الاستفسارات وتدير المرتجعات وتخدم العملاء على مدار الساعة.</p></li>
+          <li><span class="n">04</span><h3>رعاية العملاء المحتملين</h3><p>حوّل المزيد من العملاء المحتملين بمحادثات شخصية ومتابعات مؤتمتة حتى إتمام الشراء.</p></li>
+          <li><span class="n">05</span><h3>التجارة الإلكترونية والمبيعات</h3><p>أتمت تحديثات الطلبات وإشعارات الشحن وتتبّع التوصيل، وامنح عملاءك تجربة شراء أسهل.</p></li>
+          <li><span class="n">06</span><h3>التكامل مع أنظمتك</h3><p>اربط واتساب بنظام CRM أو المتجر أو أدوات الأتمتة مثل n8n وMake لتدفّق بيانات سلس.</p></li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="block" id="pricing">
+      <div class="wrap">
+        <p class="eyebrow"><span class="idx">06</span> تجربة مجانية 3 أيام · إلغاء في أي وقت</p>
+        <h2>أسعار بسيطة وشفافة</h2>
+        <p class="sec-text">اختر الخطة المناسبة لاحتياجاتك — بدون رسوم خفية وبدون تكلفة على كل رسالة.</p>
+        <div class="prices">
+          <article class="price">
+            <p class="pop"></p>
+            <h3>Basic</h3>
+            <p class="amt"><b>$6</b><span>شهرياً</span></p>
+            <p class="per"><bdi dir="ltr">$6</bdi> للجلسة</p>
+            <p class="blurb">رقم واحد للبدء وإرسال بلا سقف على الرسائل.</p>
+            <ul class="feat">
+              <li><span class="ok" aria-hidden="true"></span> جلسة واحدة</li>
+              <li><span class="ok" aria-hidden="true"></span> رسائل غير محدودة</li>
+              <li><span class="ok" aria-hidden="true"></span> 60 طلباً في الدقيقة</li>
+              <li><span class="ok" aria-hidden="true"></span> سجل 30 يوماً</li>
+            </ul>
+            <a class="btn btn-line" href="/register">اختر الخطة</a>
+          </article>
+          <article class="price is-pop">
+            <p class="pop">الأكثر اختياراً</p>
+            <h3>Pro</h3>
+            <p class="amt"><b>$15</b><span>شهرياً</span></p>
+            <p class="per"><bdi dir="ltr">$5</bdi> للجلسة</p>
+            <p class="blurb">ثلاث جلسات لفريق يبدأ التوسع.</p>
+            <ul class="feat">
+              <li><span class="ok" aria-hidden="true"></span> 3 جلسات</li>
+              <li><span class="ok" aria-hidden="true"></span> رسائل غير محدودة</li>
+              <li><span class="ok" aria-hidden="true"></span> 120 طلباً في الدقيقة</li>
+              <li><span class="ok" aria-hidden="true"></span> سجل 60 يوماً</li>
+            </ul>
+            <a class="btn btn-fill" href="/register">ابدأ الآن</a>
+          </article>
+          <article class="price">
+            <p class="pop"></p>
+            <h3>Plus</h3>
+            <p class="amt"><b>$30</b><span>شهرياً</span></p>
+            <p class="per"><bdi dir="ltr">$5</bdi> للجلسة</p>
+            <p class="blurb">ست جلسات مع الحملات الإعلانية الجماعية.</p>
+            <ul class="feat">
+              <li><span class="ok" aria-hidden="true"></span> 6 جلسات</li>
+              <li><span class="ok" aria-hidden="true"></span> رسائل غير محدودة</li>
+              <li><span class="ok" aria-hidden="true"></span> حملات إعلانية</li>
+              <li><span class="ok" aria-hidden="true"></span> سجل 60 يوماً</li>
+            </ul>
+            <a class="btn btn-line" href="/register">اختر الخطة</a>
+          </article>
+          <article class="price">
+            <p class="pop"></p>
+            <h3>Business</h3>
+            <p class="amt"><b>$45</b><span>شهرياً</span></p>
+            <p class="per"><bdi dir="ltr">$4.50</bdi> للجلسة</p>
+            <p class="blurb">عشر جلسات، صندوق محادثات، ودعم أولوية.</p>
+            <ul class="feat">
+              <li><span class="ok" aria-hidden="true"></span> 10 جلسات</li>
+              <li><span class="ok" aria-hidden="true"></span> صندوق محادثات</li>
+              <li><span class="ok" aria-hidden="true"></span> حملات إعلانية</li>
+              <li><span class="ok" aria-hidden="true"></span> سجل 90 يوماً ودعم أولوية</li>
+            </ul>
+            <a class="btn btn-line" href="/register">اختر الخطة</a>
+          </article>
+        </div>
+        <div class="enterprise" id="contact">
+          <div>
+            <h3>تحتاج حجماً أكبر؟</h3>
+            <p>25 جلسة فأكثر بتسعير مخصص ودعم مخصص.</p>
+          </div>
+          <a class="btn btn-line" href="mailto:support@example.com">تواصل معنا</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="block" id="faq">
+      <div class="wrap faq-layout">
+        <div class="faq-intro">
+          <p class="eyebrow"><span class="idx">07</span> الدعم · التوثيق · المساعدة</p>
+          <h2>الأسئلة الشائعة</h2>
+          <p class="sec-text">إجابات لأكثر الأسئلة شيوعاً عن المنصّة وخدماتها.</p>
+        </div>
+        <div>
+          <div class="faq-list">
+            <details>
+              <summary>كيف أنشئ أول جلسة واتساب؟ <svg class="chev" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></summary>
+              <p>أنشئ حساباً مجانياً، ثم من «الجلسات» اضغط «جلسة جديدة» وامسح رمز QR من هاتفك عبر الإعدادات ← الأجهزة المرتبطة ← ربط جهاز. ستحصل على مفتاح API للجلسة فوراً.</p>
+            </details>
+            <details>
+              <summary>هل سيعرف المستلمون أنني أستخدم المنصّة؟ <svg class="chev" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></summary>
+              <p>لا. الرسائل تُرسل من رقمك وتظهر للمستلم كأنك أرسلتها من هاتفك تماماً.</p>
+            </details>
+            <details>
+              <summary>هل يمكنني ربط أكثر من رقم واتساب؟ <svg class="chev" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></summary>
+              <p>نعم. عدد الجلسات (الأرقام) يعتمد على خطتك: من جلسة واحدة حتى 10 جلسات، وأكثر في خطة المؤسسات.</p>
+            </details>
+            <details>
+              <summary>ماذا يحدث إذا سجّلت الخروج من واتساب على هاتفي؟ <svg class="chev" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></summary>
+              <p>تتوقف الجلسة وتظهر بحالة «تم تسجيل الخروج». يكفي أن تضغط «ربط رقم» وتمسح رمز QR جديداً لاستئنافها.</p>
+            </details>
+            <details>
+              <summary>هل ربط حسابي آمن؟ وهل قد يُحظر رقمي؟ <svg class="chev" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></summary>
+              <p>بيانات الدخول مشفّرة بمعيار AES-256 ولا نطّلع على محادثاتك الخاصة. المنصّة تعمل عبر واتساب ويب وليست تابعة لشركة Meta، لذلك يبقى خطر الحظر قائماً عند الإرسال المزعج. نخفّفه بتأخير عشوائي بين الرسائل وإظهار «يكتب…» وفحص الأرقام قبل الإرسال، لكننا لا نعد بعدم الحظر أبداً.</p>
+            </details>
+            <details>
+              <summary>ما طرق الدفع المتاحة؟ <svg class="chev" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></summary>
+              <p>اختر خطتك من لوحة التحكم وأرسل طلب الاشتراك، وسيتواصل معك فريقنا لإتمام الدفع وتفعيل الخطة.</p>
+            </details>
+            <details>
+              <summary>ماذا أفعل إذا انقطع اتصال الجلسة؟ <svg class="chev" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></summary>
+              <p>نعيد الاتصال تلقائياً عند انقطاع الشبكة. إذا ظهرت الجلسة «غير متصلة» أو «تحتاج تدخّلاً» فاضغط «إعادة الاتصال» من لوحة التحكم.</p>
+            </details>
+            <details>
+              <summary>هل يمكنني استقبال الرسائل لحظياً؟ <svg class="chev" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></summary>
+              <p>نعم، عبر Webhooks موقّعة (HMAC) تصل إلى خادمك عند كل رسالة واردة أو تغيّر في حالة التسليم، مع إعادة محاولة تلقائية.</p>
+            </details>
+          </div>
+          <div class="help">
+            <span>تحتاج مساعدة إضافية؟</span>
+            <a href="mailto:support@example.com">تواصل مع فريق الدعم</a>
+            <a href="#integration">عرض التوثيق</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="cta">
+      <div class="wrap cta-grid">
+        <div>
+          <p class="eyebrow">ابدأ اليوم</p>
+          <h2>واتساب API<br><span class="mark">سريع وسهل وبتكلفة منخفضة</span></h2>
+          <p class="sec-text">انضم إلى المطوّرين والشركات الذين يرسلون رسائل واتساب من أنظمتهم دون رسوم على كل رسالة.</p>
+          <ul class="points">
+            <li><span class="ok" aria-hidden="true"></span> ابدأ بدون بطاقة ائتمان</li>
+            <li><span class="ok" aria-hidden="true"></span> تجربة مجانية 3 أيام بكامل المزايا</li>
+            <li><span class="ok" aria-hidden="true"></span> ألغِ في أي وقت، بلا التزامات</li>
+          </ul>
+          <a class="btn btn-invert" href="/register">ابدأ تجربتك المجانية <svg class="arrow" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+          <p class="fine">لا حاجة لبطاقة ائتمان للبدء</p>
+        </div>
+        <div class="cta-stat">
+          <strong>$0</strong>
+          <span>لكل رسالة مرسلة</span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <div class="wrap">
+      <div class="foot-grid">
+        <div>
+          <a class="logo" href="#top" aria-label="WA CodeFiye">
+            <svg viewBox="0 0 40 40" width="28" height="28" aria-hidden="true">
+              <rect width="40" height="40" rx="11" fill="url(#waMark)"/>
+              <path d="M7 19.5 33 6.5 25.5 33.5 19.5 23Z" fill="#fff"/>
+              <path d="M19.5 23 33 6.5" stroke="#0B8F6B" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+            <span class="logo-name"><span class="logo-wa">WA</span> CodeFiye</span>
+          </a>
+          <p>منصّة واتساب API للأعمال بجميع أحجامها. أرسل رسائل غير محدودة بدون رسوم على كل رسالة.</p>
+        </div>
+        <div>
+          <h3>المنتج</h3>
+          <ul>
+            <li><a href="#features">المزايا</a></li>
+            <li><a href="#how">كيف يعمل</a></li>
+            <li><a href="#pricing">الأسعار</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3>المطوّرون</h3>
+          <ul>
+            <li><a href="#integration">توثيق الـ API</a></li>
+            <li><a href="#resources">ملف OpenAPI</a></li>
+            <li><a href="/dashboard">لوحة التحكم</a></li>
+          </ul>
+        </div>
+        <div>
+          <h3>المساعدة</h3>
+          <ul>
+            <li><a href="#faq">الأسئلة الشائعة</a></li>
+            <li><a href="/register">إنشاء حساب</a></li>
+            <li><a href="/login">تسجيل الدخول</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="foot-bottom">
+        <p>© <span id="year">2026</span> <b dir="ltr">WA CodeFiye</b>. جميع الحقوق محفوظة.</p>
+        <p>خدمة مستقلة غير تابعة لشركة Meta أو WhatsApp. أنت مسؤول عن الالتزام بشروط واتساب وقوانين مكافحة الرسائل المزعجة.</p>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    var SNIPPETS = {
+      js: "const res = await fetch('/api/send-message', {\n  method: 'POST',\n  headers: {\n    Authorization: 'Bearer YOUR_API_KEY',\n    'Content-Type': 'application/json',\n    'Idempotency-Key': 'order-4821'\n  },\n  body: JSON.stringify({\n    to: '+201012345678',\n    text: 'Hello from the API'\n  })\n});\n\nconsole.log(await res.json());",
+      py: "import requests\n\napi_key = 'YOUR_API_KEY'\n\nresponse = requests.post(\n    'https://api.example.com/api/send-message',\n    headers={\n        'Authorization': f'Bearer {api_key}',\n        'Idempotency-Key': 'order-4821'\n    },\n    json={\n        'to': '+201012345678',\n        'text': 'Hello from the API'\n    }\n)\nprint(response.json())",
+      php: "<?php\n$apiKey = 'YOUR_API_KEY';\n\n$ch = curl_init('https://api.example.com/api/send-message');\ncurl_setopt_array($ch, [\n    CURLOPT_POST => true,\n    CURLOPT_RETURNTRANSFER => true,\n    CURLOPT_HTTPHEADER => [\n        \"Authorization: Bearer $apiKey\",\n        'Content-Type: application/json',\n        'Idempotency-Key: order-4821'\n    ],\n    CURLOPT_POSTFIELDS => json_encode([\n        'to' => '+201012345678',\n        'text' => 'Hello from the API'\n    ])\n]);\necho curl_exec($ch);",
+      curl: "curl -X POST https://api.example.com/api/send-message \\\n  -H 'Authorization: Bearer YOUR_API_KEY' \\\n  -H 'Content-Type: application/json' \\\n  -H 'Idempotency-Key: order-4821' \\\n  -d '{\"to\":\"+201012345678\",\"text\":\"Hello from the API\"}'"
+    };
+
+    function highlight(code) {
+      var re = /("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\/\/.*|#.*|\b(?:const|await|import|print|echo|true|false|def|from|return|async)\b|\b\d+\b)/g;
+      var parts = code.split(re);
+      return parts.map(function (part) {
+        if (!part) return '';
+        var safe = part.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+        if (part.indexOf('//') === 0 || part.indexOf('#') === 0) return '<span class="tok-c">' + safe + '</span>';
+        if (part.charAt(0) === '"' || part.charAt(0) === "'") return '<span class="tok-s">' + safe + '</span>';
+        if (/^\d+$/.test(part)) return '<span class="tok-n">' + safe + '</span>';
+        if (/^(const|await|import|print|echo|true|false|def|from|return|async)$/.test(part)) return '<span class="tok-k">' + safe + '</span>';
+        return safe;
+      }).join('');
+    }
+
+    var snippet = document.getElementById('snippet');
+    var tabs = [].slice.call(document.querySelectorAll('[role=tab]'));
+    function show(lang) {
+      snippet.innerHTML = highlight(SNIPPETS[lang]);
+      tabs.forEach(function (tab) {
+        var on = tab.dataset.lang === lang;
+        tab.setAttribute('aria-selected', on ? 'true' : 'false');
+        tab.tabIndex = on ? 0 : -1;
+      });
+    }
+    show('js');
+    tabs.forEach(function (tab) {
+      tab.addEventListener('click', function () { show(tab.dataset.lang); });
+    });
+
+    document.getElementById('copy').addEventListener('click', function () {
+      var current = document.querySelector('[role=tab][aria-selected=true]');
+      var text = SNIPPETS[current.dataset.lang];
+      var done = function () {
+        var btn = document.getElementById('copy');
+        btn.textContent = 'تم النسخ';
+        setTimeout(function () { btn.textContent = 'نسخ'; }, 1400);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done).catch(function () {});
+        return;
+      }
+      var area = document.createElement('textarea');
+      area.value = text;
+      document.body.appendChild(area);
+      area.select();
+      try { document.execCommand('copy'); done(); } catch (e) {}
+      area.remove();
+    });
+
+    var header = document.querySelector('.top');
+    var menuBtn = document.querySelector('.menu-btn');
+    menuBtn.addEventListener('click', function () {
+      var open = header.classList.toggle('is-open');
+      menuBtn.setAttribute('aria-expanded', String(open));
+    });
+    document.getElementById('mobile-nav').addEventListener('click', function (event) {
+      if (event.target.closest('a')) {
+        header.classList.remove('is-open');
+        menuBtn.setAttribute('aria-expanded', 'false');
+      }
+    });
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') {
+        header.classList.remove('is-open');
+        menuBtn.setAttribute('aria-expanded', 'false');
+      }
+    });
+    window.matchMedia('(min-width: 1181px)').addEventListener('change', function (event) {
+      if (!event.matches) return;
+      header.classList.remove('is-open');
+      menuBtn.setAttribute('aria-expanded', 'false');
+    });
+
+    var onScroll = function () { header.classList.toggle('is-stuck', window.scrollY > 8); };
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+
+    var themeBtn = document.getElementById('theme');
+    function paint(theme) {
+      document.documentElement.dataset.theme = theme;
+      var meta = document.querySelector('meta[name=theme-color]');
+      if (meta) meta.content = theme === 'light' ? '#f3f6f4' : '#0c1210';
+      themeBtn.setAttribute('aria-label', theme === 'dark' ? 'تفعيل المظهر الفاتح' : 'تفعيل المظهر الداكن');
+      try { localStorage.setItem('wa.preview.theme', theme); } catch (e) {}
+    }
+    paint(document.documentElement.dataset.theme || 'dark');
+    themeBtn.addEventListener('click', function () {
+      paint(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+    });
+
+    var railLinks = [].slice.call(document.querySelectorAll('.rail a'));
+    if ('IntersectionObserver' in window) {
+      var spy = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return;
+          var id = '#' + entry.target.id;
+          railLinks.forEach(function (link) {
+            link.classList.toggle('is-on', link.getAttribute('href') === id);
+          });
+        });
+      }, { rootMargin: '-45% 0px -50% 0px' });
+      railLinks.forEach(function (link) {
+        var section = document.querySelector(link.getAttribute('href'));
+        if (section) spy.observe(section);
+      });
+    }
+
+    document.getElementById('year').textContent = String(new Date().getFullYear());
+  </script>
+</body>
+</html>

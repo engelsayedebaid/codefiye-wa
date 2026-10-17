@@ -16,6 +16,7 @@ import {
   LayoutGrid,
   MessageSquare,
   MessageSquareText,
+  MonitorPlay,
   Search,
   Smartphone,
   Users,
@@ -29,6 +30,7 @@ import { METHOD_LOOK, MethodChip, MethodGlyph, PaymentDetailsRows, usePaymentSet
 import { useI18n } from '../i18n';
 import { qk } from '../queries';
 import { PlanPricingSettings } from './AdminPricing';
+import { SiteSettingsCard } from './AdminSite';
 import { TemplatePreview } from './Templates';
 import { Badge, Button, Card, cx, delay, EmptyState, ErrorNote, Field, inputClass, Loading, LoadError, Modal, PageHeader, Pagination, Select, SuccessNote, TextArea, usePlanName } from '../ui';
 
@@ -84,13 +86,14 @@ const DURATIONS = [1, 3, 6, 12, null] as const;
 type Duration = (typeof DURATIONS)[number];
 const PAGE_SIZE = 25;
 
-type Tab = 'overview' | 'users' | 'payments' | 'pricing' | 'messages' | 'audit';
+type Tab = 'overview' | 'users' | 'payments' | 'pricing' | 'messages' | 'site' | 'audit';
 const TABS: { id: Tab; icon: typeof Users }[] = [
   { id: 'overview', icon: LayoutGrid },
   { id: 'users', icon: Users },
   { id: 'payments', icon: CreditCard },
   { id: 'pricing', icon: BadgePercent },
   { id: 'messages', icon: MessageSquareText },
+  { id: 'site', icon: MonitorPlay },
   { id: 'audit', icon: History },
 ];
 
@@ -1012,6 +1015,7 @@ export function AdminPage() {
         {tab === 'payments' && <PaymentMethodsSettings />}
         {tab === 'pricing' && <PlanPricingSettings />}
         {tab === 'messages' && <OtpText />}
+        {tab === 'site' && <SiteSettingsCard />}
         {tab === 'audit' && <AuditLog />}
       </div>
     </div>

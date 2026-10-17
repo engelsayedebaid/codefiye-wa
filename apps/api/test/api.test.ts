@@ -896,6 +896,24 @@ describe.skipIf(!url)('api (integration)', () => {
       expect((await call('GET', '/api/admin/stats', admin.pat)).statusCode).toBe(200);
     });
 
+    it('serves the website video to everyone; only admins change it', async () => {
+      try {
+        expect((await call('PUT', '/api/admin/site', customer.cookie, { demoVideoUrl: null, youtubeChannelUrl: null })).statusCode).toBe(403);
+        const bad = await call('PUT', '/api/admin/site', admin.pat, { demoVideoUrl: 'https://vimeo.com/1', youtubeChannelUrl: 'https://example.com/@x' });
+        expect(bad.statusCode).toBe(422);
+        expect(Object.keys(bad.json().errors).sort()).toEqual(['demoVideoUrl', 'youtubeChannelUrl']);
+        const saved = await call('PUT', '/api/admin/site', admin.pat, { demoVideoUrl: 'youtu.be/dQw4w9WgXcQ?si=1', youtubeChannelUrl: '@codefiye' });
+        expect(saved.json().data).toEqual({ demoVideoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', youtubeChannelUrl: 'https://www.youtube.com/@codefiye' });
+        const visitor = await call('GET', '/api/site');
+        expect(visitor.statusCode).toBe(200);
+        expect(visitor.json().data).toEqual(saved.json().data);
+        const cleared = await call('PUT', '/api/admin/site', admin.pat, { demoVideoUrl: '', youtubeChannelUrl: null });
+        expect(cleared.json().data).toEqual({ demoVideoUrl: null, youtubeChannelUrl: null });
+      } finally {
+        await sql`delete from settings where key = 'site'`;
+      }
+    });
+
     it('records one pending request per workspace and refuses duplicates', async () => {
       expect((await call('POST', '/api/plan-requests', customer.cookie, { planId: 'unlimited' })).statusCode).toBe(422);
       expect((await call('POST', '/api/plan-requests', customer.cookie, { planId: 'basic' })).statusCode).toBe(201);

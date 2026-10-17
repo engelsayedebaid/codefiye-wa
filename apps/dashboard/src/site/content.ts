@@ -1,58 +1,53 @@
 import type { OfferedPlan } from '@wa/shared/plan-pricing';
 import {
-  ArrowLeftRight,
-  BarChart3,
-  Bell,
-  BookOpen,
+  Activity,
   Bot,
-  Contact,
-  FileText,
-  Image,
+  CalendarClock,
+  CheckCheck,
+  CodeXml,
+  Headphones,
   KeyRound,
-  MapPin,
-  MessageSquare,
-  Mic,
+  LockKeyhole,
+  Megaphone,
+  MessagesSquare,
   QrCode,
-  Send,
+  Repeat,
+  SendHorizontal,
+  Server,
   ShieldCheck,
+  ShieldHalf,
   ShoppingCart,
-  Type,
-  User,
-  Users,
+  Smartphone,
 } from 'lucide-react';
 
 /**
- * Icons, links and plan data for the marketing page. The copy lives in i18n/ (same order as these
- * arrays), so both languages share one layout.
+ * Icons and links for the public pages. The copy lives in i18n/ (same order as these arrays), so
+ * both languages share one layout.
  */
 
-export const NAV_HREFS = ['#features', '#how', '#pricing', '/guide', '#faq'];
+/** Header links: `#…` are landing-page sections (SiteHeader points them back to `/` elsewhere). */
+export const NAV_HREFS = ['#platform', '#solutions', '#developers', '#pricing', '/guide'];
 
-export const LANGUAGES = ['Node.js', 'Python', 'PHP', 'Laravel', 'Go', 'Java', 'C#', 'Ruby', 'n8n', 'Make'];
+export const LANGUAGES = ['Node.js', 'Python', 'PHP', 'Laravel', 'Go', 'Java', 'C#', 'Ruby', 'Flutter', 'cURL', 'n8n', 'Make'];
 
-export const RESOURCES = [
-  { icon: BookOpen, tint: 'text-info', href: '/guide' },
-  { icon: KeyRound, tint: 'text-sender-amber', href: '/guide#get-key' },
-  { icon: ShieldCheck, tint: 'text-brand', href: '/guide#playground' },
-  { icon: ArrowLeftRight, tint: 'text-sender-rose', href: '/guide#code' },
-];
+export const PLATFORM_ICONS = { api: CodeXml, numbers: Smartphone, inbox: MessagesSquare, campaigns: Megaphone, otp: ShieldCheck, tracking: CheckCheck };
 
-export const STEP_ICONS = [QrCode, MessageSquare, BarChart3];
+export const DEMO_ICONS = [QrCode, SendHorizontal, Activity];
 
-export const MESSAGE_TYPE_ICONS = [Type, Image, FileText, Mic, Contact, MapPin];
+export const STEP_ICONS = [QrCode, KeyRound, SendHorizontal];
 
-export const RECIPIENTS = [
-  { icon: User, tint: 'from-teal to-brand' },
-  { icon: Users, tint: 'from-brand-strong to-brand-deep' },
-];
+export const SOLUTION_ICONS = [ShoppingCart, Headphones, ShieldCheck, CalendarClock, Megaphone, Bot];
 
-export const USE_CASE_ICONS = [MessageSquare, Bell, Bot, Users, ShoppingCart, Send];
+export const SECURITY_ICONS = [LockKeyhole, Smartphone, KeyRound, Server, ShieldHalf, Repeat];
+
+export const SECURITY_BADGES = ['AES-256-GCM', 'TLS', 'TOTP 2FA', 'SHA-256', 'Idempotency-Key'];
 
 export type PricedPlan = OfferedPlan;
 
-// The terms of service page still needs writing (README §10) — add it here once it exists.
+/** `mailto:` is the support address; `#…` as in NAV_HREFS. The terms of service page still needs writing (README §10). */
 export const FOOTER_HREFS = [
-  ['/#features', '/#how', '/#pricing'],
+  ['#platform', '#demo', '#solutions', '#pricing'],
   ['/guide', '/docs', '/dashboard'],
-  ['/#faq', '/register', '/login', '/privacy'],
+  ['#faq', 'mailto:', '/register', '/login'],
+  ['/privacy'],
 ];

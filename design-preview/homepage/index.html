@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <meta name="theme-color" content="#f3efe6" />
+    <title>WA CodeFiye — رقمك. من غير فاتورة لكل رسالة.</title>
+    <meta
+      name="description"
+      content="أرسِل تحديثات الطلب من رقم واتساب الحالي عبر لوحة عربية أو REST API. خطة Basic بـ 6 دولارات شهرياً للرقم، وتجربة 3 أيام."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Instrument+Sans:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23367A6B'/%3E%3Ctext x='16' y='21' text-anchor='middle' fill='%23ffffff' font-size='11' font-family='sans-serif' font-weight='700'%3EWA%3C/text%3E%3C/svg%3E"
+    />
+  </head>
+  <body>
+    <!--
+      Standalone preview. Not imported by the dashboard.
+      Later components: SiteHeader, Hero, Problem, How, Features, Pricing, Developers, Faq, Closing, SiteFooter.
+      The mobile menu is a :target panel so section links close it without JavaScript.
+    -->
+    <a class="skip" href="#main">تخطَّ إلى المحتوى</a>
+
+    <header class="site-header" id="top">
+      <div class="wrap header-top">
+        <a class="logo" href="#top" aria-label="WA CodeFiye">
+          <span class="logo-name" lang="en" dir="ltr"><span class="logo-wa">WA</span><span class="logo-div" aria-hidden="true"></span>CodeFiye</span>
+        </a>
+
+        <nav class="nav-desktop" aria-label="أقسام الصفحة">
+          <a href="#problem">الفكرة</a>
+          <a href="#how">الطريقة</a>
+          <a href="#features">المزايا</a>
+          <a href="#pricing">الأسعار</a>
+          <a href="#developers">المطورون</a>
+          <a href="#faq">الأسئلة</a>
+        </nav>
+
+        <div class="header-tools">
+          <a class="btn btn-primary header-cta" href="#pricing">ابدأ التجربة</a>
+          <a class="icon-btn nav-burger" href="#menu">
+            <span class="sr-only">فتح القائمة</span>
+            <span class="burger" aria-hidden="true"></span>
+          </a>
+          <a class="icon-btn nav-close" href="#top">
+            <span class="sr-only">إغلاق القائمة</span>
+            <span class="x" aria-hidden="true"></span>
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <nav class="drawer" id="menu" aria-label="القائمة">
+      <div class="wrap drawer-inner">
+        <a href="#problem">الفكرة</a>
+        <a href="#how">الطريقة</a>
+        <a href="#features">المزايا</a>
+        <a href="#pricing">الأسعار</a>
+        <a href="#developers">المطورون</a>
+        <a href="#faq">الأسئلة</a>
+        <p class="drawer-note"><span dir="ltr">$6</span> شهرياً للرقم · تجربة 3 أيام</p>
+        <a class="btn btn-primary" href="#pricing">ابدأ التجربة</a>
+      </div>
+    </nav>
+
+    <main id="main">
+      <section class="hero">
+        <div class="wrap hero-grid">
+          <div class="hero-copy">
+            <p class="kicker"><span class="kicker-no" dir="ltr">01</span> لأصحاب المتاجر في مصر</p>
+            <p class="audience">
+              لمتاجر
+              <span dir="ltr" lang="en">Shopify</span>
+              و<span dir="ltr" lang="en">WooCommerce</span>
+              و<span dir="ltr" lang="en">Easy Orders</span>، ولمن يبنيها.
+            </p>
+            <h1>
+              <span class="h1-lead">رقمك.</span>
+              <span class="h1-rest">من غير فاتورة لكل رسالة.</span>
+            </h1>
+            <p class="lead">
+              متجرك يرسل تأكيد الطلب والشحن والتسليم من رقم واتساب الذي تستخدمه اليوم. من لوحة عربية، أو بنداء واحد إلى
+              <span class="token">REST API</span>. الاشتراك على الرقم، لا على كل رسالة.
+            </p>
+            <p class="hero-price">
+              <span class="hero-price-value" dir="ltr" lang="en"><span class="price-currency">$</span>6</span>
+              <span class="hero-price-meta">
+                <span>شهرياً للرقم</span>
+                <span lang="en" dir="ltr">Basic</span>
+              </span>
+            </p>
+            <div class="actions">
+              <a class="btn btn-primary" href="#pricing">ابدأ التجربة</a>
+              <a class="btn btn-secondary" href="#how">شاهد طريقة العمل</a>
+            </div>
+            <ul class="facts">
+              <li>تجربة 3 أيام</li>
+              <li>مساعدة في الربط خلال حوالي 15 دقيقة</li>
+              <li>فودافون كاش، إنستاباي، أو تحويل بنكي</li>
+            </ul>
+          </div>
+
+          <aside class="dispatch" aria-label="مثال توضيحي لتحديثات طلب واحد من قالب الطلب">
+            <header class="dispatch-head">
+              <p class="dispatch-kicker"><span class="dot" aria-hidden="true"></span> مثال · قالب تحديث الطلب</p>
+              <p class="dispatch-who">إلى سارة · طلب <span dir="ltr">#1842</span></p>
+            </header>
+            <ol class="dispatch-list">
+              <li>
+                <div class="dispatch-meta">
+                  <span class="dispatch-no" dir="ltr">01</span>
+                  <span>تأكيد</span>
+                  <time dir="ltr">10:14</time>
+                </div>
+                <p class="dispatch-msg">تم تحديث طلبك إلى: <strong>تم التأكيد</strong>.</p>
+              </li>
+              <li>
+                <div class="dispatch-meta">
+                  <span class="dispatch-no" dir="ltr">02</span>
+                  <span>شحن</span>
+                  <time dir="ltr">14:02</time>
+                </div>
+                <p class="dispatch-msg">تم تحديث طلبك إلى: <strong>تم الشحن</strong>.</p>
+              </li>
+              <li>
+                <div class="dispatch-meta">
+                  <span class="dispatch-no" dir="ltr">03</span>
+                  <span>تسليم</span>
+                  <time dir="ltr">18:40</time>
+                </div>
+                <p class="dispatch-msg">تم تحديث طلبك إلى: <strong>تم التسليم</strong>.</p>
+              </li>
+            </ol>
+            <footer class="dispatch-foot">
+              <p dir="ltr" lang="en"><span class="verb">POST</span> /api/send-message</p>
+              <p>القالب <span class="token">order</span> · تتغير قيمة <span class="token">status</span> فقط</p>
+            </footer>
+          </aside>
+        </div>
+      </section>
+
+      <section class="section" id="problem">
+        <div class="wrap">
+          <div class="section-intro">
+            <p class="kicker"><span class="kicker-no" dir="ltr">02</span> المشكلة والحل</p>
+            <h2>الحالة تتغير في المتجر. الرسالة لا تُكتب من جديد.</h2>
+            <p class="lede">
+              الفرق ليس في صياغة الجملة. الفرق في من يعيد كتابتها عند كل طلب: أنت في كل مرة، أو قالب واحد يخرج من رقمك عندما تتغير الحالة.
+            </p>
+          </div>
+          <div class="split">
+            <article class="split-col">
+              <p class="split-label">باليد</p>
+              <h3>كل تحديث محادثة منفصلة</h3>
+              <p>تفتح الشات، تبحث عن الرقم، وتكتب الجملة نفسها. في الذروة يفوت طلب، ويختلف النص من عميل إلى عميل.</p>
+              <ol class="log">
+                <li>
+                  <time dir="ltr">10:02</time>
+                  <span>تكتب أن الطلب تأكد</span>
+                </li>
+                <li>
+                  <time dir="ltr">14:11</time>
+                  <span>تعود وتكتب أنه خرج للشحن</span>
+                </li>
+                <li>
+                  <time dir="ltr">19:40</time>
+                  <span>تسأل إن كان قد وصل</span>
+                </li>
+              </ol>
+              <p class="log-note">مثال ليوم عمل، لا قياس أداء.</p>
+            </article>
+            <article class="split-col split-col-solution">
+              <p class="split-label">من رقمك</p>
+              <h3>قالب واحد عند تغيّر الحالة</h3>
+              <p>تربط الرقم مرة. عندما تتغير حالة الطلب تُرسل الرسالة من اللوحة، أو من خادم المتجر عبر الـ API، وباسم القالب نفسه.</p>
+              <ol class="log">
+                <li>
+                  <time dir="ltr">10:02</time>
+                  <span>القالب يرسل: تم التأكيد</span>
+                </li>
+                <li>
+                  <time dir="ltr">14:11</time>
+                  <span>القالب يرسل: تم الشحن</span>
+                </li>
+                <li>
+                  <time dir="ltr">19:40</time>
+                  <span>القالب يرسل: تم التسليم</span>
+                </li>
+              </ol>
+              <p class="log-note">نفس المثال. النص ثابت، والحالة هي المتغير.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="how">
+        <div class="wrap">
+          <div class="section-intro">
+            <p class="kicker"><span class="kicker-no" dir="ltr">03</span> طريقة العمل</p>
+            <h2>اربط الرقم، اضبط القالب، ثم أرسل الحالة.</h2>
+            <p class="lede">ثلاث خطوات. بعدها يخرج تحديث الطلب من الرقم الذي يعرفه عملاؤك.</p>
+          </div>
+          <div class="steps">
+            <article class="step">
+              <span class="step-no" dir="ltr">01</span>
+              <div>
+                <h3>اربط رقمك بمسح QR</h3>
+                <p>
+                  من الجلسات أنشئ جلسة، وافتح واتساب على الهاتف: الإعدادات ← الأجهزة المرتبطة ← ربط جهاز. الرمز يتجدد كل 20 ثانية تقريباً. إن لم يناسبك المسح، استخدم كود الربط. نساعدك في إتمام الربط خلال حوالي 15 دقيقة.
+                </p>
+              </div>
+            </article>
+            <article class="step">
+              <span class="step-no" dir="ltr">02</span>
+              <div>
+                <h3>جهّز قالب حالة الطلب</h3>
+                <p>
+                  ابدأ من قالب «تحديث الطلب» في لوحة القوالب وعدّل نصه. المتغيرات
+                  <span class="token">{{name}}</span>
+                  و<span class="token">{{order}}</span>
+                  و<span class="token">{{status}}</span>
+                  تُملأ عند كل إرسال.
+                </p>
+              </div>
+            </article>
+            <article class="step">
+              <span class="step-no" dir="ltr">03</span>
+              <div>
+                <h3>أرسل التحديث من اللوحة أو API</h3>
+                <p>
+                  من صفحة الجلسة، أو من خادم المتجر عبر
+                  <span class="token">POST /api/send-message</span>
+                  مع اسم القالب والمتغيرات، كلما تغيّرت حالة الطلب.
+                </p>
+              </div>
+            </article>
+          </div>
+          <blockquote class="pull">
+            <p>
+              مرحباً <span class="token">{{name}}</span><br />
+              تم تحديث طلبك رقم <span class="token">#{{order}}</span> إلى: <span class="token">{{status}}</span>.<br />
+              شكراً لتعاملك معنا.
+            </p>
+            <cite>الصيغة الجاهزة لقالب «تحديث الطلب» في اللوحة، ويمكن تعديلها.</cite>
+          </blockquote>
+        </div>
+      </section>
+
+      <section class="section" id="features">
+        <div class="wrap">
+          <div class="section-intro">
+            <p class="kicker"><span class="kicker-no" dir="ltr">04</span> المزايا</p>
+            <h2>ما يعمل من اليوم الأول على Basic.</h2>
+            <p class="lede">المذكور هنا موجود في المنتج. صندوق المحادثات والحملات الجماعية على خطط أعلى، وليسا جزءاً من هذا العرض.</p>
+          </div>
+          <div class="feature-list">
+            <article class="feature">
+              <span class="feature-no" dir="ltr">01</span>
+              <h3>الرقم الحالي</h3>
+              <p>الرسائل تخرج من رقمك بعد مسح QR أو إدخال كود الربط، وتظهر للمستلم كأنها أُرسلت من هاتفك.</p>
+            </article>
+            <article class="feature">
+              <span class="feature-no" dir="ltr">02</span>
+              <h3>نص ووسائط</h3>
+              <p>نص، صورة، فيديو، صوت، مستند، جهة اتصال، وموقع. من اللوحة أو من الـ API، للصورة والفيديو والمستند تعليق نصي عند الحاجة.</p>
+            </article>
+            <article class="feature">
+              <span class="feature-no" dir="ltr">03</span>
+              <h3>قوالب تُعاد استخدامها</h3>
+              <p>نص بمحارف مثل <span class="token">{{name}}</span>، يُحفظ في مساحة العمل ويُستدعى بالاسم مع المتغيرات. منها قالب تحديث الطلب.</p>
+            </article>
+            <article class="feature">
+              <span class="feature-no" dir="ltr">04</span>
+              <h3>لوحة عربية</h3>
+              <p>الجلسات والقوالب ومفاتيح API والاشتراك باتجاه عربي. حالة الإرسال تظهر في اللوحة عبر بث مباشر.</p>
+            </article>
+            <article class="feature">
+              <span class="feature-no" dir="ltr">05</span>
+              <h3>REST API</h3>
+              <p>
+                مفتاح جلسة <span class="token">was_…</span>، وتوثيق
+                <span class="token">OpenAPI</span>
+                على <span class="token">/docs</span>، وترويسة
+                <span class="token">Idempotency-Key</span>
+                حتى لا تتكرر الرسالة عند إعادة المحاولة.
+              </p>
+            </article>
+            <article class="feature">
+              <span class="feature-no" dir="ltr">06</span>
+              <h3>أفراد ومجموعات</h3>
+              <p>الإرسال يصل إلى محادثة شخص أو إلى مجموعة. على Basic: رقم واحد، بدون حد يومي، وبدون رسوم على كل رسالة.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section-pricing" id="pricing">
+        <div class="wrap">
+          <p class="kicker"><span class="kicker-no" dir="ltr">05</span> الأسعار</p>
+          <div class="price-sheet">
+            <div class="price-main">
+              <p class="plan-kicker" lang="en" dir="ltr">Basic</p>
+              <h2 class="price-heading">
+                <span class="sr-only">خطة Basic، </span>
+                <span class="price-value" dir="ltr" lang="en"><span class="price-currency">$</span>6</span>
+                <span class="price-unit">شهرياً للرقم الواحد</span>
+              </h2>
+              <p class="trial-lead">
+                تجربة 3 أيام قبل أي دفع، وبدون بطاقة ائتمان: رقم واحد، 50 رسالة في اليوم، 10 طلبات API في الدقيقة، وسجل 7 أيام. بعدها يتوقف الإرسال حتى يُعتمد الاشتراك.
+              </p>
+              <p class="help-line">نساعدك في ربط الرقم خلال حوالي 15 دقيقة.</p>
+              <div class="actions">
+                <a class="btn btn-primary" href="#start">ابدأ التجربة</a>
+                <a class="btn btn-secondary" href="#how">شاهد طريقة العمل</a>
+              </div>
+              <p class="path">في المنتج يفتح هذا الزر <span dir="ltr">/register</span>.</p>
+            </div>
+            <div class="price-spec">
+              <h3>على الخطة المدفوعة</h3>
+              <ul class="include">
+                <li>جلسة واتساب واحدة</li>
+                <li>بدون رسوم على كل رسالة</li>
+                <li>بدون حد يومي للرسائل</li>
+                <li>60 طلباً في الدقيقة</li>
+                <li>حفظ سجل الرسائل 30 يوماً</li>
+                <li>الأفراد والمجموعات، والنص والوسائط، والقوالب، والـ API</li>
+              </ul>
+              <h3>الدفع من مصر</h3>
+              <p>
+                الطرق المدعومة: فودافون كاش، إنستاباي، والتحويل البنكي. تظهر في صفحة الاشتراك عندما يفعّلها المسؤول. تختار المدة: شهر، أو 3، أو 6، أو 12 شهراً، وتحوّل المبلغ وترفق صورة الإيصال. السعر بالدولار، والمبلغ بالجنيه يُحسب بسعر الصرف المضبوط في الحساب. التفعيل بعد مراجعة الطلب.
+              </p>
+              <ul class="pay-list">
+                <li>فودافون كاش</li>
+                <li>إنستاباي</li>
+                <li>تحويل بنكي</li>
+              </ul>
+            </div>
+          </div>
+          <p class="aside-note">للمتاجر التي تحتاج أكثر من رقم، الخطط الأكبر تُطلب من صفحة الاشتراك داخل اللوحة. هذه الصفحة تعرض Basic.</p>
+        </div>
+      </section>
+
+      <section class="section" id="developers">
+        <div class="wrap">
+          <div class="section-intro">
+            <p class="kicker"><span class="kicker-no" dir="ltr">06</span> المطورون والوكالات</p>
+            <h2>نقطة ربط عندما تتغير حالة الطلب.</h2>
+            <p class="lede">لا توجد إضافة جاهزة داخل Shopify أو WooCommerce أو Easy Orders. الربط من خادم المتجر أو من سكربت الوكالة.</p>
+          </div>
+          <div class="dev-grid">
+            <div class="dev-copy">
+              <h3>للمطوّر</h3>
+              <p>
+                عند تغيّر الحالة في المتجر، أرسل
+                <span class="token">POST /api/send-message</span>
+                بمفتاح الجلسة <span class="token">was_…</span>. رمز مساحة العمل
+                <span class="token">wap_…</span>
+                يدير الجلسات ويحتاج الترويسة <span class="token">X-Session-Id</span>. أعد المحاولة مع
+                <span class="token">Idempotency-Key</span>
+                حتى لا تتكرر الرسالة. تابع الحالة عبر
+                <span class="token">GET /api/messages/{id}</span>
+                من <span class="token">queued</span>
+                حتى التسليم أو القراءة، واللوحة تستقبل الأحداث على
+                <span class="token">/api/events</span>.
+              </p>
+              <h3>للوكالة</h3>
+              <p>
+                قدّمي تحديثات الطلب كخدمة إضافية مع بناء المتجر: رقم العميل نفسه، لا رقم عام. على Basic جلسة واحدة لكل متجر. ساعديه على مسح QR خلال حوالي 15 دقيقة، وجهّزي قالب الحالة، ثم اربطي سكربت المتجر بالمسار. إن احتاج أكثر من رقم، تُطلب الخطة الأعلى من لوحة الاشتراك.
+              </p>
+            </div>
+            <figure class="code-panel">
+              <figcaption>
+                <span>إرسال تحديث الطلب</span>
+                <span dir="ltr" lang="en">POST /api/send-message</span>
+              </figcaption>
+              <p class="code-meta" dir="ltr" lang="en">Authorization: Bearer was_…</p>
+              <p class="code-meta" dir="ltr" lang="en">Idempotency-Key: order-1842-shipped</p>
+              <pre><code>{
+  <span class="k">"to"</span>: <span class="s">"+2010XXXXXXX"</span>,
+  <span class="k">"template"</span>: <span class="s">"order"</span>,
+  <span class="k">"variables"</span>: {
+    <span class="k">"name"</span>: <span class="s" lang="ar">"سارة"</span>,
+    <span class="k">"order"</span>: <span class="s">"1842"</span>,
+    <span class="k">"status"</span>: <span class="s" lang="ar">"تم الشحن"</span>
+  }
+}</code></pre>
+              <p class="code-note">جزء من الاستجابة: <span class="token token-on-dark">msgId</span> و<span class="token token-on-dark">status</span> وتبدأ من <span class="token token-on-dark">queued</span>.</p>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="faq">
+        <div class="wrap">
+          <div class="section-intro">
+            <p class="kicker"><span class="kicker-no" dir="ltr">07</span> الأسئلة</p>
+            <h2>قبل أن تربط الرقم.</h2>
+          </div>
+          <div class="faq-list">
+            <details class="faq-item">
+              <summary>
+                <span>كيف أربط الرقم؟</span>
+                <span class="plus" aria-hidden="true"></span>
+              </summary>
+              <p>
+                أنشئ حساباً، ثم من الجلسات اختر جلسة جديدة وامسح رمز QR: واتساب على الهاتف ← الإعدادات ← الأجهزة المرتبطة ← ربط جهاز. الرمز يتجدد كل 20 ثانية تقريباً. يمكن إدخال كود الربط بدل المسح. نساعدك في إتمام هذه الخطوة خلال حوالي 15 دقيقة.
+              </p>
+            </details>
+            <details class="faq-item">
+              <summary>
+                <span>ماذا تشمل التجربة؟</span>
+                <span class="plus" aria-hidden="true"></span>
+              </summary>
+              <p>
+                3 أيام على الخطة التجريبية: رقم واحد، 50 رسالة في اليوم، 10 طلبات API في الدقيقة، وسجل 7 أيام. تبدأ بدون بطاقة ائتمان. عند انتهائها يتوقف ربط الرقم والإرسال حتى يُعتمد اشتراك مدفوع.
+              </p>
+            </details>
+            <details class="faq-item">
+              <summary>
+                <span>ماذا يعني سعر 6 دولارات؟</span>
+                <span class="plus" aria-hidden="true"></span>
+              </summary>
+              <p>
+                Basic بـ 6 دولارات شهرياً للرقم الواحد: جلسة واحدة، بدون حد يومي للرسائل، وبدون رسوم على كل رسالة، مع 60 طلباً في الدقيقة وسجل 30 يوماً. الإيقاع بين الرسائل يبقى موجوداً، والحد هو للطلبات في الدقيقة لا فاتورة لكل رسالة. الخطط الأعلى لأعداد أرقام أكبر تُطلب من صفحة الاشتراك.
+              </p>
+            </details>
+            <details class="faq-item">
+              <summary>
+                <span>هل تعمل مع Shopify وWooCommerce وEasy Orders؟</span>
+                <span class="plus" aria-hidden="true"></span>
+              </summary>
+              <p>
+                لا توجد إضافة جاهزة داخل هذه المنصات. المطوّر أو الوكالة يربطان خادم المتجر بـ
+                <span class="token">POST /api/send-message</span>
+                عندما تتغير حالة الطلب، باستخدام قالب مثل <span class="token">order</span>.
+              </p>
+            </details>
+            <details class="faq-item">
+              <summary>
+                <span>ماذا لو انقطع اتصال الرقم؟</span>
+                <span class="plus" aria-hidden="true"></span>
+              </summary>
+              <p>
+                بيانات ربط الجلسة تُحفظ مشفّرة بمعيار AES-256. عند انقطاع الشبكة تُعاد محاولة الاتصال تلقائياً. إذا سجّلت الخروج من الأجهزة المرتبطة تتوقف الجلسة وتحتاج مسح QR من جديد. إن ظهرت الجلسة غير متصلة أو تحتاج تدخّلاً، أعد الاتصال من اللوحة. لا نعد بأن الاتصال يبقى مستمراً بلا انقطاع.
+              </p>
+            </details>
+            <details class="faq-item">
+              <summary>
+                <span>هل قد يُوقف واتساب رقمي؟ وهل تصل كل الرسائل؟</span>
+                <span class="plus" aria-hidden="true"></span>
+              </summary>
+              <p>
+                الخدمة مستقلة عن Meta وتعمل كجهاز مرتبط عبر واتساب ويب. إرسال رسائل غير مرغوب فيها قد يؤدي إلى تقييد الرقم أو إيقافه. نخفف الإيقاع بتأخير بين الرسائل وإظهار «يكتب…» وفحص الرقم قبل الإرسال، لكننا لا نضمن عدم الحظر ولا نضمن وصول كل رسالة. الالتزام بشروط واتساب وقوانين مكافحة الرسائل المزعجة مسؤوليتك.
+              </p>
+            </details>
+            <details class="faq-item">
+              <summary>
+                <span>كيف أدفع من مصر؟</span>
+                <span class="plus" aria-hidden="true"></span>
+              </summary>
+              <p>
+                بعد توثيق الهاتف في الحساب، تطلب Basic من صفحة الاشتراك وتختار المدة: شهر أو 3 أو 6 أو 12. إن كانت طرق الدفع مفعّلة تدفع بفودافون كاش أو إنستاباي أو تحويل بنكي، وترفق صورة الإيصال. السعر بالدولار ويُعرض المبلغ بالجنيه حسب سعر الصرف في الحساب. الخطة تُفعَّل بعد مراجعة الطلب.
+              </p>
+            </details>
+            <details class="faq-item">
+              <summary>
+                <span>هل يعرف المستلم أن الرسالة من منصة؟</span>
+                <span class="plus" aria-hidden="true"></span>
+              </summary>
+              <p>لا. الرسالة تخرج من رقمك وتظهر له كأنها أُرسلت من هاتفك.</p>
+            </details>
+          </div>
+        </div>
+      </section>
+
+      <section class="closing" id="start">
+        <div class="wrap closing-inner">
+          <p class="kicker kicker-inverse"><span class="kicker-no" dir="ltr">08</span> ابدأ برقمك</p>
+          <h2>الرقم الذي يعرفه عملاؤك. والتحديث يخرج منه.</h2>
+          <p class="closing-lead">
+            تجربة 3 أيام، ثم Basic بـ <span dir="ltr">$6</span> شهرياً للرقم. نساعدك في الربط خلال حوالي 15 دقيقة.
+          </p>
+          <div class="actions">
+            <a class="btn btn-inverse" href="#pricing">راجع عرض Basic</a>
+            <a class="btn btn-inverse-ghost" href="#how">شاهد طريقة العمل</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap">
+        <div class="footer-grid">
+          <div class="footer-brand">
+            <p class="footer-name" lang="en" dir="ltr">WA CodeFiye</p>
+            <p>تحديثات الطلب من رقم واتساب الحالي. لوحة عربية، وREST API، واشتراك على الرقم لا على كل رسالة.</p>
+          </div>
+          <div>
+            <h2>على هذه الصفحة</h2>
+            <ul class="footer-links">
+              <li><a href="#features">المزايا</a></li>
+              <li><a href="#how">طريقة العمل</a></li>
+              <li><a href="#pricing">الأسعار</a></li>
+              <li><a href="#developers">المطورون</a></li>
+              <li><a href="#faq">الأسئلة</a></li>
+            </ul>
+          </div>
+          <div>
+            <h2>في المنتج</h2>
+            <ul class="footer-links">
+              <li>
+                <span class="quiet">إنشاء حساب</span>
+                <span class="path" dir="ltr">/register</span>
+              </li>
+              <li>
+                <span class="quiet">تسجيل الدخول</span>
+                <span class="path" dir="ltr">/login</span>
+              </li>
+              <li>
+                <span class="quiet">التوثيق</span>
+                <span class="path" dir="ltr">/guide</span>
+              </li>
+              <li>
+                <span class="quiet">OpenAPI</span>
+                <span class="path" dir="ltr">/docs</span>
+              </li>
+              <li>
+                <span class="quiet">لوحة التحكم</span>
+                <span class="path" dir="ltr">/dashboard</span>
+              </li>
+            </ul>
+          </div>
+          <div>
+            <h2>الدعم</h2>
+            <ul class="footer-links">
+              <li>
+                <a class="ltr-link" href="mailto:support@example.com" dir="ltr" lang="en">support@example.com</a>
+                <span class="path">عنوان مؤقت في المشروع</span>
+              </li>
+              <li>
+                <a href="#legal">الخصوصية</a>
+                <span class="path">صفحة كاملة غير منشورة</span>
+              </li>
+              <li>
+                <a href="#legal">الشروط</a>
+                <span class="path">صفحة كاملة غير منشورة</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <aside class="disclaimer" id="legal">
+          <p>
+            <strong>تنبيه.</strong>
+            خدمة مستقلة غير تابعة لشركة Meta أو WhatsApp. تعمل كجهاز مرتبط عبر واتساب ويب. إرسال رسائل غير مرغوب فيها قد يؤدي إلى إيقاف الرقم. لا نضمن عدم الحظر، ولا نضمن وصول الرسائل. الالتزام بشروط واتساب وقوانين مكافحة الرسائل المزعجة مسؤوليتك.
+          </p>
+        </aside>
+
+        <p class="rights">© 2026 <span lang="en" dir="ltr">WA CodeFiye</span>. جميع الحقوق محفوظة.</p>
+        <p class="preview-note">
+          هذه معاينة تصميم مستقلة تُفتح من ملفها. في المنتج، بدء التجربة يفتح
+          <span dir="ltr">/register</span>
+          ، والتوثيق على <span dir="ltr">/guide</span> و<span dir="ltr">/docs</span>. صفحتا الخصوصية والشروط غير منشورتين بعد.
+        </p>
+      </div>
+    </footer>
+  </body>
+</html>
