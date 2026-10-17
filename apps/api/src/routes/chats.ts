@@ -542,7 +542,8 @@ export function chatRoutes(deps: Deps): FastifyPluginAsyncZod {
           querystring: z.object({
             jid: jidSchema,
             before: z.coerce.number().int().positive().optional().describe('Older than this message (by time)'),
-            after: z.coerce.number().int().nonnegative().optional().describe('Newer than this message (catching up)'),
+            after: z.coerce.number().int().nonnegative().optional().describe('Newer than this message (catching up): the oldest `limit` of them'),
+            around: z.coerce.number().int().positive().optional().describe('This message with the ones just before and after it (a search result shown in its place)'),
             q: z.string().trim().min(1).max(100).optional(),
             kind: z.enum(['media', 'documents', 'audio']).optional(),
             limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -552,6 +553,8 @@ export function chatRoutes(deps: Deps): FastifyPluginAsyncZod {
               z.object({
                 messages: z.array(chatMessageDto),
                 nextBefore: z.number().nullable(),
+                /** `after`/`around`: there are newer messages than this page, from this id on. */
+                nextAfter: z.number().nullable().optional(),
                 /** Groups: who sent the page's incoming messages, by their `content.from`. */
                 senders: z.record(z.string(), personDto),
               }),
@@ -561,21 +564,40 @@ export function chatRoutes(deps: Deps): FastifyPluginAsyncZod {
       },
       async (req) => {
         const session = await ownedSession(sql, req, req.params.sessionId);
-        const { jid, before, after, q, kind, limit } = req.query;
+        const { jid, before, after, around, q, kind, limit } = req.query;
         const jids = jidsOf(await findChat(session.id, jid), jid);
         const kinds = { media: ['image', 'video'], documents: ['document'], audio: ['audio'] };
-        const rows = await sql<MessageRow[]>`
+        const page = (range: SqlFragment, newer: boolean, n: number) => sql<MessageRow[]>`
           select id, direction, type, status, content, error, wa_message_id, raw is not null as has_raw, broadcast_id, sent_at, created_at
           from messages
           where session_id = ${session.id} and remote_jid = any(${jids})
-            ${before ? sql`and (created_at, id) < (select created_at, id from messages where id = ${before})` : sql``}
-            ${after ? sql`and (created_at, id) > (select created_at, id from messages where id = ${after})` : sql``}
+            ${range}
             ${q ? sql`and coalesce(content->>'text', content->>'caption', content->>'name', '') ilike ${`%${q}%`}` : sql``}
             ${kind ? sql`and type = any(${kinds[kind]})` : sql``}
-          order by created_at desc, id desc
-          limit ${limit}`;
+          order by ${newer ? sql`created_at, id` : sql`created_at desc, id desc`}
+          limit ${n}`;
+        const at = (id: number, op: '<' | '<=' | '>') => sql`and (created_at, id) ${sql.unsafe(op)} (select created_at, id from messages where id = ${id})`;
+        let rows: MessageRow[];
+        let nextBefore: number | null;
+        let nextAfter: number | null = null;
+        if (around) {
+          // Half before (with the message itself), half after; one more each says whether the chat goes on.
+          const half = Math.ceil(limit / 2);
+          const [older, newer] = await Promise.all([page(at(around, '<='), false, half + 1), page(at(around, '>'), true, half + 1)]);
+          rows = [...newer.slice(0, half).reverse(), ...older.slice(0, half)];
+          nextBefore = older.length > half ? older[half - 1]!.id : null;
+          nextAfter = newer.length > half ? newer[half - 1]!.id : null;
+        } else if (after) {
+          // The oldest ones after it, so that loading on from there leaves no gap.
+          rows = (await page(at(after, '>'), true, limit)).reverse();
+          nextBefore = rows.at(-1)?.id ?? after;
+          nextAfter = rows.length === limit ? rows[0]!.id : null;
+        } else {
+          rows = await page(before ? at(before, '<') : sql``, false, limit);
+          nextBefore = rows.length === limit ? rows.at(-1)!.id : null;
+        }
         const froms = jid.endsWith('@g.us') ? rows.flatMap((m) => (m.direction === 'in' && typeof m.content.from === 'string' && !m.content.from.endsWith('@g.us') ? [m.content.from] : [])) : [];
-        return ok({ messages: rows.map(toMessageDto), nextBefore: rows.length === limit ? rows.at(-1)!.id : null, senders: await peopleOf(session.id, froms) });
+        return ok({ messages: rows.map(toMessageDto), nextBefore, nextAfter, senders: await peopleOf(session.id, froms) });
       },
     );
 

@@ -90,7 +90,7 @@ export type MessageContent = {
 export type Person = { name: string | null; phone: string | null };
 
 /** `senders`: groups only, who sent the page's incoming messages, by `content.from`. */
-export type MessagesPage = { messages: ChatMessage[]; nextBefore: number | null; senders?: Record<string, Person> };
+export type MessagesPage = { messages: ChatMessage[]; nextBefore: number | null; nextAfter?: number | null; senders?: Record<string, Person> };
 
 export type GroupMember = Person & { jid: string; role: 'superadmin' | 'admin' | 'member'; isMe: boolean };
 

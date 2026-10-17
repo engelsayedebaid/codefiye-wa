@@ -2073,9 +2073,9 @@ export const ar = {
       elapsed: (s: string) => `مرّ ${s}`,
       introTitle: 'اعرف عملاءك وأداء فريقك في دقائق',
       introText: 'يقرأ الذكاء الاصطناعي أنشط المحادثات في الفترة، ويحسب سرعة الرد لكل رقم من قاعدة البيانات، ثم يكتب لك: من العملاء الجاهزون للشراء، ومن ينتظر ردًا، وتقييم كل موظف، وما يجب فعله الآن.',
-      privacyNote: 'تُرسل نصوص المحادثات المختارة إلى Claude (Anthropic) لتحليلها.',
+      privacyNote: 'تُرسل نصوص المحادثات المختارة إلى Claude (Anthropic)، أو إلى Gemini (Google) إن لم يتوفر Claude، لتحليلها.',
       unavailableTitle: 'التحليل غير مفعّل على الخادم',
-      unavailableText: 'أضف المتغير ANTHROPIC_API_KEY في إعدادات الـ API ثم أعد تشغيله.',
+      unavailableText: 'أضف المتغير ANTHROPIC_API_KEY (أو GEMINI_API_KEY) في إعدادات الـ API ثم أعد تشغيله.',
       failed: 'تعذّر إكمال التحليل',
       noData: 'لا توجد محادثات مع عملاء في هذه الفترة.',
       meta: (chats: number, messages: number) => `حُلّلت ${chats} محادثة (${messages} رسالة)`,
@@ -2228,6 +2228,10 @@ export const ar = {
     noMessages: 'لا رسائل في هذه المحادثة بعد.',
     searchIn: 'ابحث في المحادثة',
     searchResults: (n: number) => (n === 0 ? 'لا نتائج' : `${n} نتيجة`),
+    /** The match on screen out of all of them (`more`: there are more than `n`). */
+    searchAt: (i: number, n: number, more: boolean) => (i > 0 ? `${i} من ${n}${more ? '+' : ''}` : `${n}${more ? '+' : ''} نتيجة`),
+    olderResult: 'النتيجة الأقدم (Enter)',
+    newerResult: 'النتيجة الأحدث (Shift+Enter)',
     closeSearch: 'إغلاق البحث',
     media: {
       image: 'صورة',
@@ -2700,7 +2704,7 @@ export const ar = {
           [
             'واتساب (Meta): رسائلك تمر عبر واتساب بطبيعة الخدمة، وتخضع أيضًا لشروط واتساب وسياسة خصوصيته.',
             'الاستضافة وقاعدة البيانات: خوادم التطبيق وقاعدة البيانات التي تُخزَّن فيها بياناتك.',
-            'Anthropic (Claude): فقط حين تشغّل بنفسك تحليل المحادثات بالذكاء الاصطناعي، تُرسل نصوص المحادثات المختارة لتحليلها.',
+            'Anthropic (Claude) أو Google (Gemini): فقط حين تشغّل بنفسك تحليل المحادثات بالذكاء الاصطناعي، تُرسل نصوص المحادثات المختارة لتحليلها.',
             'Google Fonts: تُحمَّل خطوط الموقع من خوادم Google، فيصلها عنوان IP الخاص بك.',
             'YouTube (Google): فيديو الشرح في الصفحة الرئيسية لا يُحمَّل من يوتيوب إلا حين تضغط «تشغيل»، وعندها يصل يوتيوب عنوان IP الخاص بك ويخضع التشغيل لسياسة خصوصية Google.',
           ],

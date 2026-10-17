@@ -50,7 +50,7 @@ function snippet(text: string, q: string, room = 70) {
  * gallery with a viewer, voice notes playable in place, documents to download). A result opens its chat,
  * already searched for the words.
  */
-export function GlobalSearch({ numbers, initialSession, onOpen, onClose }: { numbers: ChatNumber[]; initialSession?: string | null; onOpen: (sessionId: string, jid: string, q: string) => void; onClose: () => void }) {
+export function GlobalSearch({ numbers, initialSession, onOpen, onClose }: { numbers: ChatNumber[]; initialSession?: string | null; onOpen: (sessionId: string, jid: string, q: string, at?: number) => void; onClose: () => void }) {
   const { t, fmt } = useI18n();
   const g = t.chats.globalSearch;
   const [raw, setRaw] = useState('');
@@ -124,7 +124,8 @@ export function GlobalSearch({ numbers, initialSession, onOpen, onClose }: { num
   }, [viewer, onClose]);
 
   const numberName = (id: string) => (numbers.length > 1 && !scope ? (numbers.find((n) => n.id === id)?.name ?? null) : null);
-  const open = (sessionId: string, jid: string) => onOpen(sessionId, jid, kind === 'all' || kind === 'text' || kind === 'links' ? q : '');
+  /** A chat, or a message in it (`at`: the conversation opens there). */
+  const open = (sessionId: string, jid: string, at?: number) => onOpen(sessionId, jid, kind === 'all' || kind === 'text' || kind === 'links' ? q : '', at);
   const scopeOptions = [{ value: ALL, label: g.allNumbers }, ...numbers.map((n) => ({ value: n.id, label: <span className="pii">{n.name}</span> }))];
   const loading = search.isPending && search.fetchStatus !== 'idle';
 
@@ -142,7 +143,7 @@ export function GlobalSearch({ numbers, initialSession, onOpen, onClose }: { num
             <button
               key={m.id}
               type="button"
-              onClick={() => (at >= 0 ? setViewer(at) : open(m.sessionId, m.chat.jid))}
+              onClick={() => (at >= 0 ? setViewer(at) : open(m.sessionId, m.chat.jid, m.id))}
               className="group relative aspect-square cursor-pointer overflow-hidden rounded-lg bg-raised text-start"
             >
               {m.type === 'image' && m.hasMedia ? (
@@ -176,7 +177,7 @@ export function GlobalSearch({ numbers, initialSession, onOpen, onClose }: { num
             <span className={cx('grid size-10 shrink-0 place-items-center rounded-full', isVoice(m) ? 'bg-brand/15 text-brand' : 'bg-sender-violet/15 text-sender-violet')}>
               {isVoice(m) ? <Mic className="size-[18px]" /> : <AudioLines className="size-[18px]" />}
             </span>
-            <HitTitle m={m} number={numberName(m.sessionId)} onOpen={() => open(m.sessionId, m.chat.jid)} subtitle={<TypeLabel type={m.type} voice={isVoice(m)} />} />
+            <HitTitle m={m} number={numberName(m.sessionId)} onOpen={() => open(m.sessionId, m.chat.jid, m.id)} subtitle={<TypeLabel type={m.type} voice={isVoice(m)} />} />
             {m.hasMedia ? (
               <audio controls preload="none" src={srcOf(m)} className="h-9 w-full min-w-0 sm:w-72" />
             ) : (
@@ -199,7 +200,7 @@ export function GlobalSearch({ numbers, initialSession, onOpen, onClose }: { num
               <HitTitle
                 m={m}
                 number={numberName(m.sessionId)}
-                onOpen={() => open(m.sessionId, m.chat.jid)}
+                onOpen={() => open(m.sessionId, m.chat.jid, m.id)}
                 subtitle={
                   <>
                     <span dir="auto" className="pii text-ink-2">
@@ -237,7 +238,7 @@ export function GlobalSearch({ numbers, initialSession, onOpen, onClose }: { num
             {chats.length > 0 && <h3 className="px-4 pt-3 pb-1 text-[11px] font-semibold tracking-wide text-ink-3 uppercase">{g.messages}</h3>}
             <ul className="divide-y divide-line/50">
               {hits.map((m) => (
-                <MessageRow key={m.id} m={m} q={q} number={numberName(m.sessionId)} onOpen={() => open(m.sessionId, m.chat.jid)} onView={media.includes(m) ? () => setViewer(media.indexOf(m)) : undefined} />
+                <MessageRow key={m.id} m={m} q={q} number={numberName(m.sessionId)} onOpen={() => open(m.sessionId, m.chat.jid, m.id)} onView={media.includes(m) ? () => setViewer(media.indexOf(m)) : undefined} />
               ))}
             </ul>
           </section>
@@ -332,7 +333,7 @@ export function GlobalSearch({ numbers, initialSession, onOpen, onClose }: { num
           index={viewer}
           onIndex={setViewer}
           onClose={() => setViewer(null)}
-          onOpen={(m) => open(m.sessionId, m.chat.jid)}
+          onOpen={(m) => open(m.sessionId, m.chat.jid, m.id)}
           number={(m) => numberName(m.sessionId)}
           when={(m) => fmt.dateTime(m.createdAt)}
         />

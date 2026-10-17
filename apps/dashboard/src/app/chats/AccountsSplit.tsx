@@ -18,11 +18,11 @@ const PANES_KEY = 'wa.chats.accountPanes';
 const WATCH_EVERY_MS = 60_000;
 
 /** A chat to open in a column (a notification clicked): the column showing that number, else a new one. */
-export type OpenRequest = { sessionId: string; jid: string; seq: number; /** Words to search in it (from the search across all chats). */ q?: string };
+export type OpenRequest = { sessionId: string; jid: string; seq: number; /** Words to search in it (from the search across all chats), and the message to open it at. */ q?: string; at?: number };
 /** The chats open in the columns right now, by column — a message there only chimes, as on the page. */
 export type OpenChats = Map<number, { sessionId: string; chat: ChatSummary }>;
 
-type Pane = { key: number; sessionId: string; pendingJid: string | null; pendingQ?: string };
+type Pane = { key: number; sessionId: string; pendingJid: string | null; pendingQ?: string; pendingAt?: number };
 type FlagsBody = { pinned?: boolean; archived?: boolean; unread?: boolean };
 type Toast = (text: string, tone?: 'ok' | 'error') => void;
 
@@ -92,8 +92,8 @@ export function AccountsSplit({
     const key = ++seq.current;
     setPanes((ps) => {
       const at = ps.findIndex((p) => p.sessionId === request.sessionId);
-      if (at >= 0) return ps.map((p, i) => (i === at ? { ...p, pendingJid: request.jid, pendingQ: request.q } : p));
-      return [...ps, { key, sessionId: request.sessionId, pendingJid: request.jid, pendingQ: request.q }];
+      if (at >= 0) return ps.map((p, i) => (i === at ? { ...p, pendingJid: request.jid, pendingQ: request.q, pendingAt: request.at } : p));
+      return [...ps, { key, sessionId: request.sessionId, pendingJid: request.jid, pendingQ: request.q, pendingAt: request.at }];
     });
   }, [request]);
 
@@ -127,10 +127,11 @@ export function AccountsSplit({
           number={byId.get(p.sessionId)!}
           pendingJid={p.pendingJid}
           pendingQ={p.pendingQ}
+          pendingAt={p.pendingAt}
           receipts={receipts}
           openChats={openChats}
           onSession={(sessionId) => update(p.key, { sessionId, pendingJid: null })}
-          onPendingDone={() => update(p.key, { pendingJid: null, pendingQ: undefined })}
+          onPendingDone={() => update(p.key, { pendingJid: null, pendingQ: undefined, pendingAt: undefined })}
           onClose={visible.length > 1 ? () => setPanes((ps) => ps.filter((x) => x.key !== p.key)) : undefined}
           onToast={onToast}
           onOpenIn={onOpenIn}
@@ -158,6 +159,7 @@ function AccountPane({
   number,
   pendingJid,
   pendingQ,
+  pendingAt,
   receipts,
   openChats,
   onSession,
@@ -171,6 +173,7 @@ function AccountPane({
   number: ChatNumber;
   pendingJid: string | null;
   pendingQ?: string;
+  pendingAt?: number;
   receipts: boolean;
   openChats: OpenChats;
   onSession: (sessionId: string) => void;
@@ -230,9 +233,9 @@ function AccountPane({
     },
     [sessionId, queryClient],
   );
-  const [chatSearch, setChatSearch] = useState<{ jid: string; q: string; seq: number } | null>(null);
+  const [chatSearch, setChatSearch] = useState<{ jid: string; q: string; seq: number; at?: number } | null>(null);
   const pendingDone = useEffectEvent((jid: string) => {
-    setChatSearch(pendingQ ? { jid, q: pendingQ, seq: Date.now() } : null);
+    setChatSearch(pendingQ || pendingAt ? { jid, q: pendingQ ?? '', seq: Date.now(), at: pendingAt } : null);
     onPendingDone();
   });
   useEffect(() => {

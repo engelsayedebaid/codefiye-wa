@@ -86,7 +86,7 @@ export function AiReportSoon({ onClose }: { onClose: () => void }) {
 
 /**
  * The AI analysis of the inbox (admins): pick the numbers and the period, and the server builds the
- * report — exact figures per number at once, then Claude's reading of the conversations. The last
+ * report — exact figures per number at once, then the AI model's reading of the conversations. The last
  * report stays on the server a few hours, so reopening shows it without paying again.
  */
 export function AiReport({ numbers, onOpenChat, onClose }: { numbers: ChatNumber[]; onOpenChat: (sessionId: string, jid: string) => void; onClose: () => void }) {
@@ -305,6 +305,8 @@ function ResultView({ result, numbers, onOpenChat }: { result: AnalysisResult; n
           <>
             <span>·</span>
             <span>{a.generated(fmt.timeAgo(result.meta.generatedAt))}</span>
+            <span>·</span>
+            <span className="ltr">{result.meta.model}</span>
           </>
         )}
       </p>

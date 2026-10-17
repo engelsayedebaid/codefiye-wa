@@ -3,8 +3,10 @@ import {
   Archive,
   ArrowDown,
   ArrowLeft,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Download,
   ExternalLink,
   Forward,
@@ -25,7 +27,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiRequestError, errorMessage } from '../../api';
 import { useLiveEvents } from '../../events';
 import { useI18n } from '../../i18n';
@@ -44,7 +46,9 @@ import { CHAT_WALLS, setChatWall, useChatWalls, WALL_SCOPES, type WallScope, wal
 
 const WALL_ICONS = { chat: MessageCircle, groups: Users, contacts: User, all: Layers } satisfies Record<WallScope, unknown>;
 
-type Pages = InfiniteData<MessagesPage, number | undefined>;
+/** Older than a message, newer than one, or a window around one (a search result opened in its place). */
+type PageParam = { before?: number; after?: number; around?: number };
+type Pages = InfiniteData<MessagesPage, PageParam>;
 
 /** How far along a message is; a status only replaces one ranked below it. A failure ends a send that hadn't gone out. */
 const STATUS_RANK: Record<ChatMessage['status'], number> = { queued: 0, sending: 1, failed: 2, sent: 3, delivered: 4, read: 5, received: 0 };
@@ -146,6 +150,9 @@ function Lightbox({ items, index, onIndex, onClose }: { items: ChatMessage[]; in
   );
 }
 
+/** The matches of the in-chat search, newest first (a reaction is shown on its message, not by itself). */
+const hitIds = (data: InfiniteData<MessagesPage> | undefined) => (data?.pages.flatMap((p) => p.messages) ?? []).filter((m) => m.type !== 'reaction').map((m) => m.id);
+
 type Item = { kind: 'day'; key: string; label: string } | { kind: 'unread'; key: string; n: number } | { kind: 'msg'; key: string; m: ChatMessage; first: boolean; sender: Sender | null };
 
 type Props = {
@@ -165,8 +172,8 @@ type Props = {
   /** Ask the phone for older messages of this chat. */
   onSync: () => void;
   syncing: boolean;
-  /** Open with the in-chat search on these words (a result of the search across all chats); a new `seq` searches again. */
-  search?: { q: string; seq: number };
+  /** Open with the in-chat search on these words (a result of the search across all chats), at message `at` if given; a new `seq` searches again. */
+  search?: { q: string; seq: number; at?: number };
   /** Open a chat of another number (after sending or forwarding through it). */
   onOpenIn?: (sessionId: string, jid: string) => void;
 };
@@ -185,33 +192,58 @@ export function Conversation({ sessionId, connected, reconnecting = false, chat,
     setWallOpen(true);
   };
 
-  // --- search within the chat ---
+  // --- search within the chat: the conversation stays whole, the search goes from match to match in it ---
   const [searching, setSearching] = useState(Boolean(search?.q));
   const [rawQuery, setRawQuery] = useState(search?.q ?? '');
   const [q, setQ] = useState(search?.q ?? '');
+  /** Words asked for from outside (the search across all chats), with the match picked there: gone to once they're searched here. */
+  const wantedHit = useRef<{ q: string; id: number | null } | null>(search?.q ? { q: search.q, id: search.at ?? null } : null);
+  /** The words whose first match was already brought into view. */
+  const jumpedFor = useRef<string | null>(null);
   useEffect(() => {
     if (!search?.q) return;
     setSearching(true);
     setRawQuery(search.q);
     setQ(search.q);
+    wantedHit.current = { q: search.q, id: search.at ?? null };
   }, [search]);
   useEffect(() => {
     const timer = setTimeout(() => setQ(rawQuery.trim()), 300);
     return () => clearTimeout(timer);
   }, [rawQuery]);
 
-  const key = qk.chats.messages(sessionId, chat.jid, q);
+  /** The conversation is opened at this message (a match further back than what's loaded); null = at the latest. */
+  const [anchor, setAnchor] = useState<number | null>(search?.at ?? null);
+  const key = anchor === null ? qk.chats.messages(sessionId, chat.jid) : qk.chats.messagesAround(sessionId, chat.jid, anchor);
   const messages = useInfiniteQuery({
     queryKey: key,
     queryFn: ({ pageParam, signal }) => {
       const params = new URLSearchParams({ jid: chat.jid, limit: '50' });
+      for (const [name, id] of Object.entries(pageParam)) params.set(name, String(id));
+      return api<MessagesPage>(`/api/chats/${sessionId}/messages?${params}`, { signal });
+    },
+    initialPageParam: (anchor === null ? {} : { around: anchor }) as PageParam,
+    getNextPageParam: (page): PageParam | undefined => (page.nextBefore ? { before: page.nextBefore } : undefined),
+    // Opened at a match: newer pages load as you scroll down, up to the latest.
+    getPreviousPageParam: (page): PageParam | undefined => (page.nextAfter ? { after: page.nextAfter } : undefined),
+    staleTime: 60_000,
+  });
+  /** Newer messages exist than the loaded ones (opened at a match): live ones wait until the list gets there. */
+  const behindLatest = messages.hasPreviousPage;
+  const behindRef = useRef(behindLatest);
+  behindRef.current = behindLatest;
+
+  const finds = useInfiniteQuery({
+    queryKey: qk.chats.find(sessionId, chat.jid, q),
+    queryFn: ({ pageParam, signal }) => {
+      const params = new URLSearchParams({ jid: chat.jid, q, limit: '100' });
       if (pageParam) params.set('before', String(pageParam));
-      if (q) params.set('q', q);
       return api<MessagesPage>(`/api/chats/${sessionId}/messages?${params}`, { signal });
     },
     initialPageParam: undefined as number | undefined,
     getNextPageParam: (page) => page.nextBefore ?? undefined,
-    staleTime: 60_000,
+    enabled: searching && q !== '',
+    staleTime: 30_000,
   });
 
   // Oldest first, reactions folded onto the messages they react to.
@@ -248,10 +280,10 @@ export function Conversation({ sessionId, connected, reconnecting = false, chat,
   // The unread divider sits where the chat's unread messages began when it was opened.
   const [unreadAtOpen] = useState(chat.unread);
   const firstUnreadId = useMemo(() => {
-    if (!unreadAtOpen || q) return null;
+    if (!unreadAtOpen || anchor !== null) return null;
     const inbound = list.filter((m) => m.direction === 'in');
     return inbound[Math.max(0, inbound.length - unreadAtOpen)]?.id ?? null;
-  }, [list, unreadAtOpen, q]);
+  }, [list, unreadAtOpen, anchor]);
 
   /**
    * A group sender as shown on their bubbles: the name saved on the phone (or their WhatsApp name),
@@ -326,29 +358,35 @@ export function Conversation({ sessionId, connected, reconnecting = false, chat,
   }, [sessionId, chat.jid, receipts]);
 
   const catchUp = useCallback(async () => {
-    if (catchingUp.current || q) return;
+    // Opened further back: the newer pages bring these in when the list is scrolled down to them.
+    if (catchingUp.current || behindRef.current) return;
     catchingUp.current = true;
     try {
-      const params = new URLSearchParams({ jid: chat.jid, after: String(newestRef.current), limit: '100' });
-      const { messages: fresh, senders } = await api<MessagesPage>(`/api/chats/${sessionId}/messages?${params}`);
-      if (fresh.length === 0) return;
-      queryClient.setQueryData<Pages>(key, (data) => {
-        if (!data?.pages[0]) return data;
-        const known = new Set(data.pages.flatMap((p) => p.messages.map((m) => m.id)));
-        const added = fresh.filter((m) => !known.has(m.id));
-        const first = { ...data.pages[0], messages: [...added, ...data.pages[0].messages], senders: { ...data.pages[0].senders, ...senders } };
-        return { ...data, pages: [first, ...data.pages.slice(1)] };
-      });
-      if (fresh.some((m) => m.direction === 'in')) {
-        if (document.visibilityState === 'visible') markRead();
-        if (!atBottom()) setUnseen((n) => n + fresh.filter((m) => m.direction === 'in').length);
+      let after: number | null = newestRef.current;
+      // A page at a time, oldest first, up to the latest (a long absence fills in without a gap).
+      for (let round = 0; after !== null && round < 5; round++) {
+        const params = new URLSearchParams({ jid: chat.jid, after: String(after), limit: '100' });
+        const { messages: fresh, senders, nextAfter }: MessagesPage = await api<MessagesPage>(`/api/chats/${sessionId}/messages?${params}`);
+        after = nextAfter ?? null;
+        if (fresh.length === 0) break;
+        queryClient.setQueryData<Pages>(key, (data) => {
+          if (!data?.pages[0]) return data;
+          const known = new Set(data.pages.flatMap((p) => p.messages.map((m) => m.id)));
+          const added = fresh.filter((m) => !known.has(m.id));
+          const first = { ...data.pages[0], messages: [...added, ...data.pages[0].messages], senders: { ...data.pages[0].senders, ...senders } };
+          return { ...data, pages: [first, ...data.pages.slice(1)] };
+        });
+        if (fresh.some((m) => m.direction === 'in')) {
+          if (document.visibilityState === 'visible') markRead();
+          if (!atBottom()) setUnseen((n) => n + fresh.filter((m) => m.direction === 'in').length);
+        }
       }
     } catch {
       // the next event (or a reload) catches up
     } finally {
       catchingUp.current = false;
     }
-  }, [chat.jid, sessionId, q, key, queryClient, markRead]);
+  }, [chat.jid, sessionId, key, queryClient, markRead]);
 
   useLiveEvents((event) => {
     if (event.sessionId !== sessionId) return;
@@ -416,13 +454,60 @@ export function Conversation({ sessionId, connected, reconnecting = false, chat,
     return () => observer.disconnect();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
+  // Newer pages load at the bottom (opened at a match). The list is anchored at its bottom, so what's
+  // on screen is kept in place by where the newest loaded message was when the page came in.
+  const bottomSentinel = useRef<HTMLDivElement>(null);
+  const lastShownId = useRef<number | null>(null);
+  lastShownId.current = list.at(-1)?.id ?? null;
+  const keep = useRef<{ id: number; top: number } | null>(null);
+  const remember = () => {
+    const id = lastShownId.current;
+    const el = id === null ? null : scroller.current?.querySelector(`[data-mid="${id}"]`);
+    keep.current = id !== null && el ? { id, top: el.getBoundingClientRect().top } : null;
+  };
+  const { isFetchingPreviousPage, fetchPreviousPage } = messages;
+  useEffect(() => {
+    const el = bottomSentinel.current;
+    if (!el || !behindLatest) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry?.isIntersecting || isFetchingPreviousPage) return;
+        remember();
+        void fetchPreviousPage();
+      },
+      { root: scroller.current, rootMargin: '0px 0px 400px 0px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [behindLatest, isFetchingPreviousPage, fetchPreviousPage]);
+  useLayoutEffect(() => {
+    const box = scroller.current;
+    const kept = keep.current;
+    if (!kept || isFetchingPreviousPage || !box) return;
+    keep.current = null;
+    const el = box.querySelector(`[data-mid="${kept.id}"]`);
+    const moved = el ? el.getBoundingClientRect().top - kept.top : 0;
+    if (Math.abs(moved) > 1) box.scrollTop += moved;
+  }, [messages.data, isFetchingPreviousPage]);
+
   const [showDown, setShowDown] = useState(false);
   const onScroll = () => {
     const bottom = atBottom();
     setShowDown(!bottom);
     if (bottom) setUnseen(0);
+    if (keep.current) remember();
   };
-  const toBottom = () => scroller.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  const toBottom = () => {
+    // Opened further back: the latest messages are another list.
+    if (behindLatest) return setAnchor(null);
+    scroller.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+  // Back at the latest after a while further back: bring in what arrived meanwhile.
+  const wasAnchored = useRef(anchor !== null);
+  useEffect(() => {
+    if (anchor === null && wasAnchored.current) void catchUp();
+    wasAnchored.current = anchor !== null;
+  }, [anchor, catchUp]);
   const jump = useCallback((waMessageId: string) => {
     const el = document.getElementById(`msg-${waMessageId}`);
     if (!el) return;
@@ -465,6 +550,8 @@ export function Conversation({ sessionId, connected, reconnecting = false, chat,
       }
       enqueue(queryClient, sessionId, chat.jid, draft);
       setReply(null);
+      // Sending brings the latest messages back (the new one goes under them).
+      setAnchor(null);
       requestAnimationFrame(() => scroller.current?.scrollTo({ top: 0, behavior: 'smooth' }));
     },
     [queryClient, sessionId, chat.jid, viaNumber, directJid],
@@ -519,9 +606,69 @@ export function Conversation({ sessionId, connected, reconnecting = false, chat,
   // Once the list holds the real message, its "sending" stand-in goes.
   useEffect(() => settle(sessionId, chat.jid, (id) => shownIds.has(id)), [shownIds, pending, sessionId, chat.jid]);
   const outgoing = useMemo(
-    () => (q ? [] : pending.filter((p) => p.realId === undefined || !shownIds.has(p.realId)).map((p, i) => ({ p, m: pendingMessage(p, i) }))),
-    [pending, shownIds, q],
+    () => (behindLatest ? [] : pending.filter((p) => p.realId === undefined || !shownIds.has(p.realId)).map((p, i) => ({ p, m: pendingMessage(p, i) }))),
+    [pending, shownIds, behindLatest],
   );
+
+  // --- from match to match (newest = 0): one on the page is scrolled to, another opens the conversation there ---
+  const hits = useMemo(() => hitIds(finds.data), [finds.data]);
+  const [hitIndex, setHitIndex] = useState(-1);
+  /** A message to bring into view and flash once it's on the page (`instant`: the conversation was opened there). */
+  const [target, setTarget] = useState<{ id: number; instant: boolean } | null>(search?.at ? { id: search.at, instant: true } : null);
+  const shownRef = useRef(shownIds);
+  shownRef.current = shownIds;
+  const goTo = useCallback((id: number) => {
+    const loaded = shownRef.current.has(id);
+    if (!loaded) setAnchor(id);
+    setTarget({ id, instant: !loaded });
+  }, []);
+  useEffect(() => {
+    if (!target) return;
+    const el = scroller.current?.querySelector<HTMLElement>(`[data-mid="${target.id}"]`);
+    if (!el) return; // its page is on the way
+    el.scrollIntoView({ behavior: target.instant ? 'instant' : 'smooth', block: 'center' });
+    // Bubbles off screen are laid out at a guessed height (content-visibility): once those around it are drawn, center it again.
+    if (target.instant) requestAnimationFrame(() => el.scrollIntoView({ behavior: 'instant', block: 'center' }));
+    el.classList.remove('flash-msg');
+    void el.offsetWidth;
+    el.classList.add('flash-msg');
+    setTarget(null);
+  }, [target, list]);
+  // A message picked in the search across all chats without words (a photo, a file): straight to it.
+  useEffect(() => {
+    if (search?.at && !search.q) goTo(search.at);
+  }, [search, goTo]);
+  // New words: to their newest match (or the one picked in the search across all chats).
+  useEffect(() => {
+    if (!q) {
+      setHitIndex(-1);
+      jumpedFor.current = null;
+      return;
+    }
+    const wanted = wantedHit.current?.q === q ? wantedHit.current : null;
+    if (!finds.data || (jumpedFor.current === q && !wanted)) return;
+    jumpedFor.current = q;
+    wantedHit.current = null;
+    const id = wanted?.id ?? hits[0];
+    setHitIndex(id === undefined ? -1 : hits.indexOf(id));
+    if (id !== undefined) goTo(id);
+    // `search`: the same words asked for again
+  }, [q, finds.data, hits, goTo, search]);
+  const { hasNextPage: moreHits, fetchNextPage: fetchMoreHits } = finds;
+  /** +1 = the next older match, -1 = the next newer one. */
+  const stepHit = async (by: 1 | -1) => {
+    const i = hitIndex + by;
+    if (i < 0) return;
+    const ids = i < hits.length || !moreHits ? hits : hitIds((await fetchMoreHits()).data);
+    const id = ids[i];
+    if (id === undefined) return;
+    setHitIndex(i);
+    goTo(id);
+  };
+  const closeSearch = () => {
+    setSearching(false);
+    setRawQuery('');
+  };
 
   const [menu, setMenu] = useState(false);
   const [lightbox, setLightbox] = useState<number | null>(null);
@@ -631,13 +778,40 @@ export function Conversation({ sessionId, connected, reconnecting = false, chat,
             autoFocus
             value={rawQuery}
             onChange={(e) => setRawQuery(e.target.value)}
-            onKeyDown={(e) => e.key === 'Escape' && setSearching(false)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') closeSearch();
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                void stepHit(e.shiftKey ? -1 : 1);
+              }
+            }}
             dir={rawQuery ? 'auto' : undefined}
             placeholder={c.searchIn}
             className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted"
           />
-          {q && <span className="shrink-0 text-xs text-muted tabular-nums">{messages.isFetching ? <Loader2 className="size-3.5 animate-spin" /> : c.searchResults(list.length)}</span>}
-          <button type="button" onClick={() => (setSearching(false), setRawQuery(''))} className="rounded p-1 text-muted hover:text-ink" aria-label={c.closeSearch}>
+          {q && (
+            <span className="shrink-0 text-xs text-muted tabular-nums">
+              {finds.isFetching ? <Loader2 className="size-3.5 animate-spin" /> : hits.length === 0 ? c.searchResults(0) : c.searchAt(hitIndex + 1, hits.length, Boolean(moreHits))}
+            </span>
+          )}
+          {q && hits.length > 0 && (
+            <span className="flex shrink-0">
+              <button
+                type="button"
+                onClick={() => void stepHit(1)}
+                disabled={hitIndex + 1 >= hits.length && !moreHits}
+                className="rounded p-1 text-muted hover:text-ink disabled:opacity-40"
+                aria-label={c.olderResult}
+                title={c.olderResult}
+              >
+                <ChevronUp className="size-4" />
+              </button>
+              <button type="button" onClick={() => void stepHit(-1)} disabled={hitIndex <= 0} className="rounded p-1 text-muted hover:text-ink disabled:opacity-40" aria-label={c.newerResult} title={c.newerResult}>
+                <ChevronDown className="size-4" />
+              </button>
+            </span>
+          )}
+          <button type="button" onClick={closeSearch} className="rounded p-1 text-muted hover:text-ink" aria-label={c.closeSearch}>
             <X className="size-4" />
           </button>
         </div>
@@ -668,11 +842,11 @@ export function Conversation({ sessionId, connected, reconnecting = false, chat,
                     <span className="flex items-center gap-2 rounded-full bg-card/90 px-3 py-1 text-xs text-muted shadow-sm">
                       <Loader2 className="size-3.5 animate-spin" /> {c.loadingOlder}
                     </span>
-                  ) : !hasNextPage && list.length > 0 && !q ? (
+                  ) : !hasNextPage && list.length > 0 ? (
                     <span className="rounded-full bg-card/90 px-3 py-1 text-xs text-muted shadow-sm">{c.start}</span>
                   ) : null}
                 </div>
-                {list.length === 0 && <p className="mx-auto mt-10 w-fit rounded-lg bg-card/90 px-4 py-2 text-sm text-muted shadow-sm">{q ? c.searchResults(0) : c.noMessages}</p>}
+                {list.length === 0 && <p className="mx-auto mt-10 w-fit rounded-lg bg-card/90 px-4 py-2 text-sm text-muted shadow-sm">{c.noMessages}</p>}
                 {sections.map((section) => (
                   <div key={section.key}>
                     {section.label !== null && (
@@ -686,7 +860,7 @@ export function Conversation({ sessionId, connected, reconnecting = false, chat,
                           <span className="rounded-full bg-card px-3.5 py-1 text-[11.5px] font-semibold text-brand shadow-sm ring-1 ring-brand/20">{c.unreadDivider(item.n)}</span>
                         </div>
                       ) : (
-                        <div key={item.key} className="animate-fade-in [contain-intrinsic-size:auto_72px] [content-visibility:auto]">
+                        <div key={item.key} data-mid={item.m.id} className="animate-fade-in [contain-intrinsic-size:auto_72px] [content-visibility:auto]">
                           <Bubble
                             m={item.m}
                             first={item.first}
@@ -730,11 +904,17 @@ export function Conversation({ sessionId, connected, reconnecting = false, chat,
                     />
                   </div>
                 ))}
+                {isFetchingPreviousPage && (
+                  <div className="flex justify-center py-3">
+                    <Loader2 className="size-4 animate-spin text-muted" />
+                  </div>
+                )}
+                <div ref={bottomSentinel} />
               </>
             )}
           </div>
         </div>
-        {showDown && (
+        {(showDown || behindLatest) && (
           <button
             type="button"
             onClick={toBottom}

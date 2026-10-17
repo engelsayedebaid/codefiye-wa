@@ -394,7 +394,7 @@ export function ChatsPage() {
   const isAdmin = account?.user?.isAdmin === true;
   const [aiOpen, setAiOpen] = useState(false);
   const crossSend = useCrossSend();
-  const [chatSearch, setChatSearch] = useState<{ jid: string; q: string; seq: number } | null>(null);
+  const [chatSearch, setChatSearch] = useState<{ jid: string; q: string; seq: number; at?: number } | null>(null);
   const [receipts, setReceipts] = useState(() => read(RECEIPTS_KEY) !== '0');
   const privacy = usePrivacyMode();
   const [presence, setPresence] = useState(() => new Map<string, PresenceState>());
@@ -557,13 +557,13 @@ export function ChatsPage() {
   }, []);
   const [readNotify, setReadNotify] = useState(readNotesOn);
 
-  const openHit = (sessionId: string, jid: string, q: string) => {
+  const openHit = (sessionId: string, jid: string, q: string, at?: number) => {
     setGlobalSearch(false);
-    if (focus.mode === 'accounts') return setOpenRequest((r) => ({ sessionId, jid, q, seq: (r?.seq ?? 0) + 1 }));
+    if (focus.mode === 'accounts') return setOpenRequest((r) => ({ sessionId, jid, q, at, seq: (r?.seq ?? 0) + 1 }));
     if (sessionId !== activeId) switchNumber(sessionId);
     setView('chats');
     setPendingJid(jid);
-    setChatSearch(q ? { jid, q, seq: Date.now() } : null);
+    setChatSearch(q || at ? { jid, q, seq: Date.now(), at } : null);
   };
   const toggleNotify = async () => {
     const next = !notifyOn;

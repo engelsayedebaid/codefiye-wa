@@ -23,7 +23,11 @@ export const qk = {
     numbers: ['chats', 'numbers'] as const,
     list: (sessionId: string, filter: string, q: string) => ['chats', sessionId, 'list', filter, q] as const,
     lists: (sessionId: string) => ['chats', sessionId, 'list'] as const,
-    messages: (sessionId: string, jid: string, q = '') => ['chats', sessionId, 'messages', jid, q] as const,
+    messages: (sessionId: string, jid: string) => ['chats', sessionId, 'messages', jid, ''] as const,
+    /** The conversation opened at one message (a search result), loading both ways from there. */
+    messagesAround: (sessionId: string, jid: string, id: number) => ['chats', sessionId, 'messages', jid, 'around', id] as const,
+    /** The messages of one chat that match the words: where the in-chat search can go. */
+    find: (sessionId: string, jid: string, q: string) => ['chats', sessionId, 'find', jid, q] as const,
     chat: (sessionId: string, jid: string) => ['chats', sessionId, 'chat', jid] as const,
     gallery: (sessionId: string, jid: string, kind: string) => ['chats', sessionId, 'gallery', jid, kind] as const,
     members: (sessionId: string, jid: string) => ['chats', sessionId, 'members', jid] as const,

@@ -12,13 +12,19 @@ import { conflict, notFound, unavailable, unprocessable } from '../lib/errors';
 
 /**
  * AI analysis of the inbox (admins): exact figures per number from the database (each number is one
- * employee), then Claude reads the most active conversations of the period and writes the report —
+ * employee), then an AI model reads the most active conversations of the period and writes the report —
  * customers, how each number answers, what is waiting, what to do. A report takes minutes, longer than
  * a request may last, so it runs as a job in this process the page polls; the last ones stay a while.
+ * Claude (ANTHROPIC_API_KEY) first; Gemini (GEMINI_API_KEY) when there is no Anthropic key, or when the
+ * Anthropic API fails (refused key, no credit, overloaded).
  */
 
 const schemaBase = { tags: ['Admin'], hide: true };
 const MODEL = 'claude-opus-5-5';
+/** `gemini-flash-latest` follows Google's newest Flash; a free-tier key has no quota for the Pro models. */
+const GEMINI_MODEL = process.env.GEMINI_MODEL?.trim() || 'gemini-flash-latest';
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+const GEMINI_TIMEOUT_MS = 10 * 60_000;
 /** Conversations Claude reads, the messages per conversation, and the transcript budget (characters). */
 const MAX_CHATS = 60;
 const PER_CHAT = 40;
@@ -131,6 +137,99 @@ Write a report the owner can act on:
 - Employees: one entry per number that has conversations. Score 0-100 on speed (use the reply-time figures), accuracy and completeness of answers, tone and politeness, and closing/follow-up. Give concrete examples.
 - Recommendations: specific and prioritized (who should do what), not generic advice.
 - Keep each text field short and direct.`;
+
+/** A failure worded for the admin (shown as the job's error). */
+class AiError extends Error {}
+
+type Answer = { text: string; model: string; inputTokens: number; outputTokens: number };
+type Analyst = { name: string; analyze: (system: string, prompt: string) => Promise<Answer> };
+
+function claudeAnalyst(client: Anthropic): Analyst {
+  return {
+    name: MODEL,
+    async analyze(system, prompt) {
+      const stream = client.beta.messages.stream({
+        model: MODEL,
+        max_tokens: 64_000,
+        betas: ['server-side-fallback-2026-07-01'],
+        fallbacks: 'default',
+        output_config: { effort: 'high', format: betaZodOutputFormat(reportSchema) },
+        system,
+        messages: [{ role: 'user', content: prompt }],
+      });
+      const message = await stream.finalMessage();
+      if (message.stop_reason === 'refusal') throw new AiError('The model declined to analyze these conversations');
+      if (message.stop_reason === 'max_tokens') throw new AiError('The report was cut off (too long); try fewer numbers or a shorter period');
+      return {
+        text: message.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join(''),
+        model: message.model,
+        inputTokens: message.usage.input_tokens + (message.usage.cache_read_input_tokens ?? 0) + (message.usage.cache_creation_input_tokens ?? 0),
+        outputTokens: message.usage.output_tokens,
+      };
+    },
+  };
+}
+
+/** The report's JSON Schema for Gemini's structured output (it takes no `$schema` key). */
+const geminiSchema = (() => {
+  const { $schema: _, ...schema } = z.toJSONSchema(reportSchema) as Record<string, unknown>;
+  return schema;
+})();
+
+type GeminiResponse = {
+  candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] }; finishReason?: string }[];
+  promptFeedback?: { blockReason?: string };
+  usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number };
+  modelVersion?: string;
+  error?: { code?: number; message?: string; status?: string };
+};
+
+function geminiAnalyst(key: string): Analyst {
+  return {
+    name: GEMINI_MODEL,
+    async analyze(system, prompt) {
+      const body = JSON.stringify({
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: { responseMimeType: 'application/json', responseJsonSchema: geminiSchema, maxOutputTokens: 65_536 },
+      });
+      // A busy model (500/503) is tried again a couple of times before giving up.
+      for (let attempt = 0; ; attempt++) {
+        let res: Response;
+        try {
+          res = await fetch(`${GEMINI_URL}/${encodeURIComponent(GEMINI_MODEL)}:generateContent`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
+            body,
+            signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
+          });
+        } catch (err) {
+          throw new AiError((err as Error).name === 'TimeoutError' ? 'The AI service took too long; try a shorter period' : 'Could not reach the AI service (Gemini)');
+        }
+        const data = (await res.json().catch(() => ({}))) as GeminiResponse;
+        if ((res.status === 500 || res.status === 503) && attempt < 2) {
+          await new Promise((r) => setTimeout(r, (attempt + 1) * 8_000));
+          continue;
+        }
+        if (res.status === 401 || res.status === 403 || (res.status === 400 && data.error?.status === 'INVALID_ARGUMENT' && /api key/i.test(data.error.message ?? '')))
+          throw new AiError('The AI key (GEMINI_API_KEY) was refused');
+        if (res.status === 429) throw new AiError('The Gemini quota is used up for now; try again later (or use a paid Gemini key)');
+        if (!res.ok) throw new AiError(`AI service error (Gemini ${res.status}${data.error?.message ? `: ${data.error.message.slice(0, 160)}` : ''})`);
+        if (data.promptFeedback?.blockReason) throw new AiError('The model declined to analyze these conversations');
+        const candidate = data.candidates?.[0];
+        if (candidate?.finishReason === 'MAX_TOKENS') throw new AiError('The report was cut off (too long); try fewer numbers or a shorter period');
+        if (candidate?.finishReason && candidate.finishReason !== 'STOP') throw new AiError('The model declined to analyze these conversations');
+        const usage = data.usageMetadata ?? {};
+        return {
+          text: (candidate?.content?.parts ?? []).flatMap((p) => (p.text && !p.thought ? [p.text] : [])).join(''),
+          model: data.modelVersion ?? GEMINI_MODEL,
+          inputTokens: usage.promptTokenCount ?? 0,
+          outputTokens: (usage.candidatesTokenCount ?? 0) + (usage.thoughtsTokenCount ?? 0),
+        };
+      }
+    },
+  };
+}
 
 function clip(text: string | null, max = MAX_TEXT) {
   if (!text) return '';
@@ -327,19 +426,23 @@ export function chatAnalysisRoutes(deps: Deps): FastifyPluginAsyncZod {
   const { sql } = deps;
   const jobs = new Map<string, Job>();
   let client: Anthropic | null = null;
-  /** The API key comes from the environment (ANTHROPIC_API_KEY); without one the feature is off. */
-  const claude = () => {
-    if (client) return client;
-    if (!process.env.ANTHROPIC_API_KEY?.trim() && !process.env.ANTHROPIC_AUTH_TOKEN?.trim()) return null;
-    client = new Anthropic();
-    return client;
+  /**
+   * The models to ask, in order, from the environment: Claude (ANTHROPIC_API_KEY), then Gemini
+   * (GEMINI_API_KEY). Neither key = the feature is off.
+   */
+  const analysts = (): Analyst[] => {
+    const out: Analyst[] = [];
+    if (process.env.ANTHROPIC_API_KEY?.trim() || process.env.ANTHROPIC_AUTH_TOKEN?.trim()) out.push(claudeAnalyst((client ??= new Anthropic())));
+    const gemini = process.env.GEMINI_API_KEY?.trim();
+    if (gemini) out.push(geminiAnalyst(gemini));
+    return out;
   };
   const prune = () => {
     const cutoff = Date.now() - KEEP_MS;
     for (const [id, j] of jobs) if (j.status !== 'running' && new Date(j.finishedAt ?? j.startedAt).getTime() < cutoff) jobs.delete(id);
   };
 
-  async function run(job: Job, client: Anthropic, sessionIds: string[] | null, days: number, lang: 'ar' | 'en', log: FastifyBaseLogger) {
+  async function run(job: Job, ais: Analyst[], sessionIds: string[] | null, days: number, lang: 'ar' | 'en', log: FastifyBaseLogger) {
     try {
       const data = await collectInbox(sql, job.workspaceId, sessionIds, days);
       if (!data) throw new Error('No numbers to analyze');
@@ -349,7 +452,7 @@ export function chatAnalysisRoutes(deps: Deps): FastifyPluginAsyncZod {
         report: null,
         chats: data.chats,
         numbers: data.numbers,
-        meta: { days, since: data.since.toISOString(), chatsAnalyzed: Object.keys(data.chats).length, messagesAnalyzed: data.messages, model: MODEL, inputTokens: 0, outputTokens: 0, generatedAt: null },
+        meta: { days, since: data.since.toISOString(), chatsAnalyzed: Object.keys(data.chats).length, messagesAnalyzed: data.messages, model: ais[0]!.name, inputTokens: 0, outputTokens: 0, generatedAt: null },
       };
       job.result = result;
       if (result.meta.chatsAnalyzed === 0) {
@@ -360,20 +463,20 @@ export function chatAnalysisRoutes(deps: Deps): FastifyPluginAsyncZod {
       }
       job.phase = 'analyzing';
       const language = lang === 'ar' ? 'Arabic (clear Modern Standard Arabic an Egyptian business owner reads easily)' : 'English';
-      const stream = client.beta.messages.stream({
-        model: MODEL,
-        max_tokens: 64_000,
-        betas: ['server-side-fallback-2026-07-01'],
-        fallbacks: 'default',
-        output_config: { effort: 'high', format: betaZodOutputFormat(reportSchema) },
-        system: `${SYSTEM}\n\nWrite every text field in ${language}. Keep refs (n1, c7) and the status, mood and priority values exactly as given (in English).`,
-        messages: [{ role: 'user', content: data.prompt }],
-      });
-      const message = await stream.finalMessage();
-      if (message.stop_reason === 'refusal') throw new Error('The model declined to analyze these conversations');
-      if (message.stop_reason === 'max_tokens') throw new Error('The report was cut off (too long); try fewer numbers or a shorter period');
-      const text = message.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('');
-      const report = reportSchema.parse(JSON.parse(text));
+      const system = `${SYSTEM}\n\nWrite every text field in ${language}. Keep refs (n1, c7) and the status, mood and priority values exactly as given (in English).`;
+      let answer: Answer | null = null;
+      for (const [i, ai] of ais.entries()) {
+        result.meta.model = ai.name;
+        try {
+          answer = await ai.analyze(system, data.prompt);
+          break;
+        } catch (err) {
+          // The Anthropic API failed (key refused, no credit, overloaded): the next model takes over.
+          if (!(err instanceof Anthropic.APIError) || i === ais.length - 1) throw err;
+          log.warn({ err: err.message, status: err.status }, 'chat analysis: Claude failed, trying the next model');
+        }
+      }
+      const report = reportSchema.parse(JSON.parse(answer!.text));
       // Only refs that exist: a customer or number the model made up is dropped.
       result.report = {
         ...report,
@@ -381,8 +484,9 @@ export function chatAnalysisRoutes(deps: Deps): FastifyPluginAsyncZod {
         employees: report.employees.filter((e) => data.numbers[e.ref]),
         recommendations: report.recommendations.map((r) => ({ ...r, priority: oneOf(r.priority, PRIORITIES, 'medium') })),
       };
-      result.meta.inputTokens = message.usage.input_tokens + (message.usage.cache_read_input_tokens ?? 0) + (message.usage.cache_creation_input_tokens ?? 0);
-      result.meta.outputTokens = message.usage.output_tokens;
+      result.meta.model = answer!.model;
+      result.meta.inputTokens = answer!.inputTokens;
+      result.meta.outputTokens = answer!.outputTokens;
       result.meta.generatedAt = new Date().toISOString();
       job.status = 'done';
       job.phase = 'done';
@@ -390,15 +494,17 @@ export function chatAnalysisRoutes(deps: Deps): FastifyPluginAsyncZod {
       log.warn({ err }, 'chat analysis failed');
       job.status = 'failed';
       job.error =
-        err instanceof Anthropic.AuthenticationError || err instanceof Anthropic.PermissionDeniedError
-          ? 'The AI key (ANTHROPIC_API_KEY) was refused'
-          : err instanceof Anthropic.RateLimitError
-            ? 'The AI service is busy; try again in a minute'
-            : err instanceof Anthropic.APIError
-              ? `AI service error (${err.status ?? 'network'})`
-              : err instanceof SyntaxError || err instanceof z.ZodError
-                ? 'The AI answer could not be read; try again'
-                : (err as Error).message;
+        err instanceof AiError
+          ? err.message
+          : err instanceof Anthropic.AuthenticationError || err instanceof Anthropic.PermissionDeniedError
+            ? 'The AI key (ANTHROPIC_API_KEY) was refused'
+            : err instanceof Anthropic.RateLimitError
+              ? 'The AI service is busy; try again in a minute'
+              : err instanceof Anthropic.APIError
+                ? `AI service error (${err.status ?? 'network'})`
+                : err instanceof SyntaxError || err instanceof z.ZodError
+                  ? 'The AI answer could not be read; try again'
+                  : (err as Error).message;
     } finally {
       job.finishedAt ??= new Date().toISOString();
     }
@@ -421,8 +527,8 @@ export function chatAnalysisRoutes(deps: Deps): FastifyPluginAsyncZod {
       },
       async (req) => {
         requireAdmin(req);
-        const ai = claude();
-        if (!ai) throw unavailable('AI analysis is not configured: set ANTHROPIC_API_KEY on the API server', 'ai_unavailable');
+        const ai = analysts();
+        if (ai.length === 0) throw unavailable('AI analysis is not configured: set ANTHROPIC_API_KEY (or GEMINI_API_KEY) on the API server', 'ai_unavailable');
         prune();
         const running = [...jobs.values()].find((j) => j.workspaceId === req.auth.workspaceId && j.status === 'running');
         if (running) throw conflict('An analysis is already running', 'analysis_running');
