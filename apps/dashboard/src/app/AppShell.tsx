@@ -39,6 +39,7 @@ import { prefetchAllPages, prefetchPage } from '../prefetch';
 import { Link, navigate, usePath } from '../router';
 import type { ChatNumber } from './chats/model';
 import { notificationsOn, NoteStack, useInboxNotes } from './chats/Notifier';
+import { OPEN_CHAT_EVENT, type OpenChatDetail, ReadNoteStack, useReadNotes } from './chats/ReadNotes';
 import { Button, buttonClass, cx, ErrorNote, Field, flip, LangSwitch, Logo, LogoMark, Modal, SuccessNote, ThemeSwitch, usePlanName, VerifiedMark } from '../ui';
 import { type Account, AccountContext, isUnlimitedPlan, planState, useAccount } from './account';
 
@@ -585,6 +586,29 @@ function InboxAlerts({ account, path }: { account: Account; path: string }) {
   return <NoteStack notes={inbox.notes} onOpen={inbox.open} onDismiss={inbox.dismiss} />;
 }
 
+/** The chats page has this chat open (the URL carries it): its blue ticks already say it was read. */
+function lookingAt(sessionId: string, jid: string) {
+  if (location.pathname !== '/chats') return false;
+  const params = new URLSearchParams(location.search);
+  return params.get('session') === sessionId && params.get('chat') === jid;
+}
+
+/** "Your message was read", on every page (the chats page included). A notice opens its chat. */
+function ReadAlerts({ account }: { account: Account }) {
+  const reads = useReadNotes({ enabled: chatsAllowed(account), isLooking: lookingAt });
+  return (
+    <ReadNoteStack
+      notes={reads.notes}
+      onDismiss={reads.dismiss}
+      onOpen={(note) => {
+        // Already on the chats page: it opens the chat itself (a navigation wouldn't reach it).
+        if (location.pathname === '/chats') window.dispatchEvent(new CustomEvent<OpenChatDetail>(OPEN_CHAT_EVENT, { detail: { sessionId: note.sessionId, jid: note.jid } }));
+        else navigate(`/chats?${new URLSearchParams({ session: note.sessionId, chat: note.jid })}`);
+      }}
+    />
+  );
+}
+
 export function AppShell({ children, account }: { children: ReactNode; account: Account }) {
   const { t } = useI18n();
   const path = usePath();
@@ -616,6 +640,7 @@ export function AppShell({ children, account }: { children: ReactNode; account: 
   return (
     <AccountContext.Provider value={context}>
       <InboxAlerts account={account} path={path} />
+      <ReadAlerts account={account} />
       <div className="flex min-h-svh bg-surface">
         <aside className={cx('sticky top-0 hidden h-svh shrink-0 px-2 py-2 transition-[width] duration-300 ease-out md:block', collapsed ? 'w-[72px]' : 'w-[272px]')}>
           <div className="h-full overflow-hidden rounded-2xl border border-line bg-card shadow-lg">

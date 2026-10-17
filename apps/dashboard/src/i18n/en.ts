@@ -1994,6 +1994,10 @@ export const en: Dict = {
       previous: 'Previous',
       next: 'Next',
     },
+    readNote: {
+      title: 'Your message was read',
+      many: (n) => `${n} messages read`,
+    },
     notify: {
       now: 'now',
       newMessage: 'New message',
@@ -2195,6 +2199,7 @@ export const en: Dict = {
       notify: 'Message notifications',
       privacy: 'Private mode',
       cross: 'Send between numbers',
+      readNotify: 'Notify me when my messages are read',
     },
     receipts: 'Send read receipts (blue ticks)',
     panel: {

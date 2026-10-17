@@ -29,7 +29,7 @@ import {
   Split,
   WifiOff,
 } from 'lucide-react';
-import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type FormEvent, type ReactNode, useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { api, errorMessage } from '../api';
 import { useAccount } from '../app/account';
 import { ChatList, TypingDots } from '../app/chats/ChatList';
@@ -45,6 +45,7 @@ import { AI_REPORT_SOON, AiReport, AiReportSoon } from '../app/chats/AiReport';
 import { setCrossSend, useCrossSend } from '../app/chats/crossSend';
 import { GlobalSearch } from '../app/chats/GlobalSearch';
 import { LiveBanner } from '../app/chats/LiveBanner';
+import { OPEN_CHAT_EVENT, type OpenChatDetail, READ_NOTIFY_KEY, readNotesOn } from '../app/chats/ReadNotes';
 import { restoreOutbox } from '../app/chats/outbox';
 import { NumberSwitcher } from '../app/chats/NumberSwitcher';
 import { AccountsSplit, type OpenChats, type OpenRequest } from '../app/chats/AccountsSplit';
@@ -188,6 +189,8 @@ function PrefsMenu({
   onNotify,
   privacy,
   onPrivacy,
+  readNotify,
+  onReadNotify,
   cross,
 }: {
   receipts: boolean;
@@ -196,6 +199,8 @@ function PrefsMenu({
   onNotify: () => void;
   privacy: boolean;
   onPrivacy: () => void;
+  readNotify: boolean;
+  onReadNotify: () => void;
   /** Admins only. */
   cross?: { on: boolean; onToggle: () => void };
 }) {
@@ -245,6 +250,7 @@ function PrefsMenu({
           </p>
           <PrefItem icon={CheckCheck} label={p.receipts} on={receipts} onClick={onReceipts} />
           <PrefItem icon={notifyOn ? Bell : BellOff} label={p.notify} on={notifyOn} onClick={onNotify} />
+          <PrefItem icon={CheckCheck} label={p.readNotify} on={readNotify} onClick={onReadNotify} />
           <PrefItem icon={privacy ? EyeOff : Eye} label={p.privacy} on={privacy} onClick={onPrivacy} />
           {cross && <PrefItem icon={Split} label={p.cross} on={cross.on} onClick={cross.onToggle} />}
         </div>
@@ -542,6 +548,15 @@ export function ChatsPage() {
     setView('chats');
     setPendingJid(note.jid);
   };
+  // A "your message was read" notice clicked while this page is open (see ReadNotes.tsx).
+  const openFromNotice = useEffectEvent((detail: OpenChatDetail) => openNote(detail));
+  useEffect(() => {
+    const onOpen = (e: Event) => openFromNotice((e as CustomEvent<OpenChatDetail>).detail);
+    window.addEventListener(OPEN_CHAT_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_CHAT_EVENT, onOpen);
+  }, []);
+  const [readNotify, setReadNotify] = useState(readNotesOn);
+
   const openHit = (sessionId: string, jid: string, q: string) => {
     setGlobalSearch(false);
     if (focus.mode === 'accounts') return setOpenRequest((r) => ({ sessionId, jid, q, seq: (r?.seq ?? 0) + 1 }));
@@ -841,6 +856,13 @@ export function ChatsPage() {
                 onNotify={() => void toggleNotify()}
                 privacy={privacy}
                 onPrivacy={() => setPrivacyMode(!privacy)}
+                readNotify={readNotify}
+                onReadNotify={() =>
+                  setReadNotify((on) => {
+                    write(READ_NOTIFY_KEY, on ? '0' : '1');
+                    return !on;
+                  })
+                }
                 cross={isAdmin ? { on: crossSend, onToggle: () => setCrossSend(!crossSend) } : undefined}
               />
             </div>

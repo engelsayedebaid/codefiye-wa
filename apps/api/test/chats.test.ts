@@ -264,6 +264,18 @@ describe.skipIf(!url)('chats api (integration)', () => {
     // Only our own failed messages, and not twice.
     expect((await call('POST', `/api/chats/${sessionId}/resend`, admin.pat, { messageId: failed!.id })).json()).toMatchObject({ code: 'not_resendable' });
     expect((await call('POST', `/api/chats/${sessionId}/resend`, admin.pat, { messageId: first.json().data.id })).json()).toMatchObject({ code: 'not_resendable' });
+
+    // What "read" notices show: messages written on the chats page, with their chat — only the workspace's own.
+    const [inbound] = await sql<{ id: number }[]>`select id from messages where session_id = ${sessionId} and direction = 'in' limit 1`;
+    const [fromApi] = await sql<{ id: number }[]>`select id from messages where session_id = ${sessionId} and direction = 'out' and content->>'sentFrom' is null limit 1`;
+    const ids = [first.json().data.id, inbound!.id, fromApi!.id].join(',');
+    const briefs = await call('GET', `/api/chats/messages/briefs?ids=${ids}`, admin.pat);
+    expect(briefs.statusCode, briefs.body).toBe(200);
+    expect(briefs.json().data).toEqual([
+      expect.objectContaining({ id: first.json().data.id, sessionId, chatJid: PHONE, phone: '+201055500011', isGroup: false, text: 'Try me again' }),
+    ]);
+    expect((await call('GET', `/api/chats/messages/briefs?ids=${ids}`, business.pat)).json().data).toEqual([]);
+    expect((await call('GET', '/api/chats/messages/briefs?ids=1,x', admin.pat)).statusCode).toBe(422);
   });
 
   it('reports insights for a number', async () => {

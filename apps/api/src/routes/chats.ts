@@ -663,6 +663,67 @@ export function chatRoutes(deps: Deps): FastifyPluginAsyncZod {
       },
     );
 
+    app.get(
+      '/messages/briefs',
+      {
+        schema: {
+          ...schemaBase,
+          summary: 'Messages written on the chats page, with their chats: what "read" notices show',
+          description: 'Ids that are not ours, not outbound, or not written on the chats page (API, campaign, phone) are left out.',
+          querystring: z.object({
+            ids: z
+              .string()
+              .regex(/^\d+(,\d+){0,49}$/, 'Up to 50 comma-separated ids')
+              .transform((v) => [...new Set(v.split(',').map(Number))]),
+          }),
+          response: {
+            200: successSchema(
+              z.array(z.object({
+                id: z.number(),
+                sessionId: z.string(),
+                chatJid: z.string(),
+                name: z.string().nullable(),
+                phone: z.string().nullable(),
+                isGroup: z.boolean(),
+                type: z.enum(MESSAGE_TYPES),
+                text: z.string().nullable(),
+                status: z.enum(MESSAGE_STATUSES),
+              })),
+            ),
+          },
+        },
+      },
+      async (req) => {
+        const rows = await sql<
+          { id: number; session_id: string; remote_jid: string; chat_jid: string | null; name: string | null; type: MessageType; text: string | null; status: MessageStatus }[]
+        >`
+          select m.id, m.session_id, m.remote_jid, c.jid as chat_jid, m.type, m.status,
+            left(coalesce(m.content->>'text', m.content->>'caption', m.content->>'name'), 200) as text,
+            case when c.jid is not null then chat_display_name(c.session_id, c.jid, c.alt_jid, c.name) end as name
+          from messages m
+          left join chats c on c.session_id = m.session_id and (c.jid = m.remote_jid or c.alt_jid = m.remote_jid)
+          where m.id = any(${req.query.ids}::bigint[]) and m.workspace_id = ${req.auth.workspaceId}
+            and m.direction = 'out' and m.content->>'sentFrom' = 'chats'
+          order by m.id`;
+        return ok(
+          rows.map((row) => {
+            const chatJid = row.chat_jid ?? row.remote_jid;
+            return {
+              id: row.id,
+              sessionId: row.session_id,
+              chatJid,
+              name: row.name,
+              phone: jidToPhone(chatJid),
+              isGroup: chatJid.endsWith('@g.us'),
+              type: row.type,
+              text: row.text,
+              status: row.status,
+            };
+          }),
+        );
+      },
+    );
+
     app.post(
       '/:sessionId/resend',
       {

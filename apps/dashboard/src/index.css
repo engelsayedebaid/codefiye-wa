@@ -361,6 +361,27 @@ body {
 .note-drain {
   animation: note-drain var(--note-ms, 7000ms) linear forwards;
 }
+/* "Read" notice: the blue ticks pop in a beat after the card arrives. */
+@keyframes read-pop {
+  0%,
+  35% {
+    transform: scale(0);
+  }
+  70% {
+    transform: scale(1.25);
+  }
+  100% {
+    transform: none;
+  }
+}
+.read-pop {
+  animation: read-pop 0.7s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .read-pop {
+    animation: none;
+  }
+}
 .note-stack:hover .note-drain,
 .note-stack:focus-within .note-drain {
   animation-play-state: paused;
