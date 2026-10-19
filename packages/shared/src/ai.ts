@@ -87,6 +87,10 @@ export class AiError extends Error {
     message: string,
     /** The provider's own status code, when there was one. */
     readonly status?: number,
+    /** Whether trying another key can safely help. */
+    readonly scope: 'key' | 'provider' | 'request' = 'provider',
+    /** A provider-supplied retry delay, when available. */
+    readonly retryAfterMs?: number,
   ) {
     super(message);
     this.name = 'AiError';
@@ -123,11 +127,44 @@ const DEFAULT_TIMEOUT_MS = 45_000;
 
 /** The body a provider refused, in one short line for the dashboard. */
 async function refusal(res: Response, body: string): Promise<never> {
-  const text = body.slice(0, 200);
-  if (res.status === 401 || res.status === 403) throw new AiError('The API key was refused by the provider', res.status);
-  if (res.status === 429) throw new AiError('The provider is out of quota (429); try another provider or wait', res.status);
-  if (res.status === 404) throw new AiError('The model was not found (404); check the model name', res.status);
-  throw new AiError(`The provider answered ${res.status}${text ? `: ${text}` : ''}`, res.status);
+  const retryHeader = res.headers.get('retry-after');
+  const retrySeconds = retryHeader && /^\d+(?:\.\d+)?$/.test(retryHeader.trim()) ? Number(retryHeader) : null;
+  const retryDate = retryHeader && retrySeconds === null ? Date.parse(retryHeader) : Number.NaN;
+  const retryAfterMs = retrySeconds !== null
+    ? Math.max(0, Math.ceil(retrySeconds * 1_000))
+    : Number.isFinite(retryDate)
+      ? Math.max(0, retryDate - Date.now())
+      : undefined;
+  if (res.status === 401 || res.status === 403) {
+    throw new AiError('The API key was refused by the provider', res.status, 'key');
+  }
+  if (res.status === 429) {
+    // A hard account/project quota applies to every key in that account. Do not burn through keys
+    // when the provider explicitly says that is the restriction; move to the fallback provider.
+    const detail = body.toLowerCase();
+    const providerWide = [
+      'insufficient_quota',
+      'billing',
+      'hard limit',
+      'monthly limit',
+      'daily limit',
+      'organization',
+      'organisation',
+      'project quota',
+      'resource_exhausted',
+    ].some((marker) => detail.includes(marker));
+    throw new AiError(
+      'The provider is rate-limited or out of quota (429)',
+      res.status,
+      providerWide ? 'provider' : 'key',
+      retryAfterMs,
+    );
+  }
+  if (res.status === 400) throw new AiError('The provider rejected the request (400); check the model and settings', res.status, 'request');
+  if (res.status === 404) throw new AiError('The model was not found (404); check the model name', res.status, 'request');
+  // Deliberately omit the response body. Some compatible servers echo headers or request data,
+  // which must never put an API key, prompt, or customer message in application logs.
+  throw new AiError(`The provider answered ${res.status}`, res.status, res.status >= 500 ? 'provider' : 'request', retryAfterMs);
 }
 
 async function post(url: string, headers: Record<string, string>, body: unknown, timeoutMs: number): Promise<{ data: any; res: Response }> {
@@ -141,9 +178,9 @@ async function post(url: string, headers: Record<string, string>, body: unknown,
     });
   } catch (err) {
     if ((err as Error).name === 'TimeoutError' || (err as Error).name === 'AbortError') {
-      throw new AiError('The provider took too long to answer');
+      throw new AiError('The provider took too long to answer', undefined, 'provider');
     }
-    throw new AiError(`Could not reach the provider: ${(err as Error).message}`);
+    throw new AiError('Could not reach the provider', undefined, 'provider');
   }
   const text = await res.text();
   if (!res.ok) await refusal(res, text);

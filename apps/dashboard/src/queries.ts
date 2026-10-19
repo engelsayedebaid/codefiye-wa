@@ -47,6 +47,7 @@ export const qk = {
   autoReply: {
     all: ['auto-reply'] as const,
     providers: ['auto-reply', 'providers'] as const,
+    providerKeys: (providerId: string) => ['auto-reply', 'providers', providerId, 'keys'] as const,
     numbers: ['auto-reply', 'numbers'] as const,
     log: (params: { sessionId: string; status: string }) => ['auto-reply', 'log', params] as const,
     stats: (days: number) => ['auto-reply', 'stats', days] as const,

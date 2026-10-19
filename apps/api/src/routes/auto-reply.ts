@@ -2,6 +2,7 @@ import {
   addAiProviderKey,
   deleteAiProviderKey,
   listAutoReplySettings,
+  loadAvailableAiProviderKeys,
   loadAiProviderKeys,
   resetAiKeyCircuit,
   saveAutoReplySettings,
@@ -49,6 +50,8 @@ const providerDto = z.object({
   hasKey: z.boolean(),
   /** The last characters of the key, to tell two keys apart. */
   keyHint: z.string().nullable(),
+  keyCount: z.number(),
+  activeKeyCount: z.number(),
   baseUrl: z.string().nullable(),
   model: z.string().nullable(),
   needsKey: z.boolean(),
@@ -74,6 +77,7 @@ const providerKeyDto = z.object({
   consecutiveFailures: z.number(),
   createdAt: z.string(),
   updatedAt: z.string(),
+  keyHint: z.string().nullable(),
 });
 
 const ruleSchema = z.object({
@@ -184,18 +188,24 @@ export function autoReplyRoutes(deps: Deps): FastifyPluginAsyncZod {
       { schema: { ...schemaBase, summary: 'The AI providers and their settings', response: { 200: successSchema(z.object({ providers: z.array(providerDto) })) } } },
       async () => {
         const rows = await sql<
-          { id: string; enabled: boolean; api_key: Buffer | null; base_url: string | null; model: string | null }[]
-        >`select id, enabled, api_key, base_url, model from ai_providers`;
+          { id: string; enabled: boolean; base_url: string | null; model: string | null }[]
+        >`select id, enabled, base_url, model from ai_providers`;
+        const keyRows = await sql<{ provider_id: string; api_key: Buffer; enabled: boolean }[]>`
+          select provider_id, api_key, enabled from ai_provider_keys order by priority, created_at`;
         const byId = new Map(rows.map((r) => [r.id, r]));
         const providers = (Object.keys(AI_PROVIDERS) as AiProviderId[]).map((id) => {
           const info = AI_PROVIDERS[id];
           const row = byId.get(id);
-          const key = row ? (deps.encryptionKey ? openAiKey(deps.encryptionKey, id, row.api_key) : null) : null;
+          const keys = keyRows.filter((key) => key.provider_id === id);
+          const first = keys[0];
+          const key = first && deps.encryptionKey ? openAiKey(deps.encryptionKey, id, first.api_key) : null;
           return {
             id,
             enabled: row?.enabled ?? false,
-            hasKey: Boolean(row?.api_key),
+            hasKey: keys.length > 0,
             keyHint: hint(key),
+            keyCount: keys.length,
+            activeKeyCount: keys.filter((entry) => entry.enabled).length,
             baseUrl: row?.base_url ?? (info.baseUrl || null),
             model: row?.model ?? null,
             needsKey: info.needsKey,
@@ -216,9 +226,9 @@ export function autoReplyRoutes(deps: Deps): FastifyPluginAsyncZod {
           params: z.object({ id: providerId }),
           body: z.object({
             enabled: z.boolean().optional(),
-            /** The key, in plain text; it is sealed before it touches the database. */
+            /** Backward-compatible shortcut: adds a key. New clients use /keys. */
             apiKey: z.string().min(8).max(500).optional(),
-            /** Forget the stored key. */
+            /** Backward-compatible shortcut: removes every provider key. */
             removeKey: z.boolean().optional(),
             baseUrl: z.string().url().max(300).nullable().optional(),
             model: z.string().max(120).optional(),
@@ -229,23 +239,30 @@ export function autoReplyRoutes(deps: Deps): FastifyPluginAsyncZod {
       async (req) => {
         const { id } = req.params;
         const info = AI_PROVIDERS[id];
-        const [current] = await sql<{ enabled: boolean; api_key: Buffer | null; base_url: string | null; model: string | null }[]>`
-          select enabled, api_key, base_url, model from ai_providers where id = ${id}`;
-        const key = req.body.removeKey ? null : req.body.apiKey ? sealAiKey(masterKey(), id, req.body.apiKey) : (current?.api_key ?? null);
+        const [current] = await sql<{ enabled: boolean; base_url: string | null; model: string | null }[]>`
+          select enabled, base_url, model from ai_providers where id = ${id}`;
         const baseUrl = req.body.baseUrl === undefined ? (current?.base_url ?? (info.baseUrl || null)) : req.body.baseUrl;
         const model = req.body.model === undefined ? (current?.model ?? null) : req.body.model || null;
         const enabled = req.body.enabled ?? current?.enabled ?? false;
-        if (enabled && info.needsKey && !key) throw unprocessable('This provider needs an API key', { apiKey: ['Add the key first'] });
+        const [keyCount] = await sql<{ count: number }[]>`
+          select count(*)::int as count from ai_provider_keys where provider_id = ${id} and enabled = true`;
+        const resultingKeys = req.body.removeKey ? 0 : (keyCount?.count ?? 0) + (req.body.apiKey ? 1 : 0);
+        if (enabled && info.needsKey && resultingKeys === 0) {
+          throw unprocessable('This provider needs an enabled API key', { apiKey: ['Add a key first'] });
+        }
         if (enabled && id === 'custom' && !baseUrl) throw unprocessable('A custom provider needs a base URL', { baseUrl: ['Add the address of your OpenAI-compatible server'] });
         await sql`
-          insert into ai_providers (id, enabled, base_url, model, api_key)
-          values (${id}, ${enabled}, ${baseUrl}, ${model}, ${key})
+          insert into ai_providers (id, enabled, base_url, model)
+          values (${id}, ${enabled}, ${baseUrl}, ${model})
           on conflict (id) do update set
             enabled = excluded.enabled,
             base_url = excluded.base_url,
             model = excluded.model,
-            api_key = excluded.api_key,
             updated_at = now()`;
+        if (req.body.removeKey) await sql`delete from ai_provider_keys where provider_id = ${id}`;
+        if (req.body.apiKey) {
+          await addAiProviderKey(sql, id, 'Primary key', sealAiKey(masterKey(), id, req.body.apiKey));
+        }
         return ok({ saved: true });
       },
     );
@@ -263,18 +280,23 @@ export function autoReplyRoutes(deps: Deps): FastifyPluginAsyncZod {
       },
       async (req) => {
         const { id } = req.params;
-        const [row] = await sql<{ api_key: Buffer | null; base_url: string | null; model: string | null }[]>`
-          select api_key, base_url, model from ai_providers where id = ${id}`;
-        const key = row ? openAiKey(masterKey(), id, row.api_key) : null;
+        const [row] = await sql<{ enabled: boolean; base_url: string | null; model: string | null }[]>`
+          select enabled, base_url, model from ai_providers where id = ${id}`;
         const info = AI_PROVIDERS[id];
         const model = req.body.model?.trim() || row?.model?.trim() || info.defaultModel;
+        const keys = await loadAvailableAiProviderKeys(sql, id);
+        const selected = keys[0];
+        if (!row?.enabled) throw unprocessable('Enable this provider before testing it');
+        if (info.needsKey && !selected) throw unprocessable('This provider has no available API key');
+        const key = selected ? openAiKey(masterKey(), id, selected.apiKey) : '';
+        if (selected && !key) throw unprocessable('The selected API key cannot be decrypted');
         const started = Date.now();
         try {
           const answer = await generateText({
             provider: id,
             apiKey: key ?? '',
-            baseUrl: row?.base_url ?? undefined,
-            model,
+            baseUrl: selected?.baseUrl ?? row?.base_url ?? undefined,
+            model: selected?.model?.trim() || model,
             system: 'You are a test. Answer with one short word.',
             messages: [{ role: 'user', content: 'Say: ready' }],
             temperature: 0,
@@ -305,7 +327,7 @@ export function autoReplyRoutes(deps: Deps): FastifyPluginAsyncZod {
         const keys = await loadAiProviderKeys(sql, id);
         const keyDtos = keys.map((k) => ({
           id: k.id,
-          providerId: k.providerId,
+          providerId: k.providerId as AiProviderId,
           label: k.label,
           enabled: k.enabled,
           priority: k.priority,
@@ -321,6 +343,7 @@ export function autoReplyRoutes(deps: Deps): FastifyPluginAsyncZod {
           consecutiveFailures: k.consecutiveFailures,
           createdAt: k.createdAt.toISOString(),
           updatedAt: k.updatedAt.toISOString(),
+          keyHint: hint(deps.encryptionKey ? openAiKey(deps.encryptionKey, id, k.apiKey) : null),
         }));
         return ok({ keys: keyDtos });
       },
@@ -345,18 +368,11 @@ export function autoReplyRoutes(deps: Deps): FastifyPluginAsyncZod {
       },
       async (req) => {
         const { id } = req.params;
-        const keyId = await addAiProviderKey(
-          sql,
-          id,
-          req.body.label,
-          req.body.apiKey,
-          masterKey(),
-          {
+        const keyId = await addAiProviderKey(sql, id, req.body.label, sealAiKey(masterKey(), id, req.body.apiKey), {
             priority: req.body.priority,
             model: req.body.model,
             baseUrl: req.body.baseUrl,
-          },
-        );
+          });
         return ok({ keyId });
       },
     );
@@ -381,20 +397,15 @@ export function autoReplyRoutes(deps: Deps): FastifyPluginAsyncZod {
       },
       async (req) => {
         const { id, keyId } = req.params;
-        await updateAiProviderKey(
-          sql,
-          keyId,
-          {
+        const updated = await updateAiProviderKey(sql, id, keyId, {
             label: req.body.label,
-            apiKey: req.body.apiKey,
+            encryptedApiKey: req.body.apiKey ? sealAiKey(masterKey(), id, req.body.apiKey) : undefined,
             enabled: req.body.enabled,
             priority: req.body.priority,
             model: req.body.model,
             baseUrl: req.body.baseUrl,
-          },
-          masterKey(),
-          id,
-        );
+          });
+        if (!updated) throw notFound('AI provider key not found');
         return ok({ updated: true });
       },
     );
@@ -410,8 +421,8 @@ export function autoReplyRoutes(deps: Deps): FastifyPluginAsyncZod {
         },
       },
       async (req) => {
-        const { keyId } = req.params;
-        await deleteAiProviderKey(sql, keyId);
+        const { id, keyId } = req.params;
+        if (!await deleteAiProviderKey(sql, id, keyId)) throw notFound('AI provider key not found');
         return ok({ deleted: true });
       },
     );
@@ -427,9 +438,48 @@ export function autoReplyRoutes(deps: Deps): FastifyPluginAsyncZod {
         },
       },
       async (req) => {
-        const { keyId } = req.params;
-        await resetAiKeyCircuit(sql, keyId);
+        const { id, keyId } = req.params;
+        if (!await resetAiKeyCircuit(sql, id, keyId)) throw notFound('AI provider key not found');
         return ok({ reset: true });
+      },
+    );
+
+    app.post(
+      '/providers/:id/keys/:keyId/test',
+      {
+        schema: {
+          ...schemaBase,
+          summary: 'Test one AI provider key',
+          params: z.object({ id: providerId, keyId: z.uuid() }),
+          response: { 200: successSchema(z.object({ ok: z.boolean(), model: z.string(), reply: z.string(), latencyMs: z.number() })) },
+        },
+      },
+      async (req) => {
+        const { id, keyId } = req.params;
+        const key = (await loadAiProviderKeys(sql, id)).find((entry) => entry.id === keyId);
+        if (!key) throw notFound('AI provider key not found');
+        const [provider] = await sql<{ base_url: string | null; model: string | null }[]>`
+          select base_url, model from ai_providers where id = ${id}`;
+        const plaintext = openAiKey(masterKey(), id, key.apiKey);
+        if (!plaintext) throw unprocessable('This API key cannot be decrypted');
+        const started = Date.now();
+        try {
+          const answer = await generateText({
+            provider: id,
+            apiKey: plaintext,
+            baseUrl: key.baseUrl ?? provider?.base_url ?? undefined,
+            model: key.model?.trim() || provider?.model?.trim() || AI_PROVIDERS[id].defaultModel,
+            system: 'You are a test. Answer with one short word.',
+            messages: [{ role: 'user', content: 'Say: ready' }],
+            temperature: 0,
+            maxTokens: 32,
+            timeoutMs: 20_000,
+          });
+          await resetAiKeyCircuit(sql, id, keyId);
+          return ok({ ok: true, model: answer.model, reply: answer.text, latencyMs: Date.now() - started });
+        } catch (err) {
+          throw unprocessable(err instanceof Error ? err.message : 'The provider did not answer');
+        }
       },
     );
 

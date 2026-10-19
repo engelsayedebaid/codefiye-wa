@@ -67,7 +67,7 @@ export const PERSONALITY_PROMPTS: Record<Exclude<AutoReplyPersonality, 'custom'>
 - لا تَعِد بتاريخ أو سعر نهائي قبل الاتفاق مع الفريق.
 
 تنسيق الرسائل:
-- اكتب نصاً عادياً نظيفاً بدون رموز Markdown مثل ** أو # أو `
+- اكتب نصاً عادياً نظيفاً بدون رموز Markdown مثل ** أو # أو \`
 - استخدم فقرات واضحة مع سطر فارغ بين كل فقرة
 - لا تستخدم عناوين أو رموز تنسيق زائدة
 - كن مختصراً ومباشراً في ردودك`,
@@ -90,7 +90,7 @@ Guidelines:
 - Never commit to a date or a final price before the team agrees to it.
 
 Message formatting:
-- Write clean plain text without Markdown symbols like **, #, or `
+- Write clean plain text without Markdown symbols like **, #, or \`
 - Use clear paragraphs with a blank line between each paragraph
 - Do not use headings or excessive formatting
 - Keep your responses concise and direct`,
@@ -106,7 +106,7 @@ Message formatting:
 - الخدمات المتاحة: {{services}}.
 
 تنسيق الرسائل:
-- اكتب نصاً عادياً نظيفاً بدون رموز Markdown مثل ** أو # أو `
+- اكتب نصاً عادياً نظيفاً بدون رموز Markdown مثل ** أو # أو \`
 - استخدم فقرات واضحة مع سطر فارغ بين كل فقرة
 - لا تستخدم عناوين أو رموز تنسيق زائدة
 - كن مختصراً ومباشراً في ردودك`,
@@ -120,7 +120,7 @@ Guidelines:
 - Services available: {{services}}.
 
 Message formatting:
-- Write clean plain text without Markdown symbols like **, #, or `
+- Write clean plain text without Markdown symbols like **, #, or \`
 - Use clear paragraphs with a blank line between each paragraph
 - Do not use headings or excessive formatting
 - Keep your responses concise and direct`,
@@ -136,7 +136,7 @@ Message formatting:
 - الخدمات: {{services}}. التسعير: {{pricing}}.
 
 تنسيق الرسائل:
-- اكتب نصاً عادياً نظيفاً بدون رموز Markdown مثل ** أو # أو `
+- اكتب نصاً عادياً نظيفاً بدون رموز Markdown مثل ** أو # أو \`
 - استخدم فقرات واضحة مع سطر فارغ بين كل فقرة
 - لا تستخدم عناوين أو رموز تنسيق زائدة
 - كن مختصراً ومباشراً في ردودك`,
@@ -150,7 +150,7 @@ Guidelines:
 - Services: {{services}}. Pricing: {{pricing}}.
 
 Message formatting:
-- Write clean plain text without Markdown symbols like **, #, or `
+- Write clean plain text without Markdown symbols like **, #, or \`
 - Use clear paragraphs with a blank line between each paragraph
 - Do not use headings or excessive formatting
 - Keep your responses concise and direct`,
@@ -242,8 +242,8 @@ export const DEFAULT_AUTO_REPLY_SETTINGS: AutoReplySettings = {
   fallbackModel: '',
   temperature: 0.7,
   maxTokens: 800,
-  delayMinMs: 0,
-  delayMaxMs: 0,
+  delayMinMs: 1_500,
+  delayMaxMs: 4_000,
   businessHoursOnly: false,
   hoursStart: 9,
   hoursEnd: 18,

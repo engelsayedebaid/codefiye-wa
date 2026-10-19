@@ -23,4 +23,8 @@ ALTER TABLE "ai_provider_keys" ADD CONSTRAINT "ai_provider_keys_provider_id_ai_p
 CREATE INDEX "ai_provider_keys_provider_id_priority_enabled_index" ON "ai_provider_keys" USING btree ("provider_id","priority","enabled");--> statement-breakpoint
 CREATE INDEX "ai_provider_keys_cooldown_until_index" ON "ai_provider_keys" USING btree ("cooldown_until");--> statement-breakpoint
 CREATE INDEX "ai_provider_keys_circuit_state_index" ON "ai_provider_keys" USING btree ("circuit_state");--> statement-breakpoint
+INSERT INTO "ai_provider_keys" ("provider_id", "label", "api_key", "model", "base_url")
+SELECT "id", 'Primary key', "api_key", "model", "base_url"
+FROM "ai_providers"
+WHERE "api_key" IS NOT NULL;--> statement-breakpoint
 ALTER TABLE "ai_providers" DROP COLUMN "api_key";

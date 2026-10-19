@@ -12,15 +12,14 @@ import type { Sql } from './client';
 export type AiProviderRow = {
   id: string;
   enabled: boolean;
-  api_key: Buffer | null;
-  base_url: string | null;
+  baseUrl: string | null;
   model: string | null;
 };
 
 /** Loads one AI provider by its id; null when not found. */
 export async function loadAiProvider(sql: Sql, id: string): Promise<AiProviderRow | null> {
-  const [row] = await sql<{ id: string; enabled: boolean; api_key: Buffer | null; base_url: string | null; model: string | null }[]>`
-    select id, enabled, api_key, base_url, model from ai_providers where id = ${id}`;
+  const [row] = await sql<AiProviderRow[]>`
+    select id, enabled, base_url as "baseUrl", model from ai_providers where id = ${id}`;
   return row ?? null;
 }
 

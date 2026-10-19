@@ -41,9 +41,6 @@ const CONTEXT_MESSAGES = 20;
 const MODEL_TIMEOUT_MS = 45_000;
 /** The settings are read once per burst of messages, not once per message. */
 const SETTINGS_TTL_MS = 30_000;
-/** The provider's key and model, refreshed at most this often. */
-const PROVIDER_TTL_MS = 60_000;
-
 export type AutoReplyInput = {
   sessionId: string;
   workspaceId: string;
@@ -131,17 +128,6 @@ export class AutoReplyAgent {
       return;
     }
 
-    // The first provider failed: the fallback answers instead, if there is one.
-    if (settings.fallbackProviderId) {
-      const fallbackStart = Date.now();
-      const second = await this.ask(settings.fallbackProviderId, settings.fallbackModel, system, messages, settings);
-      timings.fallbackCall = Date.now() - fallbackStart;
-      if (second) {
-        await this.send(input, settings, second.text, language, second.provider, second.model, Date.now() - started, started);
-        log.info({ sessionId: input.sessionId, timings, totalMs: Date.now() - started }, 'auto-reply: fallback answered');
-        return;
-      }
-    }
     await recordAutoReply(sql, {
       workspaceId: input.workspaceId,
       sessionId: input.sessionId,
@@ -173,6 +159,7 @@ export class AutoReplyAgent {
     const result = await this.keyManager.executeWithFailover({
       providerId,
       fallbackProviderId: settings.fallbackProviderId,
+      fallbackModel: settings.fallbackModel,
       model: chosen,
       system,
       messages,
@@ -211,7 +198,7 @@ export class AutoReplyAgent {
     const lo = Math.min(settings.delayMinMs, settings.delayMaxMs);
     const hi = Math.max(settings.delayMinMs, settings.delayMaxMs);
     const gap = hi > lo ? randomInt(lo, hi + 1) : lo;
-    const { id: messageId, queuedAt } = await queueAutoReply(sql, {
+    const { id: messageId } = await queueAutoReply(sql, {
       workspaceId: input.workspaceId,
       sessionId: input.sessionId,
       chatJid: input.chatJid,

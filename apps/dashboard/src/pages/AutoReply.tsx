@@ -1,7 +1,7 @@
 import { AI_PROVIDERS, type AiProviderId } from '@wa/shared/ai';
 import { DEFAULT_AUTO_REPLY_SETTINGS, type AutoReplyRule, type AutoReplySettings } from '@wa/shared/auto-reply';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, Bot, Plug, Sparkles, Trash2, Zap } from 'lucide-react';
+import { Activity, Bot, KeyRound, Plug, Plus, RotateCcw, Sparkles, Trash2, Zap } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { api, errorMessage } from '../api';
 import { useI18n } from '../i18n';
@@ -18,11 +18,31 @@ type Provider = {
   enabled: boolean;
   hasKey: boolean;
   keyHint: string | null;
+  keyCount: number;
+  activeKeyCount: number;
   baseUrl: string | null;
   model: string | null;
   needsKey: boolean;
   defaultModel: string;
   models: string[];
+};
+
+type ProviderKey = {
+  id: string;
+  providerId: AiProviderId;
+  label: string;
+  keyHint: string | null;
+  enabled: boolean;
+  priority: number;
+  model: string | null;
+  baseUrl: string | null;
+  totalRequests: number;
+  successRequests: number;
+  failedRequests: number;
+  lastError: string | null;
+  cooldownUntil: string | null;
+  circuitState: 'closed' | 'open' | 'half-open';
+  consecutiveFailures: number;
 };
 
 type NumberRow = {
@@ -471,20 +491,33 @@ function ProvidersTab() {
 function ProviderCard({ provider, index, onSaved }: { provider: Provider; index: number; onSaved: () => void }) {
   const { t } = useI18n();
   const a = t.autoReply;
-  const [key, setKey] = useState('');
+  const queryClient = useQueryClient();
   const [baseUrl, setBaseUrl] = useState(provider.baseUrl ?? '');
   const [model, setModel] = useState(provider.model ?? '');
   const [enabled, setEnabled] = useState(provider.enabled);
   const [tested, setTested] = useState<string | null>(null);
+  const [label, setLabel] = useState('');
+  const [key, setKey] = useState('');
+  const [priority, setPriority] = useState('0');
+  const [keyModel, setKeyModel] = useState('');
+  const [keyTested, setKeyTested] = useState<Record<string, string>>({});
+  const keys = useQuery({
+    queryKey: qk.autoReply.providerKeys(provider.id),
+    queryFn: ({ signal }) => api<{ keys: ProviderKey[] }>(`/api/auto-reply/providers/${provider.id}/keys`, { signal }),
+  });
+
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: qk.autoReply.providerKeys(provider.id) });
+    onSaved();
+  };
 
   const save = useMutation({
     mutationFn: () =>
       api<{ saved: boolean }>(`/api/auto-reply/providers/${provider.id}`, {
         method: 'PUT',
-        body: { enabled, baseUrl: baseUrl || null, model: model || undefined, ...(key.trim() ? { apiKey: key.trim() } : {}) },
+        body: { enabled, baseUrl: baseUrl || null, model: model || undefined },
       }),
     onSuccess: () => {
-      setKey('');
       setTested(null);
       onSaved();
     },
@@ -493,6 +526,41 @@ function ProviderCard({ provider, index, onSaved }: { provider: Provider; index:
     mutationFn: () => api<{ ok: boolean; model: string; reply: string }>(`/api/auto-reply/providers/${provider.id}/test`, { method: 'POST', body: { model: model || undefined } }),
     onSuccess: (data) => setTested(data.reply),
     onError: () => setTested(null),
+  });
+  const addKey = useMutation({
+    mutationFn: () => api<{ keyId: string }>(`/api/auto-reply/providers/${provider.id}/keys`, {
+      method: 'POST',
+      body: {
+        label: label.trim(),
+        apiKey: key.trim(),
+        priority: Number(priority) || 0,
+        model: keyModel.trim() || undefined,
+      },
+    }),
+    onSuccess: () => {
+      setLabel('');
+      setKey('');
+      setPriority('0');
+      setKeyModel('');
+      refresh();
+    },
+  });
+  const updateKey = useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
+      api<{ updated: boolean }>(`/api/auto-reply/providers/${provider.id}/keys/${id}`, { method: 'PUT', body: { enabled } }),
+    onSuccess: refresh,
+  });
+  const removeKey = useMutation({
+    mutationFn: (id: string) => api<{ deleted: boolean }>(`/api/auto-reply/providers/${provider.id}/keys/${id}`, { method: 'DELETE' }),
+    onSuccess: refresh,
+  });
+  const resetKey = useMutation({
+    mutationFn: (id: string) => api<{ reset: boolean }>(`/api/auto-reply/providers/${provider.id}/keys/${id}/reset`, { method: 'POST' }),
+    onSuccess: refresh,
+  });
+  const testKey = useMutation({
+    mutationFn: (id: string) => api<{ reply: string }>(`/api/auto-reply/providers/${provider.id}/keys/${id}/test`, { method: 'POST' }),
+    onSuccess: (data, id) => setKeyTested((current) => ({ ...current, [id]: data.reply })),
   });
 
   return (
@@ -503,7 +571,7 @@ function ProviderCard({ provider, index, onSaved }: { provider: Provider; index:
           {provider.enabled && <Badge tone="good">{a.on}</Badge>}
         </span>
       }
-      description={provider.needsKey ? a.providers.needsKey : a.providers.noKeyNeeded}
+      description={provider.needsKey ? a.providers.keysSummary.replace('{{active}}', String(provider.activeKeyCount)).replace('{{total}}', String(provider.keyCount)) : a.providers.noKeyNeeded}
       className="animate-fade-up"
       style={{ animationDelay: `${index * 60}ms` }}
     >
@@ -514,16 +582,6 @@ function ProviderCard({ provider, index, onSaved }: { provider: Provider; index:
           save.mutate();
         }}
       >
-        <Field
-          label={a.providers.key}
-          type="password"
-          value={key}
-          onChange={(e) => setKey(e.target.value)}
-          placeholder={provider.keyHint ?? 'sk-…'}
-          dir="ltr"
-          autoComplete="off"
-          hint={provider.hasKey ? a.providers.keyStored : a.providers.keyHintText}
-        />
         {provider.id === 'custom' && (
           <Field label={a.providers.baseUrl} value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="http://localhost:11434/v1" dir="ltr" />
         )}
@@ -551,6 +609,75 @@ function ProviderCard({ provider, index, onSaved }: { provider: Provider; index:
         {save.isError && <ErrorNote>{errorMessage(save.error)}</ErrorNote>}
         {save.isSuccess && <SuccessNote>{a.providers.saved}</SuccessNote>}
       </form>
+
+      <div className="mt-6 border-t border-line pt-5">
+        <div className="mb-3 flex items-center gap-2">
+          <KeyRound className="size-4 text-brand" />
+          <h3 className="text-sm font-semibold">{a.providers.keysTitle}</h3>
+        </div>
+        {keys.isLoading && <Loading />}
+        {keys.isError && <ErrorNote>{errorMessage(keys.error)}</ErrorNote>}
+        <div className="space-y-2">
+          {(keys.data?.keys ?? []).map((item) => (
+            <div key={item.id} className="rounded-lg border border-line bg-surface/40 p-3">
+              <div className="flex flex-wrap items-start gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium">{item.label}</span>
+                    <span className="ltr text-xs text-muted">{item.keyHint ?? a.providers.encrypted}</span>
+                    <Badge tone={item.enabled ? 'good' : 'neutral'}>{item.enabled ? a.on : a.off}</Badge>
+                    {item.circuitState !== 'closed' && <Badge tone="critical">{a.providers.circuit[item.circuitState]}</Badge>}
+                  </div>
+                  <p className="mt-1 text-xs text-muted">
+                    {a.providers.priority}: {item.priority} · {a.providers.successes}: {item.successRequests} · {a.providers.failures}: {item.failedRequests}
+                  </p>
+                  {item.lastError && <p className="mt-1 text-xs text-destructive-ink">{item.lastError}</p>}
+                  {keyTested[item.id] && <p className="mt-1 text-xs text-good">{a.providers.testOk}: {keyTested[item.id]}</p>}
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  <Button size="sm" variant="outline" onClick={() => testKey.mutate(item.id)} loading={testKey.isPending && testKey.variables === item.id}>
+                    {a.providers.test}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => updateKey.mutate({ id: item.id, enabled: !item.enabled })}>
+                    {item.enabled ? a.providers.disableKey : a.providers.enableKey}
+                  </Button>
+                  {(item.circuitState !== 'closed' || item.cooldownUntil) && (
+                    <Button size="sm" variant="ghost" onClick={() => resetKey.mutate(item.id)} aria-label={a.providers.resetKey}>
+                      <RotateCcw className="size-4" />
+                    </Button>
+                  )}
+                  <Button size="sm" variant="ghost" onClick={() => removeKey.mutate(item.id)} aria-label={a.providers.deleteKey}>
+                    <Trash2 className="size-4 text-destructive-ink" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ))}
+          {keys.isSuccess && keys.data.keys.length === 0 && <p className="text-sm text-muted">{a.providers.keysEmpty}</p>}
+        </div>
+
+        <form
+          className="mt-4 grid gap-3 rounded-lg border border-dashed border-line p-3 md:grid-cols-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            addKey.mutate();
+          }}
+        >
+          <Field label={a.providers.keyLabel} value={label} onChange={(event) => setLabel(event.target.value)} required />
+          <Field label={a.providers.key} type="password" value={key} onChange={(event) => setKey(event.target.value)} dir="ltr" autoComplete="off" required />
+          <Field label={a.providers.priority} type="number" min="0" value={priority} onChange={(event) => setPriority(event.target.value)} dir="ltr" />
+          <Field label={a.providers.keyModel} value={keyModel} onChange={(event) => setKeyModel(event.target.value)} dir="ltr" />
+          <div className="flex items-center gap-2 md:col-span-2">
+            <Button type="submit" variant="outline" loading={addKey.isPending}>
+              <Plus className="size-4" /> {a.providers.addKey}
+            </Button>
+            {addKey.isError && <ErrorNote>{errorMessage(addKey.error)}</ErrorNote>}
+          </div>
+        </form>
+        {(updateKey.isError || removeKey.isError || resetKey.isError || testKey.isError) && (
+          <ErrorNote>{errorMessage(updateKey.error ?? removeKey.error ?? resetKey.error ?? testKey.error)}</ErrorNote>
+        )}
+      </div>
     </Card>
   );
 }
