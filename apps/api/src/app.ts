@@ -28,6 +28,7 @@ import { accountRoutes, publicAccountRoutes } from './routes/account';
 import { activityRoutes } from './routes/activity';
 import { adminRoutes } from './routes/admin';
 import { adminActivityRoutes } from './routes/admin-activity';
+import { autoReplyRoutes } from './routes/auto-reply';
 import { broadcastRoutes } from './routes/broadcasts';
 import { adLibraryRoutes } from './routes/ad-library';
 import { chatRoutes } from './routes/chats';
@@ -283,6 +284,7 @@ export async function buildApp(deps: Deps, options: AppOptions) {
       await api.register(broadcastRoutes(deps), { prefix: '/broadcasts' });
       await api.register(chatRoutes(deps), { prefix: '/chats' });
       await api.register(adLibraryRoutes(deps), { prefix: '/ads' });
+      await api.register(autoReplyRoutes(deps), { prefix: '/auto-reply' });
       api.setNotFoundHandler(() => {
         throw notFound('Route not found', 'route_not_found');
       });

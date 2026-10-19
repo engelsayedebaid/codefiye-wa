@@ -5,6 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./ai": "./src/ai.ts",
+    "./auto-reply": "./src/auto-reply.ts",
     "./plans": "./src/plans.ts",
     "./plan-pricing": "./src/plan-pricing.ts",
     "./broadcasts": "./src/broadcasts.ts",

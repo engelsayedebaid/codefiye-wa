@@ -40,6 +40,7 @@ function makeRunner() {
     sendDelay: { min: 0, max: 0 },
     fetchMedia: async () => ({ data: Buffer.alloc(0), mimetype: null }),
     onStopped: vi.fn(),
+    autoReply: { handle: async () => {} },
   });
   const onMessage = (m: InboundMessage) => (runner as unknown as { onMessage: (m: InboundMessage) => Promise<void> }).onMessage(m);
   return { db, onMessage };

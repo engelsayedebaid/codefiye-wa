@@ -46,6 +46,7 @@ const SubscriptionPage = lazy(() => loadChunk(pageChunks['/subscription']).then(
 const AdminPage = lazy(() => loadChunk(pageChunks['/admin']).then((m) => ({ default: m.AdminPage })));
 const AdsPage = lazy(() => loadChunk(pageChunks['/ads']).then((m) => ({ default: m.AdsPage })));
 const ChatsPage = lazy(() => loadChunk(pageChunks['/chats']).then((m) => ({ default: m.ChatsPage })));
+const AutoReplyPage = lazy(() => loadChunk(pageChunks['/auto-reply']).then((m) => ({ default: m.AutoReplyPage })));
 const ProfilePage = lazy(() => loadChunk(pageChunks['/profile']).then((m) => ({ default: m.ProfilePage })));
 
 const subscribeOnline = (notify: () => void) => {
@@ -202,6 +203,8 @@ function AppPage({ path }: { path: string }) {
       return <AdsPage />;
     case '/chats':
       return <ChatsPage />;
+    case '/auto-reply':
+      return <AutoReplyPage />;
     case '/profile':
       return <ProfilePage />;
     default:

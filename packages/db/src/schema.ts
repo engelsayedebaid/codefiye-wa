@@ -1,4 +1,10 @@
 import type {
+  AiProviderId,
+  AutoReplyLanguage,
+  AutoReplyPersonality,
+  AutoReplyRule,
+  AutoReplyStatus,
+  AutoReplyVariables,
   BroadcastPace,
   DesiredState,
   MessageDirection,
@@ -28,6 +34,7 @@ import {
   jsonb,
   pgTable,
   primaryKey,
+  real,
   text,
   timestamp,
   uniqueIndex,
@@ -718,3 +725,107 @@ export const adLibraryCache = pgTable('ad_library_cache', {
 
 export type Chat = typeof chats.$inferSelect;
 export type MediaUpload = typeof mediaUploads.$inferSelect;
+
+/**
+ * The AI providers the auto-reply agent can answer with (admins only, one row per provider). The
+ * key is encrypted at rest (AES-256-GCM, see @wa/provider's crypto); the model and the base URL are
+ * the admin's choice, and a row with no key is simply not usable.
+ */
+export const aiProviders = pgTable('ai_providers', {
+  /** The provider's id (`anthropic`, `openai`, `gemini`, `groq`, `mistral`, `custom`). */
+  id: text().primaryKey(),
+  enabled: boolean().notNull().default(false),
+  /** The encrypted API key; null when none was set. */
+  apiKey: bytea(),
+  /** A custom provider's OpenAI-compatible base URL (e.g. a local server). */
+  baseUrl: text(),
+  /** The model this provider answers with by default. */
+  model: text(),
+  updatedAt: updatedAt(),
+});
+
+/**
+ * One number's auto-reply agent: what it says, which provider answers, and when it stays quiet.
+ * A row exists only for the numbers an admin switched on; the rest fall back to the defaults
+ * (see `DEFAULT_AUTO_REPLY_SETTINGS`).
+ */
+export const autoReplySettings = pgTable('auto_reply_settings', {
+  sessionId: uuid()
+    .primaryKey()
+    .references(() => sessions.id, { onDelete: 'cascade' }),
+  workspaceId: uuid()
+    .notNull()
+    .references(() => workspaces.id, { onDelete: 'cascade' }),
+  enabled: boolean().notNull().default(false),
+  /** Which built-in personality it speaks with; `custom` = the prompt below. */
+  personality: text().$type<AutoReplyPersonality>().notNull().default('sales'),
+  /** The admin's own prompt, used when the personality is `custom`. */
+  systemPrompt: text().notNull().default(''),
+  providerId: text().$type<AiProviderId>().notNull().default('anthropic'),
+  model: text().notNull().default(''),
+  /** Used when the first provider fails; null = no fallback. */
+  fallbackProviderId: text().$type<AiProviderId>(),
+  fallbackModel: text().notNull().default(''),
+  temperature: real().notNull().default(0.7),
+  maxTokens: integer().notNull().default(800),
+  /** The pause before the answer goes out (a human typing), in ms. */
+  delayMinMs: integer().notNull().default(1_500),
+  delayMaxMs: integer().notNull().default(4_000),
+  /** Answer only inside the business hours below. */
+  businessHoursOnly: boolean().notNull().default(false),
+  hoursStart: integer().notNull().default(9),
+  hoursEnd: integer().notNull().default(18),
+  /** The time zone the hours are in (e.g. Africa/Cairo). */
+  timezone: text().notNull().default('Africa/Cairo'),
+  /** How many answers one conversation may get; 0 = no limit. */
+  maxReplies: integer().notNull().default(6),
+  /** Numbers (E.164 or a JID) that are never answered. */
+  ignoreList: text().array().notNull().default(sql`'{}'::text[]`),
+  /** Canned answers for certain words. */
+  rules: jsonb().$type<AutoReplyRule[]>().notNull().default([]),
+  /** `auto` answers in the contact's language. */
+  language: text().$type<AutoReplyLanguage>().notNull().default('auto'),
+  /** What the prompts may refer to ({{business_name}}, {{pricing}}, …). */
+  variables: jsonb().$type<AutoReplyVariables>().notNull().default(sql`'{}'::jsonb`),
+  updatedAt: updatedAt(),
+});
+
+/**
+ * What the agent did: one row per answer, and one per message it stayed quiet about. The activity
+ * log and the analytics read it; a failed answer keeps its reason so the admin can see why.
+ */
+export const autoReplyLog = pgTable(
+  'auto_reply_log',
+  {
+    id: bigint({ mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    workspaceId: uuid()
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    sessionId: uuid()
+      .notNull()
+      .references(() => sessions.id, { onDelete: 'cascade' }),
+    /** The inbound message that triggered it. */
+    messageId: bigint({ mode: 'number' }),
+    chatJid: text().notNull(),
+    provider: text().notNull().default(''),
+    model: text().notNull().default(''),
+    language: text().$type<'ar' | 'en'>().notNull().default('ar'),
+    /** The answer that was sent. */
+    reply: text().notNull().default(''),
+    status: text().$type<AutoReplyStatus>().notNull(),
+    /** Why it was skipped, or why it failed. */
+    reason: text(),
+    /** How long the model took, in ms. */
+    latencyMs: integer(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index().on(t.sessionId, t.id),
+    index().on(t.workspaceId, t.createdAt),
+    index().on(t.status, t.createdAt),
+  ],
+);
+
+export type AiProvider = typeof aiProviders.$inferSelect;
+export type AutoReplySettingsRow = typeof autoReplySettings.$inferSelect;
+export type AutoReplyLogRow = typeof autoReplyLog.$inferSelect;

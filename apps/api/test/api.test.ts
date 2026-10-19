@@ -132,6 +132,7 @@ describe.skipIf(!url)('api (integration)', () => {
         workers: new WorkerClient(sql, 'x'.repeat(16)),
         throttle: createThrottle(sql),
         otp: { key: otpKey(undefined, 'x'.repeat(16)), sender, dailyLimit: 1000 },
+        encryptionKey: null,
       },
       { logger, corsOrigins: [], publicUrl: 'http://test' },
     );

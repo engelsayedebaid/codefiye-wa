@@ -14,4 +14,6 @@ export type Deps = {
   throttle: Throttle;
   /** Phone verification: HMAC key for stored codes, and the delivery channel (null = not configured → 503). */
   otp: { key: Buffer; sender: OtpSender | null; dailyLimit: number };
+  /** AUTH_ENCRYPTION_KEY: seals the AI providers' API keys. Null when the server has none. */
+  encryptionKey: Buffer | null;
 };

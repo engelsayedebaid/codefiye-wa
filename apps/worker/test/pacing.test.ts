@@ -17,6 +17,7 @@ async function paced(job: QueuedMessage, lastSentAgoMs: number) {
     sendDelay: { min: 300, max: 300 },
     fetchMedia: () => Promise.reject(new Error('no media in this test')),
     onStopped: () => {},
+    autoReply: { handle: async () => {} },
   });
   let typing = false;
   const internals = runner as unknown as { lastSentAt: number; pace: (provider: unknown, job: QueuedMessage, recipient: boolean) => Promise<void> };

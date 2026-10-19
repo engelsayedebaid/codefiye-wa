@@ -176,6 +176,13 @@
       "when": 1792232921372,
       "tag": "0024_user_activity",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1792438539073,
+      "tag": "0025_auto_reply",
+      "breakpoints": true
     }
   ]
 }

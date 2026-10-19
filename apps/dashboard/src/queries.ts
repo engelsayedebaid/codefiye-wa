@@ -43,6 +43,14 @@ export const qk = {
     /** The number's latest sync job and its log (kept live by events). */
     syncJob: (sessionId: string) => ['chats', sessionId, 'sync-job'] as const,
   },
+  /** The AI auto-reply agent: the providers, each number's settings, its log and its statistics. */
+  autoReply: {
+    all: ['auto-reply'] as const,
+    providers: ['auto-reply', 'providers'] as const,
+    numbers: ['auto-reply', 'numbers'] as const,
+    log: (params: { sessionId: string; status: string }) => ['auto-reply', 'log', params] as const,
+    stats: (days: number) => ['auto-reply', 'stats', days] as const,
+  },
   admin: {
     all: ['admin'] as const,
     stats: ['admin', 'stats'] as const,

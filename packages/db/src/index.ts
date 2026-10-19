@@ -1,4 +1,5 @@
 export * from './auth-store';
+export * from './auto-reply';
 export * from './campaigns';
 export * from './chats';
 export * from './client';

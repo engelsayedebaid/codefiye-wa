@@ -56,6 +56,7 @@ import {
   type WaEvent,
 } from '@wa/shared';
 import type { Logger } from 'pino';
+import type { AutoReplyHandler } from './autoreply';
 import { MediaError } from './media';
 import { type PageAnswer, SessionSync, SyncSlots } from './sync';
 import { TimeoutError, withTimeout } from './timeout';
@@ -70,6 +71,8 @@ export type RunnerContext = {
   fetchMedia: MediaFetcher;
   /** Sync jobs running at once on this worker (shared by its runners); a runner of its own gets one slot. */
   syncSlots?: SyncSlots;
+  /** The AI agent that answers on its own (see autoreply.ts); shared by every runner of this worker. */
+  autoReply: AutoReplyHandler;
   /** Called once the runner has stopped and released (or lost) the session. */
   onStopped: (sessionId: string) => void;
 };
@@ -418,6 +421,20 @@ export class SessionRunner {
       await markChatRead(sql, this.sessionId, m.chatJid);
     }
     await this.onOptOutReply(m);
+    // A "stop"/"start" reply is answered by the campaign opt-out above, never by the model.
+    if (!m.isGroup && !optOutReply(m.text)) {
+      // The AI agent may answer this message on its own (see autoreply.ts); it never throws.
+      await this.ctx.autoReply.handle({
+        sessionId: this.sessionId,
+        workspaceId: this.workspaceId,
+        messageId: row.id,
+        chatJid: m.chatJid,
+        from: m.from,
+        isGroup: m.isGroup,
+        text: m.text,
+        history: false,
+      });
+    }
   }
 
   /**
@@ -743,7 +760,7 @@ export class SessionRunner {
     const lap = (stage: string) => void (at[stage] = Math.round(performance.now() - started));
     try {
       // A reply to someone who has written to us needs no lookup (one WhatsApp round trip saved).
-      const known = job.content.sentFrom === 'chats' && job.content.reachable === true;
+      const known = job.content.reachable === true;
       if (isUserJid(jid) && !known && !(await this.recipientExists(provider, jid))) {
         return await this.fail(job.id, 'Recipient is not on WhatsApp');
       }

@@ -1,4 +1,5 @@
 import { createDb, createListener, databaseUrls, runMigrations } from '@wa/db';
+import { parseKey } from '@wa/provider';
 import pino from 'pino';
 import { buildApp } from './app';
 import { loadConfig } from './config';
@@ -67,6 +68,8 @@ const app = await buildApp(
     workers,
     throttle: createThrottle(sql),
     otp: { key: otpKey(config.OTP_SECRET, config.WORKER_SECRET), sender: otpSender(), dailyLimit: config.OTP_DAILY_LIMIT },
+    // The AI providers' keys are sealed with it (the worker opens them).
+    encryptionKey: config.AUTH_ENCRYPTION_KEY ? parseKey(config.AUTH_ENCRYPTION_KEY) : null,
   },
   {
     logger,

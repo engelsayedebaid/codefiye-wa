@@ -20,9 +20,9 @@ export type OutboundContent = (
   | { type: 'poll'; name: string; options: string[]; selectableCount: number }
 ) & {
   quote?: OutboundQuote;
-  /** Typed by a person on the chats page (not the API or a campaign): sent without the artificial "typing…" pause. */
-  sentFrom?: 'chats';
-  /** Set with `sentFrom: 'chats'` when the contact has messaged this number: no "is it on WhatsApp?" lookup needed. */
+  /** Who wrote it: a person on the chats page (`chats`), the AI agent (`auto`), or the API/a campaign. */
+  sentFrom?: 'chats' | 'auto';
+  /** Set when the contact has messaged this number: no "is it on WhatsApp?" lookup needed. */
   reachable?: true;
 };
 

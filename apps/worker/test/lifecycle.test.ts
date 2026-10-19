@@ -39,6 +39,7 @@ function makeRunner() {
     sendDelay: { min: 0, max: 0 },
     fetchMedia: async () => ({ data: Buffer.alloc(0), mimetype: null }),
     onStopped,
+  autoReply: { handle: async () => {} },
   });
   // Never open a real WhatsApp socket in these tests.
   const connect = vi.fn(async () => {});

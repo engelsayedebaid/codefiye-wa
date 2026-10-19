@@ -2,6 +2,7 @@ import { createDb, createListener, databaseUrls, runMigrations } from '@wa/db';
 import { parseKey } from '@wa/provider';
 import { UPLOAD_SCHEME } from '@wa/shared';
 import pino from 'pino';
+import { AutoReplyAgent } from './autoreply';
 import { loadConfig } from './config';
 import { fetchMedia, fetchUpload } from './media';
 import { buildRpcServer } from './rpc';
@@ -19,6 +20,7 @@ const urls = databaseUrls();
 await runMigrations(urls.direct);
 const { sql } = createDb(urls.pooled, { max: config.DB_POOL_MAX });
 const listener = createListener(urls.direct);
+const encryptionKey = parseKey(config.AUTH_ENCRYPTION_KEY);
 
 const supervisor = new Supervisor({
   sql,
@@ -27,13 +29,15 @@ const supervisor = new Supervisor({
   url: config.workerUrl,
   capacity: config.WORKER_CAPACITY,
   claim: config.claim,
-  encryptionKey: parseKey(config.AUTH_ENCRYPTION_KEY),
+  encryptionKey,
   logger,
   baileysLogger: logger.child({ module: 'baileys' }, { level: config.BAILEYS_LOG_LEVEL }),
   syncSlots: new SyncSlots(config.SYNC_CONCURRENCY),
   sendDelay: { min: config.SEND_DELAY_MIN_MS, max: Math.max(config.SEND_DELAY_MIN_MS, config.SEND_DELAY_MAX_MS) },
   // Files attached on the chats page come from the database, not a URL.
   fetchMedia: (url, kind) => (url.startsWith(UPLOAD_SCHEME) ? fetchUpload(sql, url.slice(UPLOAD_SCHEME.length)) : fetchMedia(url, { maxBytes: config.MEDIA_MAX_BYTES, kind })),
+  // The AI agent that answers on its own, shared by every number of this worker.
+  autoReply: new AutoReplyAgent({ sql, log: logger, masterKey: encryptionKey }),
 });
 
 const rpc = buildRpcServer(supervisor, config.WORKER_SECRET, logger);

@@ -8,6 +8,7 @@ export const pageChunks = {
   '/admin': () => import('./pages/Admin'),
   '/ads': () => import('./pages/Ads'),
   '/chats': () => import('./pages/Chats'),
+  '/auto-reply': () => import('./pages/AutoReply'),
   '/profile': () => import('./pages/Profile'),
 };
 

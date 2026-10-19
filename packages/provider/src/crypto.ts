@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
 
 const IV_BYTES = 12;
 const TAG_BYTES = 16;
@@ -29,4 +29,13 @@ export function decrypt(key: Buffer, blob: Buffer, aad: string): Buffer {
   decipher.setAAD(Buffer.from(aad));
   decipher.setAuthTag(blob.subarray(IV_BYTES, IV_BYTES + TAG_BYTES));
   return Buffer.concat([decipher.update(blob.subarray(IV_BYTES + TAG_BYTES)), decipher.final()]);
+}
+
+/**
+ * A separate key for another purpose (e.g. the AI providers' keys), derived from the master key.
+ * The master key itself is never used for two kinds of data, so one of them can't be read with the
+ * other's context.
+ */
+export function deriveKey(master: Buffer, salt: string): Buffer {
+  return Buffer.from(hkdfSync('sha256', master, Buffer.from(salt, 'utf8'), Buffer.from('wa-ai', 'utf8'), 32));
 }

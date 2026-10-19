@@ -10,6 +10,11 @@ const schema = z.object({
   DATABASE_URL: z.string().min(1),
   DATABASE_URL_UNPOOLED: z.string().optional(),
   WORKER_SECRET: z.string().min(16),
+  /**
+   * The same key the worker uses: it seals the AI providers' API keys, so the worker can read them
+   * and answer with them. Optional — without it the auto-reply agent can't be set up.
+   */
+  AUTH_ENCRYPTION_KEY: z.string().min(1).optional(),
   /** Railway and most PaaS set PORT; API_PORT is the local default. */
   PORT: z.coerce.number().int().positive().optional(),
   API_PORT: z.coerce.number().int().positive().default(4000),

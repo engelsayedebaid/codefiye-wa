@@ -66,6 +66,7 @@ async function sendWithReceipt(receipt: Omit<ProviderEvents['receipt'], 'waMessa
     sendDelay: { min: 0, max: 0 },
     fetchMedia: () => Promise.reject(new Error('no media in this test')),
     onStopped: () => {},
+    autoReply: { handle: async () => {} },
   });
   const internals = runner as unknown as {
     provider: unknown;

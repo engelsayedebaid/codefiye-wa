@@ -87,7 +87,7 @@ describe.skipIf(!url)('chats api (integration)', () => {
     events = new EventBus({ createListener: () => createListener(url!), sql, logger });
     await events.start();
     app = await buildApp(
-      { sql, db, auth: createAuth(sql), events, workers: new WorkerClient(sql, 'x'.repeat(16)), throttle: createThrottle(sql), otp: { key: otpKey(undefined, 'x'.repeat(16)), sender: null, dailyLimit: 10 } },
+      { sql, db, auth: createAuth(sql), events, workers: new WorkerClient(sql, 'x'.repeat(16)), throttle: createThrottle(sql), otp: { key: otpKey(undefined, 'x'.repeat(16)), sender: null, dailyLimit: 10 }, encryptionKey: null },
       { logger, corsOrigins: [], publicUrl: 'http://test' },
     );
     admin = await workspace('chats-admin', 'unlimited', 'admin');

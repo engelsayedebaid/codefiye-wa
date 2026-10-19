@@ -1,5 +1,6 @@
 import {
   BookOpen,
+  Bot,
   ChevronRight,
   ChevronsUpDown,
   CircleDollarSign,
@@ -103,7 +104,10 @@ function useNav() {
       { href: '/ads', label: n.ads, icon: Megaphone, badge: adsBadge },
       { href: '/subscription', label: n.subscription, icon: CircleDollarSign },
     ] as NavItem[],
-    admin: [{ href: '/admin', label: n.admin, icon: ShieldCheck }] as NavItem[],
+    admin: [
+      { href: '/auto-reply', label: n.autoReply, icon: Bot },
+      { href: '/admin', label: n.admin, icon: ShieldCheck },
+    ] as NavItem[],
     secondary: [
       { href: '/guide', label: t.app.secondary.guide, icon: BookOpen, newTab: false },
       { href: '/docs', label: t.app.secondary.docs, icon: FileText, newTab: true },
