@@ -1,362 +1,145 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import type { AiProviderKeyRow, AiProviderRow, Sql } from '@wa/db';
+import { AiError, type AiResult } from '@wa/shared';
+import type { Logger } from 'pino';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AiKeyManager } from '../src/ai-key-manager';
-import { AiError } from '@wa/shared';
-import pino from 'pino';
+
+const provider = (id: string): AiProviderRow => ({ id, enabled: true, baseUrl: null, model: null, hasKeys: false });
+const key = (id: string, providerId = 'anthropic'): AiProviderKeyRow => ({
+  id,
+  providerId,
+  label: id,
+  apiKey: Buffer.from(`sealed-${id}`),
+  enabled: true,
+  priority: 0,
+  model: null,
+  baseUrl: null,
+  totalRequests: 0,
+  successRequests: 0,
+  failedRequests: 0,
+  lastError: null,
+  cooldownUntil: null,
+  circuitState: 'closed',
+  circuitOpenedAt: null,
+  consecutiveFailures: 0,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+});
+
+const answer = (text: string, model = 'test-model'): AiResult => ({
+  text,
+  model,
+  inputTokens: 1,
+  outputTokens: 1,
+});
 
 describe('AiKeyManager', () => {
-  const mockSql = {
-    __proto__: null,
-  } as unknown as any;
+  const generate = vi.fn();
+  const success = vi.fn(async () => {});
+  const failure = vi.fn(async () => {});
+  const coolDownProvider = vi.fn(async () => {});
+  const loadProvider = vi.fn(async (id: string) => provider(id));
+  const keysByProvider = new Map<string, AiProviderKeyRow[]>();
+  const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as unknown as Logger;
 
-  const mockLog = pino({ level: 'silent' });
-  const masterKey = Buffer.from('test-key-32-bytes-long-12345678');
+  const manager = () => new AiKeyManager({
+    sql: {} as Sql,
+    masterKey: Buffer.alloc(32),
+    log,
+    services: {
+      generate,
+      success,
+      failure,
+      coolDownProvider,
+      loadProvider,
+      loadKeys: async (id) => keysByProvider.get(id) ?? [],
+      openKey: (_providerId, blob) => blob.toString('utf8'),
+    },
+  });
 
-  let keyManager: AiKeyManager;
+  const request = {
+    providerId: 'anthropic' as const,
+    fallbackProviderId: null,
+    model: 'primary-model',
+    system: 'system',
+    messages: [{ role: 'user' as const, content: 'hello' }],
+  };
 
   beforeEach(() => {
-    keyManager = new AiKeyManager({ sql: mockSql, log: mockLog, masterKey });
-  });
-
-  afterEach(() => {
     vi.clearAllMocks();
+    loadProvider.mockImplementation(async (id) => provider(id));
+    keysByProvider.clear();
   });
 
-  it('selects and uses a healthy key successfully', async () => {
-    const mockKey = {
-      id: 'key-1',
-      providerId: 'anthropic',
-      label: 'Test Key',
-      apiKey: Buffer.from('encrypted'),
-      enabled: true,
-      priority: 0,
-      model: null,
-      baseUrl: null,
-      totalRequests: 0,
-      successRequests: 0,
-      failedRequests: 0,
-      lastError: null,
-      cooldownUntil: null,
-      circuitState: 'closed' as const,
-      circuitOpenedAt: null,
-      consecutiveFailures: 0,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+  it('uses a healthy key and records success', async () => {
+    loadProvider.mockImplementation(async (id) => ({ ...provider(id), hasKeys: true }));
+    keysByProvider.set('anthropic', [key('key-1')]);
+    generate.mockResolvedValue(answer('done'));
 
-    mockSql.__proto__ = {
-      ...mockSql.__proto__,
-      async query() {
-        return [[mockKey]];
-      },
-    };
+    const result = await manager().executeWithFailover(request);
 
-    vi.mock('@wa/provider', () => ({
-      openAiKey: () => 'sk-ant-test-key',
-    }));
-
-    vi.mock('@wa/shared', async () => {
-      const actual = await vi.importActual('@wa/shared');
-      return {
-        ...actual,
-        generateText: vi.fn().mockResolvedValue({
-          text: 'Test response',
-          model: 'claude-3-5-sonnet-20241022',
-        }),
-      };
-    });
-
-    const result = await keyManager.executeWithFailover({
-      providerId: 'anthropic',
-      fallbackProviderId: null,
-      model: 'claude-3-5-sonnet-20241022',
-      system: 'Test system',
-      messages: [{ role: 'user', content: 'Test' }],
-      temperature: 0.7,
-      maxTokens: 800,
-      timeoutMs: 45000,
-    });
-
-    expect(result).not.toBeNull();
-    expect(result?.text).toBe('Test response');
+    expect(result).toMatchObject({ text: 'done', provider: 'anthropic', keyId: 'key-1' });
+    expect(success).toHaveBeenCalledWith('key-1');
+    expect(generate.mock.calls[0]?.[0].apiKey).toBe('sealed-key-1');
   });
 
-  it('handles rate limit with cooldown', async () => {
-    const mockKey = {
-      id: 'key-1',
-      providerId: 'anthropic',
-      label: 'Test Key',
-      apiKey: Buffer.from('encrypted'),
-      enabled: true,
-      priority: 0,
-      model: null,
-      baseUrl: null,
-      totalRequests: 0,
-      successRequests: 0,
-      failedRequests: 0,
-      lastError: null,
-      cooldownUntil: null,
-      circuitState: 'closed' as const,
-      circuitOpenedAt: null,
-      consecutiveFailures: 0,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+  it('disables a refused key and immediately rotates to the next one', async () => {
+    loadProvider.mockImplementation(async (id) => ({ ...provider(id), hasKeys: true }));
+    keysByProvider.set('anthropic', [key('bad'), key('good')]);
+    generate
+      .mockRejectedValueOnce(new AiError('The API key was refused by the provider', 401, 'key'))
+      .mockResolvedValueOnce(answer('from second'));
 
-    let queryCount = 0;
-    mockSql.__proto__ = {
-      ...mockSql.__proto__,
-      async query() {
-        queryCount++;
-        if (queryCount === 1) {
-          return [[mockKey]];
-        }
-        return [[]];
-      },
-      async update() {
-        return {};
-      },
-    };
+    const result = await manager().executeWithFailover(request);
 
-    vi.mock('@wa/provider', () => ({
-      openAiKey: () => 'sk-ant-test-key',
-    }));
-
-    vi.mock('@wa/shared', async () => {
-      const actual = await vi.importActual('@wa/shared');
-      return {
-        ...actual,
-        generateText: vi.fn().mockRejectedValue(new AiError('Rate limited (429)', 429)),
-      };
-    });
-
-    const result = await keyManager.executeWithFailover({
-      providerId: 'anthropic',
-      fallbackProviderId: null,
-      model: 'claude-3-5-sonnet-20241022',
-      system: 'Test system',
-      messages: [{ role: 'user', content: 'Test' }],
-      temperature: 0.7,
-      maxTokens: 800,
-      timeoutMs: 45000,
-    });
-
-    expect(result).toBeNull();
+    expect(result?.keyId).toBe('good');
+    expect(failure).toHaveBeenCalledWith('bad', expect.objectContaining({ disable: true, openCircuit: true }));
+    expect(generate).toHaveBeenCalledTimes(2);
   });
 
-  it('falls back to backup provider when primary fails', async () => {
-    const primaryKey = {
-      id: 'key-1',
-      providerId: 'anthropic',
-      label: 'Primary Key',
-      apiKey: Buffer.from('encrypted'),
-      enabled: true,
-      priority: 0,
-      model: null,
-      baseUrl: null,
-      totalRequests: 0,
-      successRequests: 0,
-      failedRequests: 0,
-      lastError: null,
-      cooldownUntil: null,
-      circuitState: 'closed' as const,
-      circuitOpenedAt: null,
-      consecutiveFailures: 0,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+  it('puts a key-scoped rate limit in cooldown and rotates without sleeping', async () => {
+    loadProvider.mockImplementation(async (id) => ({ ...provider(id), hasKeys: true }));
+    keysByProvider.set('anthropic', [key('limited'), key('ready')]);
+    generate
+      .mockRejectedValueOnce(new AiError('rate limited', 429, 'key', 12_000))
+      .mockResolvedValueOnce(answer('rotated'));
 
-    const fallbackKey = {
-      id: 'key-2',
-      providerId: 'openai',
-      label: 'Fallback Key',
-      apiKey: Buffer.from('encrypted'),
-      enabled: true,
-      priority: 0,
-      model: null,
-      baseUrl: null,
-      totalRequests: 0,
-      successRequests: 0,
-      failedRequests: 0,
-      lastError: null,
-      cooldownUntil: null,
-      circuitState: 'closed' as const,
-      circuitOpenedAt: null,
-      consecutiveFailures: 0,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+    const result = await manager().executeWithFailover(request);
 
-    let queryCount = 0;
-    mockSql.__proto__ = {
-      ...mockSql.__proto__,
-      async query() {
-        queryCount++;
-        if (queryCount === 1) return [[primaryKey]];
-        if (queryCount === 2) return [[fallbackKey]];
-        return [[]];
-      },
-      async update() {
-        return {};
-      },
-    };
+    expect(result?.keyId).toBe('ready');
+    expect(failure).toHaveBeenCalledWith('limited', expect.objectContaining({ cooldownMs: 12_000 }));
+  });
 
-    vi.mock('@wa/provider', () => ({
-      openAiKey: () => 'test-key',
-    }));
+  it('does not burn remaining keys when the provider has an account-wide quota restriction', async () => {
+    loadProvider.mockImplementation(async (id) => ({ ...provider(id), hasKeys: true }));
+    keysByProvider.set('anthropic', [key('primary-1'), key('primary-2')]);
+    keysByProvider.set('openai', [key('fallback-1', 'openai')]);
+    generate
+      .mockRejectedValueOnce(new AiError('provider quota', 429, 'provider', 90_000))
+      .mockResolvedValueOnce(answer('fallback answer', 'fallback-model'));
 
-    vi.mock('@wa/shared', async () => {
-      const actual = await vi.importActual('@wa/shared');
-      return {
-        ...actual,
-        generateText: vi
-          .fn()
-          .mockRejectedValueOnce(new AiError('Primary failed', 500))
-          .mockResolvedValueOnce({
-            text: 'Fallback response',
-            model: 'gpt-4o-mini',
-          }),
-      };
-    });
-
-    const result = await keyManager.executeWithFailover({
-      providerId: 'anthropic',
+    const result = await manager().executeWithFailover({
+      ...request,
       fallbackProviderId: 'openai',
-      model: 'claude-3-5-sonnet-20241022',
-      system: 'Test system',
-      messages: [{ role: 'user', content: 'Test' }],
-      temperature: 0.7,
-      maxTokens: 800,
-      timeoutMs: 45000,
+      fallbackModel: 'fallback-model',
     });
 
-    expect(result).not.toBeNull();
     expect(result?.provider).toBe('openai');
-    expect(result?.text).toBe('Fallback response');
+    expect(generate).toHaveBeenCalledTimes(2);
+    expect(coolDownProvider).toHaveBeenCalledWith('anthropic', 'provider quota', 90_000);
+    expect(generate.mock.calls[1]?.[0].model).toBe('fallback-model');
   });
 
-  it('skips keys in cooldown', async () => {
-    const cooldownKey = {
-      id: 'key-1',
-      providerId: 'anthropic',
-      label: 'Cooldown Key',
-      apiKey: Buffer.from('encrypted'),
-      enabled: true,
-      priority: 0,
-      model: null,
-      baseUrl: null,
-      totalRequests: 0,
-      successRequests: 0,
-      failedRequests: 0,
-      lastError: null,
-      cooldownUntil: new Date(Date.now() + 60000),
-      circuitState: 'closed' as const,
-      circuitOpenedAt: null,
-      consecutiveFailures: 0,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+  it('uses a keyless custom provider when it is enabled', async () => {
+    generate.mockResolvedValue(answer('local'));
 
-    const healthyKey = {
-      id: 'key-2',
-      providerId: 'anthropic',
-      label: 'Healthy Key',
-      apiKey: Buffer.from('encrypted'),
-      enabled: true,
-      priority: 1,
-      model: null,
-      baseUrl: null,
-      totalRequests: 0,
-      successRequests: 0,
-      failedRequests: 0,
-      lastError: null,
-      cooldownUntil: null,
-      circuitState: 'closed' as const,
-      circuitOpenedAt: null,
-      consecutiveFailures: 0,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    mockSql.__proto__ = {
-      ...mockSql.__proto__,
-      async query() {
-        return [[healthyKey]];
-      },
-      async update() {
-        return {};
-      },
-    };
-
-    vi.mock('@wa/provider', () => ({
-      openAiKey: () => 'sk-ant-test-key',
-    }));
-
-    vi.mock('@wa/shared', async () => {
-      const actual = await vi.importActual('@wa/shared');
-      return {
-        ...actual,
-        generateText: vi.fn().mockResolvedValue({
-          text: 'Test response',
-          model: 'claude-3-5-sonnet-20241022',
-        }),
-      };
+    const result = await manager().executeWithFailover({
+      ...request,
+      providerId: 'custom',
+      model: 'local-model',
     });
 
-    const result = await keyManager.executeWithFailover({
-      providerId: 'anthropic',
-      fallbackProviderId: null,
-      model: 'claude-3-5-sonnet-20241022',
-      system: 'Test system',
-      messages: [{ role: 'user', content: 'Test' }],
-      temperature: 0.7,
-      maxTokens: 800,
-      timeoutMs: 45000,
-    });
-
-    expect(result).not.toBeNull();
-    expect(result?.text).toBe('Test response');
-  });
-
-  it('respects circuit breaker state', async () => {
-    const openCircuitKey = {
-      id: 'key-1',
-      providerId: 'anthropic',
-      label: 'Open Circuit Key',
-      apiKey: Buffer.from('encrypted'),
-      enabled: true,
-      priority: 0,
-      model: null,
-      baseUrl: null,
-      totalRequests: 0,
-      successRequests: 0,
-      failedRequests: 5,
-      lastError: 'Failed',
-      cooldownUntil: null,
-      circuitState: 'open' as const,
-      circuitOpenedAt: new Date(),
-      consecutiveFailures: 5,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    mockSql.__proto__ = {
-      ...mockSql.__proto__,
-      async query() {
-        return [[]];
-      },
-    };
-
-    const result = await keyManager.executeWithFailover({
-      providerId: 'anthropic',
-      fallbackProviderId: null,
-      model: 'claude-3-5-sonnet-20241022',
-      system: 'Test system',
-      messages: [{ role: 'user', content: 'Test' }],
-      temperature: 0.7,
-      maxTokens: 800,
-      timeoutMs: 45000,
-    });
-
-    expect(result).toBeNull();
+    expect(result).toMatchObject({ text: 'local', provider: 'custom', keyId: null });
+    expect(generate.mock.calls[0]?.[0].apiKey).toBe('');
   });
 });

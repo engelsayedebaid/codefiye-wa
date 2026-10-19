@@ -5,9 +5,16 @@ import { DEFAULT_AUTO_REPLY_SETTINGS, type AutoReplySettings } from '@wa/shared'
 import pino from 'pino';
 
 describe('AutoReplyAgent', () => {
-  const mockSql = {
-    __proto__: null,
-  } as unknown as Sql;
+  let replyCount = 0;
+  const mockSql = Object.assign(
+    async (parts: TemplateStringsArray) => {
+      const query = parts.join(' ');
+      if (query.includes('count(*)::int')) return [{ count: replyCount }];
+      if (query.includes('select direction, type, content')) return [];
+      return [];
+    },
+    { json: (value: unknown) => value },
+  ) as unknown as Sql;
 
   const mockLog = pino({ level: 'silent' });
   const masterKey = Buffer.from('test-key-32-bytes-long-12345678');
@@ -15,6 +22,8 @@ describe('AutoReplyAgent', () => {
   let agent: AutoReplyAgent;
 
   beforeEach(() => {
+    replyCount = 0;
+    vi.restoreAllMocks();
     agent = new AutoReplyAgent({ sql: mockSql, log: mockLog, masterKey });
   });
 
@@ -196,6 +205,7 @@ describe('AutoReplyAgent', () => {
       '',
       '',
       0,
+      expect.any(Number),
     );
   });
 
@@ -252,21 +262,11 @@ describe('AutoReplyAgent', () => {
       rules: [],
     });
 
-    // Mock countChatReplies to return 3 (at limit)
-    vi.spyOn(agent as any, 'loadSettings').mockResolvedValue({
-      ...DEFAULT_AUTO_REPLY_SETTINGS,
-      enabled: true,
-      maxReplies: 3,
-      rules: [],
-    });
-
-    // This would normally call countChatReplies, but we're testing the logic
-    // In real scenario, the DB query would prevent the reply
-    vi.spyOn(agent as any, 'ask').mockResolvedValue(null);
+    replyCount = 3;
+    const ask = vi.spyOn(agent as any, 'ask').mockResolvedValue(null);
 
     await agent.handle(input);
 
-    // The agent should skip when limit is reached
-    // (actual enforcement is via countChatReplies DB query)
+    expect(ask).not.toHaveBeenCalled();
   });
 });

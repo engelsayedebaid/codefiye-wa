@@ -14,12 +14,15 @@ export type AiProviderRow = {
   enabled: boolean;
   baseUrl: string | null;
   model: string | null;
+  hasKeys: boolean;
 };
 
 /** Loads one AI provider by its id; null when not found. */
 export async function loadAiProvider(sql: Sql, id: string): Promise<AiProviderRow | null> {
   const [row] = await sql<AiProviderRow[]>`
-    select id, enabled, base_url as "baseUrl", model from ai_providers where id = ${id}`;
+    select id, enabled, base_url as "baseUrl", model,
+      exists(select 1 from ai_provider_keys where provider_id = ai_providers.id) as "hasKeys"
+    from ai_providers where id = ${id}`;
   return row ?? null;
 }
 

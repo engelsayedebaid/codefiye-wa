@@ -83,7 +83,7 @@ export class AiKeyManager {
     const model = requestedModel.trim() || provider.model?.trim() || info.defaultModel;
 
     // A local OpenAI-compatible endpoint can intentionally have no key.
-    if (keys.length === 0 && !info.needsKey) {
+    if (keys.length === 0 && !info.needsKey && !provider.hasKeys) {
       return (await this.callProvider(providerId, provider, null, '', model, request)).result;
     }
 
