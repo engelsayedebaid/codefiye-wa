@@ -17,6 +17,13 @@ export type AiProviderRow = {
   model: string | null;
 };
 
+/** Loads one AI provider by its id; null when not found. */
+export async function loadAiProvider(sql: Sql, id: string): Promise<AiProviderRow | null> {
+  const [row] = await sql<{ id: string; enabled: boolean; api_key: Buffer | null; base_url: string | null; model: string | null }[]>`
+    select id, enabled, api_key, base_url, model from ai_providers where id = ${id}`;
+  return row ?? null;
+}
+
 /** The settings of one number, with the defaults filled in; null when the number has none. */
 export async function loadAutoReplySettings(sql: Sql, sessionId: string): Promise<AutoReplySettings | null> {
   const [row] = await sql<
