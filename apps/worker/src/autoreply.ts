@@ -1,13 +1,11 @@
 import { randomInt } from 'node:crypto';
 import {
   countChatReplies,
-  loadAiProvider,
   loadAutoReplySettings,
   notify,
   queueAutoReply,
   recentChatLines,
   recordAutoReply,
-  type AiProviderRow,
   type Sql,
 } from '@wa/db';
 import {
@@ -18,12 +16,12 @@ import {
   buildSystemPrompt,
   CHANNELS,
   detectLanguage,
-  generateText,
+  formatForWhatsApp,
   matchRule,
   type AutoReplySettings,
 } from '@wa/shared';
-import { openAiKey } from '@wa/provider';
 import type { Logger } from 'pino';
+import { AiKeyManager } from './ai-key-manager';
 
 /**
  * The AI auto-reply agent: an inbound message comes in, the agent decides whether to answer, asks a
@@ -68,11 +66,13 @@ export type AutoReplyHandler = Pick<AutoReplyAgent, 'handle'>;
 
 export class AutoReplyAgent {
   private readonly settings = new Map<string, Cached<AutoReplySettings | null>>();
-  private readonly providers = new Map<string, Cached<AiProviderRow | null>>();
+  private readonly keyManager: AiKeyManager;
 
   constructor(
     private readonly deps: { sql: Sql; log: Logger; masterKey: Buffer },
-  ) {}
+  ) {
+    this.keyManager = new AiKeyManager({ sql: deps.sql, masterKey: deps.masterKey, log: deps.log });
+  }
 
   /** The agent's answer to one inbound message; never throws (a failure is logged, not raised). */
   async handle(input: AutoReplyInput): Promise<void> {
@@ -86,9 +86,13 @@ export class AutoReplyAgent {
 
   private async answer(input: AutoReplyInput) {
     const { sql, log } = this.deps;
+    const started = Date.now();
+    const timings: Record<string, number> = {};
+
     const settings = await this.loadSettings(input.sessionId);
+    timings.loadSettings = Date.now() - started;
     if (!settings?.enabled) return; // the number answers on its own: off
-    if (input.history) return; // a message from the phone's history, not a live chat
+    if (input.history) return this.skip(input, settings, 'history', 'en');
     if (input.isGroup) return this.skip(input, settings, 'group', 'en');
     const text = input.text?.trim() ?? '';
     if (!text) return this.skip(input, settings, 'no_words', 'en');
@@ -98,33 +102,43 @@ export class AutoReplyAgent {
 
     // The cap that stops a loop with another bot: this conversation got its answers already.
     if (settings.maxReplies > 0) {
+      const checkStart = Date.now();
       const answered = await countChatReplies(sql, input.sessionId, input.chatJid);
+      timings.checkReplies = Date.now() - checkStart;
       if (answered >= settings.maxReplies) return this.skip(input, settings, 'limit_reached', language);
     }
 
     const rule = matchRule(text, settings.rules);
     if (rule) {
       // A canned answer goes out as it is: no model, no cost.
-      await this.send(input, settings, rule.reply, language, '', '', 0);
+      await this.send(input, settings, rule.reply, language, '', '', 0, started);
+      log.info({ sessionId: input.sessionId, timings, totalMs: Date.now() - started }, 'auto-reply: rule matched');
       return;
     }
 
+    const historyStart = Date.now();
     const system = buildSystemPrompt(settings, language);
     const history = await recentChatLines(sql, input.sessionId, input.chatJid, CONTEXT_MESSAGES, input.messageId);
+    timings.loadHistory = Date.now() - historyStart;
     const messages: AiMessage[] = [...history, { role: 'user', content: text }];
 
-    const started = Date.now();
+    const aiStart = Date.now();
     const first = await this.ask(settings.providerId, settings.model, system, messages, settings);
+    timings.aiCall = Date.now() - aiStart;
     if (first) {
-      await this.send(input, settings, first.text, language, first.provider, first.model, Date.now() - started);
+      await this.send(input, settings, first.text, language, first.provider, first.model, Date.now() - aiStart, started);
+      log.info({ sessionId: input.sessionId, timings, totalMs: Date.now() - started }, 'auto-reply: AI answered');
       return;
     }
 
     // The first provider failed: the fallback answers instead, if there is one.
     if (settings.fallbackProviderId) {
+      const fallbackStart = Date.now();
       const second = await this.ask(settings.fallbackProviderId, settings.fallbackModel, system, messages, settings);
+      timings.fallbackCall = Date.now() - fallbackStart;
       if (second) {
-        await this.send(input, settings, second.text, language, second.provider, second.model, Date.now() - started);
+        await this.send(input, settings, second.text, language, second.provider, second.model, Date.now() - started, started);
+        log.info({ sessionId: input.sessionId, timings, totalMs: Date.now() - started }, 'auto-reply: fallback answered');
         return;
       }
     }
@@ -141,10 +155,10 @@ export class AutoReplyAgent {
       reason: 'The AI provider did not answer',
       latencyMs: Date.now() - started,
     });
-    log.warn({ sessionId: input.sessionId, provider: settings.providerId }, 'auto-reply: no provider answered');
+    log.warn({ sessionId: input.sessionId, provider: settings.providerId, timings, totalMs: Date.now() - started }, 'auto-reply: no provider answered');
   }
 
-  /** Asks one provider; null when it failed (the reason is logged). */
+  /** Asks one provider with automatic key selection and failover; null when it failed. */
   private async ask(
     providerId: AiProviderId,
     model: string,
@@ -152,32 +166,27 @@ export class AutoReplyAgent {
     messages: AiMessage[],
     settings: AutoReplySettings,
   ): Promise<{ text: string; provider: string; model: string } | null> {
-    const { sql, log } = this.deps;
-    const row = await this.loadProvider(providerId);
-    if (!row || !row.enabled) {
-      log.warn({ provider: providerId }, 'auto-reply: the provider is not set up or is switched off');
-      return null;
-    }
+    const { log } = this.deps;
     const info = AI_PROVIDERS[providerId];
-    const apiKey = this.readKey(row);
-    const chosen = model.trim() || row.model?.trim() || info.defaultModel;
-    try {
-      const answer = await generateText({
-        provider: providerId,
-        apiKey,
-        baseUrl: row.base_url ?? undefined,
-        model: chosen,
-        system,
-        messages,
-        temperature: settings.temperature,
-        maxTokens: settings.maxTokens,
-        timeoutMs: MODEL_TIMEOUT_MS,
-      });
-      return { text: answer.text, provider: providerId, model: answer.model };
-    } catch (err) {
-      log.warn({ err, provider: providerId, model: chosen }, 'auto-reply: the provider did not answer');
+    const chosen = model.trim() || info.defaultModel;
+
+    const result = await this.keyManager.executeWithFailover({
+      providerId,
+      fallbackProviderId: settings.fallbackProviderId,
+      model: chosen,
+      system,
+      messages,
+      temperature: settings.temperature,
+      maxTokens: settings.maxTokens,
+      timeoutMs: MODEL_TIMEOUT_MS,
+    });
+
+    if (!result) {
+      log.warn({ provider: providerId, model: chosen }, 'auto-reply: no provider key answered');
       return null;
     }
+
+    return { text: result.text, provider: result.provider, model: result.model };
   }
 
   /** Queues the answer and records what happened. */
@@ -189,21 +198,30 @@ export class AutoReplyAgent {
     provider: string,
     model: string,
     latencyMs: number,
+    messageReceivedAt: number,
   ) {
     const { sql, log } = this.deps;
     const body = text.trim();
     if (!body) return;
+
+    // Format the text for WhatsApp (remove Markdown, clean formatting)
+    const formattedBody = formatForWhatsApp(body);
+
     // A human types before answering; the queue sends it when the time comes.
     const lo = Math.min(settings.delayMinMs, settings.delayMaxMs);
     const hi = Math.max(settings.delayMinMs, settings.delayMaxMs);
     const gap = hi > lo ? randomInt(lo, hi + 1) : lo;
-    const messageId = await queueAutoReply(sql, {
+    const { id: messageId, queuedAt } = await queueAutoReply(sql, {
       workspaceId: input.workspaceId,
       sessionId: input.sessionId,
       chatJid: input.chatJid,
-      text: body,
+      text: formattedBody,
       delayMs: gap,
     });
+
+    // Calculate end-to-end latency: from message received to queued
+    const endToEndLatencyMs = Date.now() - messageReceivedAt;
+
     await recordAutoReply(sql, {
       workspaceId: input.workspaceId,
       sessionId: input.sessionId,
@@ -212,7 +230,7 @@ export class AutoReplyAgent {
       provider,
       model,
       language,
-      reply: body,
+      reply: formattedBody,
       status: 'sent',
       reason: null,
       latencyMs,
@@ -221,7 +239,18 @@ export class AutoReplyAgent {
     await notify(sql, CHANNELS.control, { type: 'message.queued', sessionId: input.sessionId }).catch(() =>
       log.warn({ sessionId: input.sessionId }, 'auto-reply: could not wake the send queue'),
     );
-    log.info({ sessionId: input.sessionId, messageId, provider, model, latencyMs }, 'auto-reply answered');
+    log.info(
+      {
+        sessionId: input.sessionId,
+        messageId,
+        provider,
+        model,
+        latencyMs,
+        endToEndLatencyMs,
+        queueDelayMs: gap,
+      },
+      'auto-reply answered',
+    );
   }
 
   /** Records that the agent stayed quiet (only the interesting reasons are kept). */
@@ -277,21 +306,5 @@ export class AutoReplyAgent {
     const value = await loadAutoReplySettings(this.deps.sql, sessionId);
     this.settings.set(sessionId, { value, at: Date.now() });
     return value;
-  }
-
-  /** The provider's row (cached the same way). */
-  private async loadProvider(id: AiProviderId): Promise<AiProviderRow | null> {
-    const hit = this.providers.get(id);
-    if (hit && Date.now() - hit.at < PROVIDER_TTL_MS) return hit.value;
-    const value = await loadAiProvider(this.deps.sql, id);
-    this.providers.set(id, { value, at: Date.now() });
-    return value;
-  }
-
-  /** Unlocks the provider's key; empty when it isn't set (or can't be read). */
-  private readKey(row: AiProviderRow): string {
-    const key = openAiKey(this.deps.masterKey, row.id, row.api_key);
-    if (row.api_key && key === null) this.deps.log.warn({ provider: row.id }, 'auto-reply: the stored key could not be read');
-    return key ?? '';
   }
 }

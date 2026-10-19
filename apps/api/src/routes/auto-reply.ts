@@ -1,4 +1,13 @@
-import { listAutoReplySettings, saveAutoReplySettings, type Sql } from '@wa/db';
+import {
+  addAiProviderKey,
+  deleteAiProviderKey,
+  listAutoReplySettings,
+  loadAiProviderKeys,
+  resetAiKeyCircuit,
+  saveAutoReplySettings,
+  updateAiProviderKey,
+  type Sql,
+} from '@wa/db';
 import { openAiKey, sealAiKey } from '@wa/provider';
 import {
   AI_PROVIDERS,
@@ -45,6 +54,26 @@ const providerDto = z.object({
   needsKey: z.boolean(),
   defaultModel: z.string(),
   models: z.array(z.string()),
+});
+
+const providerKeyDto = z.object({
+  id: z.uuid(),
+  providerId: providerId,
+  label: z.string(),
+  enabled: z.boolean(),
+  priority: z.number(),
+  model: z.string().nullable(),
+  baseUrl: z.string().nullable(),
+  totalRequests: z.number(),
+  successRequests: z.number(),
+  failedRequests: z.number(),
+  lastError: z.string().nullable(),
+  cooldownUntil: z.string().nullable(),
+  circuitState: z.enum(['closed', 'open', 'half-open']),
+  circuitOpenedAt: z.string().nullable(),
+  consecutiveFailures: z.number(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
 });
 
 const ruleSchema = z.object({
@@ -256,6 +285,151 @@ export function autoReplyRoutes(deps: Deps): FastifyPluginAsyncZod {
         } catch (err) {
           throw unprocessable(err instanceof Error ? err.message : 'The provider did not answer');
         }
+      },
+    );
+
+    // Multi-key management endpoints
+
+    app.get(
+      '/providers/:id/keys',
+      {
+        schema: {
+          ...schemaBase,
+          summary: 'List all API keys for a provider',
+          params: z.object({ id: providerId }),
+          response: { 200: successSchema(z.object({ keys: z.array(providerKeyDto) })) },
+        },
+      },
+      async (req) => {
+        const { id } = req.params;
+        const keys = await loadAiProviderKeys(sql, id);
+        const keyDtos = keys.map((k) => ({
+          id: k.id,
+          providerId: k.providerId,
+          label: k.label,
+          enabled: k.enabled,
+          priority: k.priority,
+          model: k.model,
+          baseUrl: k.baseUrl,
+          totalRequests: k.totalRequests,
+          successRequests: k.successRequests,
+          failedRequests: k.failedRequests,
+          lastError: k.lastError,
+          cooldownUntil: k.cooldownUntil?.toISOString() ?? null,
+          circuitState: k.circuitState,
+          circuitOpenedAt: k.circuitOpenedAt?.toISOString() ?? null,
+          consecutiveFailures: k.consecutiveFailures,
+          createdAt: k.createdAt.toISOString(),
+          updatedAt: k.updatedAt.toISOString(),
+        }));
+        return ok({ keys: keyDtos });
+      },
+    );
+
+    app.post(
+      '/providers/:id/keys',
+      {
+        schema: {
+          ...schemaBase,
+          summary: 'Add a new API key for a provider',
+          params: z.object({ id: providerId }),
+          body: z.object({
+            label: z.string().min(1).max(100),
+            apiKey: z.string().min(8).max(500),
+            priority: z.number().int().min(0).max(1000).optional(),
+            model: z.string().max(120).optional(),
+            baseUrl: z.string().url().max(300).nullable().optional(),
+          }),
+          response: { 200: successSchema(z.object({ keyId: z.uuid() })) },
+        },
+      },
+      async (req) => {
+        const { id } = req.params;
+        const keyId = await addAiProviderKey(
+          sql,
+          id,
+          req.body.label,
+          req.body.apiKey,
+          masterKey(),
+          {
+            priority: req.body.priority,
+            model: req.body.model,
+            baseUrl: req.body.baseUrl,
+          },
+        );
+        return ok({ keyId });
+      },
+    );
+
+    app.put(
+      '/providers/:id/keys/:keyId',
+      {
+        schema: {
+          ...schemaBase,
+          summary: 'Update an API key',
+          params: z.object({ id: providerId, keyId: z.uuid() }),
+          body: z.object({
+            label: z.string().min(1).max(100).optional(),
+            apiKey: z.string().min(8).max(500).optional(),
+            enabled: z.boolean().optional(),
+            priority: z.number().int().min(0).max(1000).optional(),
+            model: z.string().max(120).optional(),
+            baseUrl: z.string().url().max(300).nullable().optional(),
+          }),
+          response: { 200: successSchema(z.object({ updated: z.boolean() })) },
+        },
+      },
+      async (req) => {
+        const { id, keyId } = req.params;
+        await updateAiProviderKey(
+          sql,
+          keyId,
+          {
+            label: req.body.label,
+            apiKey: req.body.apiKey,
+            enabled: req.body.enabled,
+            priority: req.body.priority,
+            model: req.body.model,
+            baseUrl: req.body.baseUrl,
+          },
+          masterKey(),
+          id,
+        );
+        return ok({ updated: true });
+      },
+    );
+
+    app.delete(
+      '/providers/:id/keys/:keyId',
+      {
+        schema: {
+          ...schemaBase,
+          summary: 'Delete an API key',
+          params: z.object({ id: providerId, keyId: z.uuid() }),
+          response: { 200: successSchema(z.object({ deleted: z.boolean() })) },
+        },
+      },
+      async (req) => {
+        const { keyId } = req.params;
+        await deleteAiProviderKey(sql, keyId);
+        return ok({ deleted: true });
+      },
+    );
+
+    app.post(
+      '/providers/:id/keys/:keyId/reset',
+      {
+        schema: {
+          ...schemaBase,
+          summary: 'Reset circuit breaker for a key',
+          params: z.object({ id: providerId, keyId: z.uuid() }),
+          response: { 200: successSchema(z.object({ reset: z.boolean() })) },
+        },
+      },
+      async (req) => {
+        const { keyId } = req.params;
+        await resetAiKeyCircuit(sql, keyId);
+        return ok({ reset: true });
       },
     );
 

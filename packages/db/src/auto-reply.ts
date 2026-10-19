@@ -189,16 +189,17 @@ export async function recordAutoReply(
 /**
  * Puts the answer in the session's send queue, to go out after the pause (a human typing). The
  * queue paces it like any other message, so the number never sends two answers at once.
+ * Returns the message id and the timestamp when it was queued (for latency tracking).
  */
 export async function queueAutoReply(
   sql: Sql,
   row: { workspaceId: string; sessionId: string; chatJid: string; text: string; delayMs: number },
-): Promise<number> {
-  const [inserted] = await sql<{ id: number }[]>`
-    insert into messages (workspace_id, session_id, direction, remote_jid, type, content, status, not_before)
+): Promise<{ id: number; queuedAt: Date }> {
+  const [inserted] = await sql<{ id: number; queued_at: Date }[]>`
+    insert into messages (workspace_id, session_id, direction, remote_jid, type, content, status, not_before, created_at)
     values (${row.workspaceId}, ${row.sessionId}, 'out', ${row.chatJid}, 'text',
-      ${sql.json({ type: 'text', text: row.text, sentFrom: 'auto', reachable: true } as never)}, 'queued',
-      now() + (${row.delayMs}::int * interval '1 millisecond'))
-    returning id`;
-  return inserted?.id ?? 0;
+      ${sql.json({ type: 'text', text: row.text, sentFrom: 'auto', reachable: true, queuedAt: Date.now() } as never)}, 'queued',
+      now() + (${row.delayMs}::int * interval '1 millisecond'), now())
+    returning id, created_at as queued_at`;
+  return { id: inserted?.id ?? 0, queuedAt: inserted?.queued_at ?? new Date() };
 }

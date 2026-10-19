@@ -727,22 +727,64 @@ export type Chat = typeof chats.$inferSelect;
 export type MediaUpload = typeof mediaUploads.$inferSelect;
 
 /**
- * The AI providers the auto-reply agent can answer with (admins only, one row per provider). The
- * key is encrypted at rest (AES-256-GCM, see @wa/provider's crypto); the model and the base URL are
- * the admin's choice, and a row with no key is simply not usable.
+ * The AI providers the auto-reply agent can answer with (admins only, one row per provider).
+ * The model and the base URL are the admin's choice. API keys are now managed separately in
+ * ai_provider_keys for multi-key support.
  */
 export const aiProviders = pgTable('ai_providers', {
   /** The provider's id (`anthropic`, `openai`, `gemini`, `groq`, `mistral`, `custom`). */
   id: text().primaryKey(),
   enabled: boolean().notNull().default(false),
-  /** The encrypted API key; null when none was set. */
-  apiKey: bytea(),
   /** A custom provider's OpenAI-compatible base URL (e.g. a local server). */
   baseUrl: text(),
   /** The model this provider answers with by default. */
   model: text(),
   updatedAt: updatedAt(),
 });
+
+/**
+ * Multiple API keys per AI provider, with health tracking and usage statistics.
+ * Keys are encrypted at rest (AES-256-GCM, see @wa/provider's crypto).
+ */
+export const aiProviderKeys = pgTable('ai_provider_keys', {
+  id: uuid().primaryKey().defaultRandom(),
+  /** The provider this key belongs to. */
+  providerId: text().notNull().references(() => aiProviders.id, { onDelete: 'cascade' }),
+  /** A label to identify this key (e.g. "Production Key 1", "Dev Key"). */
+  label: text().notNull(),
+  /** The encrypted API key. */
+  apiKey: bytea().notNull(),
+  /** Whether this key is currently enabled. */
+  enabled: boolean().notNull().default(true),
+  /** Priority for selection (lower = higher priority). */
+  priority: integer().notNull().default(0),
+  /** Custom model override for this key. */
+  model: text(),
+  /** Custom base URL override for this key. */
+  baseUrl: text(),
+  /** Total requests made with this key. */
+  totalRequests: integer().notNull().default(0),
+  /** Successful requests. */
+  successRequests: integer().notNull().default(0),
+  /** Failed requests. */
+  failedRequests: integer().notNull().default(0),
+  /** Last error message. */
+  lastError: text(),
+  /** When this key is temporarily unavailable (rate limit cooldown). */
+  cooldownUntil: timestamp({ withTimezone: true }),
+  /** Circuit breaker state: 'closed' (normal), 'open' (failing), 'half-open' (testing). */
+  circuitState: text().$type<'closed' | 'open' | 'half-open'>().notNull().default('closed'),
+  /** When the circuit breaker was last opened. */
+  circuitOpenedAt: timestamp({ withTimezone: true }),
+  /** Consecutive failures before circuit opened. */
+  consecutiveFailures: integer().notNull().default(0),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  index().on(t.providerId, t.priority, t.enabled),
+  index().on(t.cooldownUntil),
+  index().on(t.circuitState),
+]);
 
 /**
  * One number's auto-reply agent: what it says, which provider answers, and when it stays quiet.
