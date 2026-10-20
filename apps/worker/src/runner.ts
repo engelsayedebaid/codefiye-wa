@@ -433,6 +433,7 @@ export class SessionRunner {
         isGroup: m.isGroup,
         text: m.text,
         history: false,
+        wake: () => this.requestDrain(),
       });
     }
   }

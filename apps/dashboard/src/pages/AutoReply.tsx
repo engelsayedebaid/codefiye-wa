@@ -495,6 +495,8 @@ function ProviderCard({ provider, index, onSaved }: { provider: Provider; index:
   const [baseUrl, setBaseUrl] = useState(provider.baseUrl ?? '');
   const [model, setModel] = useState(provider.model ?? '');
   const [enabled, setEnabled] = useState(provider.enabled);
+  // Adding the first key switches the provider on server-side; follow it, or "Save" would undo it.
+  useEffect(() => setEnabled(provider.enabled), [provider.enabled]);
   const [tested, setTested] = useState<string | null>(null);
   const [label, setLabel] = useState('');
   const [key, setKey] = useState('');

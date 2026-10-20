@@ -136,11 +136,16 @@ export async function saveAutoReplySettings(
   return next;
 }
 
-/** How many answers this conversation already got (the cap that stops a loop with another bot). */
-export async function countChatReplies(sql: Sql, sessionId: string, chatJid: string): Promise<number> {
+/**
+ * How many answers this conversation got in the last `windowMs` (the cap that stops a loop with
+ * another bot). A window, not a lifetime total: a lifetime count silenced a customer for good after
+ * their first few questions.
+ */
+export async function countChatReplies(sql: Sql, sessionId: string, chatJid: string, windowMs: number): Promise<number> {
   const [row] = await sql<{ count: number }[]>`
     select count(*)::int as count from auto_reply_log
-    where session_id = ${sessionId} and chat_jid = ${chatJid} and status = 'sent'`;
+    where session_id = ${sessionId} and chat_jid = ${chatJid} and status = 'sent'
+      and created_at > now() - (${windowMs}::int * interval '1 millisecond')`;
   return row?.count ?? 0;
 }
 

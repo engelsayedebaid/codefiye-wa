@@ -41,6 +41,13 @@ const CONTEXT_MESSAGES = 20;
 const MODEL_TIMEOUT_MS = 45_000;
 /** The settings are read once per burst of messages, not once per message. */
 const SETTINGS_TTL_MS = 30_000;
+/**
+ * The span `maxReplies` counts over. A loop with another bot answers within seconds, so it hits the
+ * cap in a minute or two; a person asking questions is answered again once the window has passed.
+ */
+const REPLY_CAP_WINDOW_MS = 10 * 60_000;
+/** `not_before` is the database's clock: wake a little after it, so the row is due when claimed. */
+const WAKE_MARGIN_MS = 250;
 export type AutoReplyInput = {
   sessionId: string;
   workspaceId: string;
@@ -54,6 +61,8 @@ export type AutoReplyInput = {
   text: string | null;
   /** True when the message came from the phone's history, not from a live chat. */
   history: boolean;
+  /** Starts the session's send queue (the runner's own drain), so a delayed answer leaves on time. */
+  wake?: () => void;
 };
 
 type Cached<T> = { value: T; at: number };
@@ -100,7 +109,7 @@ export class AutoReplyAgent {
     // The cap that stops a loop with another bot: this conversation got its answers already.
     if (settings.maxReplies > 0) {
       const checkStart = Date.now();
-      const answered = await countChatReplies(sql, input.sessionId, input.chatJid);
+      const answered = await countChatReplies(sql, input.sessionId, input.chatJid, REPLY_CAP_WINDOW_MS);
       timings.checkReplies = Date.now() - checkStart;
       if (answered >= settings.maxReplies) return this.skip(input, settings, 'limit_reached', language);
     }
@@ -222,10 +231,15 @@ export class AutoReplyAgent {
       reason: null,
       latencyMs,
     });
-    // The worker's own queue: tell the runner to send it.
-    await notify(sql, CHANNELS.control, { type: 'message.queued', sessionId: input.sessionId }).catch(() =>
-      log.warn({ sessionId: input.sessionId }, 'auto-reply: could not wake the send queue'),
-    );
+    // The worker's own queue: start it when the pause is over. Left to the supervisor's tick, the
+    // answer would wait up to another 5 s after its `not_before`.
+    if (input.wake) {
+      setTimeout(input.wake, gap + WAKE_MARGIN_MS).unref();
+    } else {
+      await notify(sql, CHANNELS.control, { type: 'message.queued', sessionId: input.sessionId }).catch(() =>
+        log.warn({ sessionId: input.sessionId }, 'auto-reply: could not wake the send queue'),
+      );
+    }
     log.info(
       {
         sessionId: input.sessionId,

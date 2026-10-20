@@ -99,9 +99,26 @@ describe('WhatsApp Message Formatter', () => {
       expect(result).toContain('Third paragraph');
     });
 
-    it('removes decorative characters at line start', () => {
-      expect(formatForWhatsApp('*   text')).toBe('text');
-      expect(formatForWhatsApp('-   text')).toBe('text');
+    it('reads a list marker followed by extra spaces as a list item', () => {
+      expect(formatForWhatsApp('*   text')).toBe('• text');
+      expect(formatForWhatsApp('-   text')).toBe('• text');
+    });
+
+    it('keeps WhatsApp bold at the start of a line and blank lines between paragraphs', () => {
+      expect(formatForWhatsApp('**السعر**: 500 جنيه\n\nللحجز كلمنا')).toBe('*السعر*: 500 جنيه\n\nللحجز كلمنا');
+    });
+
+    it('keeps underscores inside names, e-mails and links', () => {
+      const text = 'Write to my_shop@mail.com or open https://x.com/a_b_c';
+      expect(formatForWhatsApp(text)).toBe(text);
+    });
+
+    it('turns a Markdown link into its address', () => {
+      expect(formatForWhatsApp('[Book now](https://codefiye.com/book)')).toBe('Book now: https://codefiye.com/book');
+    });
+
+    it('keeps at most two emoji in a row', () => {
+      expect(formatForWhatsApp('Thanks 🎉🎉🎉🎉')).toBe('Thanks 🎉🎉');
     });
 
     it('handles complex mixed formatting', () => {

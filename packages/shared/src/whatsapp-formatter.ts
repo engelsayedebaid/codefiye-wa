@@ -12,73 +12,53 @@
  * - Handles URLs, numbered lists, and special characters
  */
 export function formatForWhatsApp(text: string): string {
-  let cleaned = text;
+  let cleaned = text.replace(/\r\n?/g, '\n');
 
-  // Remove Markdown headings (#, ##, ### at line start)
-  cleaned = cleaned.replace(/^#{1,6}\s+/gm, '');
+  // Code first: its content must not be read as Markdown. ```blocks``` before `inline`.
+  cleaned = cleaned.replace(/```(?:[\w+-]*\n)?([\s\S]*?)```/g, (_match, content: string) => content.trim());
+  cleaned = cleaned.replace(/`([^`\n]+)`/g, '$1');
 
-  // Convert **bold** to *bold* only for genuine emphasis
-  // First, convert ** to * (but be careful not to over-convert)
-  cleaned = cleaned.replace(/\*\*(.+?)\*\*/g, (match, content) => {
-    // Only convert if it's a short phrase (genuine emphasis)
-    if (content.length <= 50 && !content.includes('\n')) {
-      return `*${content}*`;
-    }
-    // Otherwise, just remove the asterisks
-    return content;
-  });
+  // Headings, blockquotes and horizontal rules (a whole line of ---, *** or ___).
+  cleaned = cleaned.replace(/^[ \t]*#{1,6}[ \t]+/gm, '');
+  cleaned = cleaned.replace(/^[ \t]*>[ \t]?/gm, '');
+  cleaned = cleaned.replace(/^[ \t]*([-*_])(?:[ \t]*\1){2,}[ \t]*$/gm, '');
 
-  // Remove remaining ** markers
-  cleaned = cleaned.replace(/\*\*/g, '');
+  // [label](url) → the address WhatsApp can open.
+  cleaned = cleaned.replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g, (_match, label: string, url: string) =>
+    label.trim() === url ? url : `${label.trim()}: ${url}`,
+  );
 
-  // Remove __bold__ (alternative Markdown)
-  cleaned = cleaned.replace(/__(.+?)__/g, '$1');
-
-  // Remove _italic_ (keep it simple)
-  cleaned = cleaned.replace(/_(.+?)_/g, '$1');
-
-  // Remove `code` backticks but preserve the content
-  cleaned = cleaned.replace(/`([^`]+)`/g, '$1');
-
-  // Remove ```code blocks``` but preserve content
-  cleaned = cleaned.replace(/```[\s\S]*?```/g, (match) => {
-    return match.replace(/```/g, '').trim();
-  });
-
-  // Remove strikethrough ~~text~~
-  cleaned = cleaned.replace(/~~(.+?)~~/g, '$1');
-
-  // Remove excessive asterisks (more than 2 in a row)
+  // Runs of three or more asterisks (***text***) are decoration, not emphasis.
   cleaned = cleaned.replace(/\*{3,}/g, '');
 
-  // Remove bullet points with *, -, or + (replace with plain text or remove)
-  cleaned = cleaned.replace(/^[\s]*[-*+]\s+/gm, '• ');
+  // List markers become "• " (before bold, so "* item" is not read as emphasis).
+  cleaned = cleaned.replace(/^[ \t]*[-*+][ \t]+/gm, '• ');
+  cleaned = cleaned.replace(/^[ \t]*(\d+)[.)][ \t]+/gm, '$1. ');
 
-  // Remove numbered list markers but keep the numbers
-  cleaned = cleaned.replace(/^[\s]*\d+\.\s+/gm, (match) => {
-    const num = match.match(/\d+/)?.[0] || '';
-    return `${num}. `;
-  });
+  // **bold** → WhatsApp's *bold* for a short phrase; a long one loses the markers.
+  cleaned = cleaned.replace(/\*\*([^*\n]+?)\*\*/g, (_match, content: string) =>
+    content.length <= 50 ? `*${content}*` : content,
+  );
+  cleaned = cleaned.replace(/\*\*/g, '');
 
-  // Remove blockquotes >
-  cleaned = cleaned.replace(/^>\s+/gm, '');
+  // __bold__ and _italic_ only around whole words: an underscore inside a name, an e-mail or a
+  // link (my_shop, https://x.com/a_b) stays.
+  cleaned = cleaned.replace(/(^|[\s(])__([^_\n]+?)__(?=$|[\s).,!?،؛:])/gm, '$1$2');
+  cleaned = cleaned.replace(/(^|[\s(])_([^_\n]+?)_(?=$|[\s).,!?،؛:])/gm, '$1$2');
 
-  // Remove horizontal rules ---, ***
-  cleaned = cleaned.replace(/^[-*_]{3,}\s*$/gm, '');
+  // ~~strikethrough~~
+  cleaned = cleaned.replace(/~~([^~\n]+?)~~/g, '$1');
 
-  // Remove excessive line breaks (more than 2 consecutive)
+  // At most two emoji in a row.
+  cleaned = cleaned.replace(/(\p{Extended_Pictographic}️?){3,}/gu, (run: string) =>
+    (run.match(/\p{Extended_Pictographic}️?/gu) ?? []).slice(0, 2).join(''),
+  );
+
+  // Trailing spaces, then at most one blank line between paragraphs.
+  cleaned = cleaned.replace(/[ \t]+$/gm, '');
   cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
 
-  // Trim whitespace
-  cleaned = cleaned.trim();
-
-  // Remove excessive emojis (more than 2 in a row)
-  cleaned = cleaned.replace(/([^\p{Emoji_Presentation}\s])\p{Emoji_Presentation}{3,}/gu, '$1');
-
-  // Remove decorative characters at line start
-  cleaned = cleaned.replace(/^[\s*•\-–—]+\s*/gm, '');
-
-  return cleaned;
+  return cleaned.trim();
 }
 
 /**

@@ -382,6 +382,12 @@ export function autoReplyRoutes(deps: Deps): FastifyPluginAsyncZod {
             model: req.body.model,
             baseUrl: req.body.baseUrl,
           });
+        // The first key switches the provider on: otherwise the agent skips it ("disabled") although
+        // its key tests fine. A provider switched off with keys stored stays off.
+        await sql`
+          update ai_providers set enabled = true, updated_at = now()
+          where id = ${id} and not enabled
+            and (select count(*) from ai_provider_keys where provider_id = ${id}) = 1`;
         return ok({ keyId });
       },
     );

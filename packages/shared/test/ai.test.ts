@@ -20,7 +20,7 @@ describe('Gemini provider', () => {
   });
 
   it('uses the documented v1beta endpoint, API-key header, and generateContent payload', async () => {
-    const fetch = vi.fn(async () => new Response(JSON.stringify({
+    const fetch = vi.fn(async (_url: string, _init: RequestInit) => new Response(JSON.stringify({
       candidates: [{ content: { parts: [{ text: 'ready' }] } }],
       usageMetadata: { promptTokenCount: 2, candidatesTokenCount: 1 },
       modelVersion: 'gemini-2.5-flash',
@@ -38,8 +38,32 @@ describe('Gemini provider', () => {
     expect(body).toMatchObject({
       systemInstruction: { parts: [{ text: 'Be concise' }] },
       contents: [{ role: 'user', parts: [{ text: 'Hello' }] }],
-      generationConfig: { maxOutputTokens: 32 },
+      generationConfig: { maxOutputTokens: 32, thinkingConfig: { thinkingBudget: 0 } },
     });
+  });
+
+  it('leaves room for thinking on models that always think', async () => {
+    const fetch = vi.fn(async (_url: string, _init: RequestInit) => new Response(JSON.stringify({
+      candidates: [{ content: { parts: [{ text: 'ready' }] } }],
+    }), { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+
+    await generateText({ ...request, model: 'gemini-3.5-flash' });
+
+    const body = JSON.parse(String(fetch.mock.calls[0]![1].body));
+    expect(body.generationConfig.maxOutputTokens).toBe(32 + 2_048);
+    expect(body.generationConfig.thinkingConfig).toBeUndefined();
+  });
+
+  it('says so when thinking used the whole budget, without resting the provider', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      candidates: [{ content: { parts: [] }, finishReason: 'MAX_TOKENS' }],
+    }), { status: 200 })));
+
+    const error = await generateText(request).catch((cause) => cause);
+
+    expect(error).toMatchObject({ scope: 'request', code: 'invalid_request' });
+    expect((error as Error).message).toContain('max tokens');
   });
 
   it('lists and normalizes models available to one credential', async () => {
@@ -82,13 +106,62 @@ describe('Gemini provider', () => {
     expect(error).toMatchObject({ code: 'model_unavailable', scope: 'key', status: 404 });
   });
 
-  it('marks an account-wide Gemini quota as provider-scoped and keeps Retry-After', async () => {
+  it('treats a Gemini 429 (always RESOURCE_EXHAUSTED) as this key\'s limit, with its retry delay and reason', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
-      error: { code: 429, message: 'Project quota exceeded', status: 'RESOURCE_EXHAUSTED' },
-    }), { status: 429, headers: { 'retry-after': '12' } })));
+      error: {
+        code: 429,
+        message: 'You exceeded your current quota. Quota exceeded for metric: generate_content_free_tier_requests, limit: 10',
+        status: 'RESOURCE_EXHAUSTED',
+        details: [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '17s' }],
+      },
+    }), { status: 429 })));
 
     const error = await generateText(request).catch((cause) => cause);
 
-    expect(error).toMatchObject({ code: 'rate_limited', scope: 'provider', status: 429, retryAfterMs: 12_000 });
+    expect(error).toMatchObject({ code: 'rate_limited', scope: 'key', status: 429, retryAfterMs: 17_000 });
+    expect((error as Error).message).toContain('limit: 10');
+  });
+
+  it('keeps Retry-After from the header', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 429, headers: { 'retry-after': '12' } })));
+
+    const error = await generateText(request).catch((cause) => cause);
+
+    expect(error).toMatchObject({ scope: 'key', retryAfterMs: 12_000 });
+  });
+});
+
+describe('OpenAI-compatible provider', () => {
+  const openai = { ...request, provider: 'openai' as const, model: 'gpt-4o-mini' };
+
+  it('treats a per-minute limit that names the organization as this key\'s limit', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      error: { message: 'Rate limit reached for gpt-4o-mini in organization org-abc on requests per min (RPM): Limit 3', type: 'requests', code: 'rate_limit_exceeded' },
+    }), { status: 429 })));
+
+    const error = await generateText(openai).catch((cause) => cause);
+
+    expect(error).toMatchObject({ code: 'rate_limited', scope: 'key' });
+  });
+
+  it('treats an exhausted balance as the whole provider\'s', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      error: { message: 'You exceeded your current quota, please check your plan and billing details.', type: 'insufficient_quota', code: 'insufficient_quota' },
+    }), { status: 429 })));
+
+    const error = await generateText(openai).catch((cause) => cause);
+
+    expect(error).toMatchObject({ code: 'rate_limited', scope: 'provider' });
+  });
+
+  it('never repeats a key the provider echoed back', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      error: { message: 'Incorrect API key provided: sk-proj-abcdef123456. You can find your API key at …' },
+    }), { status: 401 })));
+
+    const error = await generateText(openai).catch((cause) => cause);
+
+    expect(error).toMatchObject({ code: 'invalid_credentials' });
+    expect((error as Error).message).not.toContain('sk-proj-abcdef123456');
   });
 });

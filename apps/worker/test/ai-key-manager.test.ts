@@ -46,6 +46,7 @@ describe('AiKeyManager', () => {
     sql: {} as Sql,
     masterKey: Buffer.alloc(32),
     log,
+    retryDelayMs: 0,
     services: {
       generate,
       success,
@@ -144,6 +145,33 @@ describe('AiKeyManager', () => {
     expect(generate).toHaveBeenCalledTimes(2);
     expect(coolDownProvider).toHaveBeenCalledWith('anthropic', 'provider quota', 90_000);
     expect(generate.mock.calls[1]?.[0].model).toBe('fallback-model');
+  });
+
+  it('asks an overloaded provider once more before giving up on it', async () => {
+    loadProvider.mockImplementation(async (id) => ({ ...provider(id), hasKeys: true }));
+    keysByProvider.set('anthropic', [key('key-1')]);
+    generate
+      .mockRejectedValueOnce(new AiError('The provider answered 503', 503, 'provider'))
+      .mockResolvedValueOnce(answer('second try'));
+
+    const result = await manager().executeWithFailover(request);
+
+    expect(result?.text).toBe('second try');
+    expect(generate).toHaveBeenCalledTimes(2);
+    expect(success).toHaveBeenCalledWith('key-1');
+    expect(coolDownProvider).not.toHaveBeenCalled();
+  });
+
+  it('never rests every key over a timeout, so the next customer is still answered', async () => {
+    loadProvider.mockImplementation(async (id) => ({ ...provider(id), hasKeys: true }));
+    keysByProvider.set('anthropic', [key('key-1'), key('key-2')]);
+    generate.mockRejectedValueOnce(new AiError('The provider took too long to answer', undefined, 'provider'));
+
+    const result = await manager().executeWithFailover(request);
+
+    expect(result).toBeNull();
+    expect(generate).toHaveBeenCalledOnce();
+    expect(coolDownProvider).not.toHaveBeenCalled();
   });
 
   it('uses a keyless custom provider when it is enabled', async () => {

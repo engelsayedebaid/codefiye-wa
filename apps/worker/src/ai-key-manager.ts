@@ -14,13 +14,17 @@ import type { Logger } from 'pino';
 
 const KEY_RATE_LIMIT_COOLDOWN_MS = 60_000;
 const MODEL_UNAVAILABLE_COOLDOWN_MS = 5 * 60_000;
-const PROVIDER_FAILURE_COOLDOWN_MS = 30_000;
 const PROVIDER_QUOTA_COOLDOWN_MS = 15 * 60_000;
+/** The pause before asking an overloaded (5xx) provider once more. */
+const SERVER_ERROR_RETRY_MS = 1_500;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 type KeyManagerOptions = {
   sql: Sql;
   masterKey: Buffer;
   log: Logger;
+  retryDelayMs?: number;
   /** Test seams; production always uses the defaults. */
   services?: {
     loadProvider?: (providerId: string) => Promise<AiProviderRow | null>;
@@ -129,7 +133,7 @@ export class AiKeyManager {
     },
   ): Promise<{ result: AiKeyResult | null; stop: boolean }> {
     try {
-      const result = await this.generate({
+      const ask = () => this.generate({
         provider: providerId,
         apiKey,
         model,
@@ -140,6 +144,15 @@ export class AiKeyManager {
         baseUrl: key?.baseUrl?.trim() || provider.baseUrl?.trim() || undefined,
         timeoutMs: request.timeoutMs,
       });
+      let result: AiResult;
+      try {
+        result = await ask();
+      } catch (first) {
+        // A provider that is briefly overloaded usually answers a second later.
+        if (!(first instanceof AiError) || first.status === undefined || first.status < 500) throw first;
+        await sleep(this.opts.retryDelayMs ?? SERVER_ERROR_RETRY_MS);
+        result = await ask();
+      }
       if (key) await this.success(key.id);
       this.opts.log.info({ provider: providerId, keyId: key?.id ?? null, model: result.model }, 'auto-reply: AI request succeeded');
       return {
@@ -174,10 +187,10 @@ export class AiKeyManager {
       }
 
       await this.failure(key.id, { message: error.message, countTowardsCircuit: false });
-      if (error.scope === 'provider') {
-        const cooldown = error.retryAfterMs
-          ?? (error.status === 429 ? PROVIDER_QUOTA_COOLDOWN_MS : PROVIDER_FAILURE_COOLDOWN_MS);
-        await this.coolDownProvider(providerId, error.message, cooldown);
+      // Only an exhausted account balance rests every key. A timeout or a 5xx ("model overloaded")
+      // passes in seconds: resting the provider for it would leave the next customers unanswered.
+      if (error.scope === 'provider' && error.status === 429) {
+        await this.coolDownProvider(providerId, error.message, error.retryAfterMs ?? PROVIDER_QUOTA_COOLDOWN_MS);
       }
       this.opts.log.warn(safe, 'auto-reply: AI provider unavailable; skipping its remaining keys');
       return { result: null, stop: true };

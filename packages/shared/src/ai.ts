@@ -126,6 +126,34 @@ export type AiResult = {
 
 const DEFAULT_TIMEOUT_MS = 45_000;
 
+/**
+ * The provider's own explanation (`error.message` in the OpenAI, Anthropic and Gemini shapes), cut
+ * short and with anything that looks like a key removed, so the admin sees *why* (which quota, which
+ * model) without a secret reaching the dashboard or the logs.
+ */
+function providerExplanation(body: string): string {
+  let message = '';
+  try {
+    const data = JSON.parse(body);
+    const raw = data?.error?.message ?? data?.message;
+    message = typeof raw === 'string' ? raw : '';
+  } catch {
+    return '';
+  }
+  return message
+    .replace(/\b(?:sk|gsk|xai)[-_][\w-]{6,}/g, '••••')
+    .replace(/\bAIza[\w-]{10,}/g, '••••')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 240);
+}
+
+/** Gemini sends its retry delay in the body (`RetryInfo.retryDelay: "17s"`), not in a header. */
+function bodyRetryDelayMs(body: string): number | undefined {
+  const match = /"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/.exec(body);
+  return match ? Math.ceil(Number(match[1]) * 1_000) : undefined;
+}
+
 /** The body a provider refused, in one short line for the dashboard. */
 async function refusal(res: Response, body: string): Promise<never> {
   const retryHeader = res.headers.get('retry-after');
@@ -135,9 +163,11 @@ async function refusal(res: Response, body: string): Promise<never> {
     ? Math.max(0, Math.ceil(retrySeconds * 1_000))
     : Number.isFinite(retryDate)
       ? Math.max(0, retryDate - Date.now())
-      : undefined;
+      : bodyRetryDelayMs(body);
+  const explained = providerExplanation(body);
+  const why = explained ? `: ${explained}` : '';
   if (res.status === 401 || res.status === 403) {
-    throw new AiError('The API key was refused by the provider', res.status, 'key', undefined, 'invalid_credentials');
+    throw new AiError(`The API key was refused by the provider${why}`, res.status, 'key', undefined, 'invalid_credentials');
   }
   const detail = body.toLowerCase();
   if (res.status === 400 && (
@@ -148,21 +178,13 @@ async function refusal(res: Response, body: string): Promise<never> {
     throw new AiError('The API key was refused by the provider', res.status, 'key', undefined, 'invalid_credentials');
   }
   if (res.status === 429) {
-    // A hard account/project quota applies to every key in that account. Do not burn through keys
-    // when the provider explicitly says that is the restriction; move to the fallback provider.
-    const providerWide = [
-      'insufficient_quota',
-      'billing',
-      'hard limit',
-      'monthly limit',
-      'daily limit',
-      'organization',
-      'organisation',
-      'project quota',
-      'resource_exhausted',
-    ].some((marker) => detail.includes(marker));
+    // Only an exhausted balance holds for every key of the account (OpenAI `insufficient_quota`,
+    // a billing message): then the fallback provider takes over. Everything else — Gemini's
+    // RESOURCE_EXHAUSTED (sent for every 429, per-minute ones included), OpenAI's "rate limit
+    // reached … in organization …" — is this key's limit for a while: rest it, try the next key.
+    const providerWide = ['insufficient_quota', 'billing', 'credit balance'].some((marker) => detail.includes(marker));
     throw new AiError(
-      'The provider is rate-limited or out of quota (429)',
+      `The provider limited this key (429)${why}`,
       res.status,
       providerWide ? 'provider' : 'key',
       retryAfterMs,
@@ -170,10 +192,10 @@ async function refusal(res: Response, body: string): Promise<never> {
     );
   }
   if (res.status === 400) {
-    throw new AiError('The provider rejected the request (400); check the model and settings', res.status, 'request', undefined, 'invalid_request');
+    throw new AiError(`The provider rejected the request (400)${why || '; check the model and settings'}`, res.status, 'request', undefined, 'invalid_request');
   }
   if (res.status === 404) {
-    throw new AiError('The model is not available for this API key and API version (404)', res.status, 'key', undefined, 'model_unavailable');
+    throw new AiError(`The model is not available for this API key and API version (404)${why}`, res.status, 'key', undefined, 'model_unavailable');
   }
   // Deliberately omit the response body. Some compatible servers echo headers or request data,
   // which must never put an API key, prompt, or customer message in application logs.
@@ -227,7 +249,7 @@ async function openaiCompatible(req: AiRequest, base: string): Promise<AiResult>
   );
   const choice = data?.choices?.[0]?.message?.content;
   const text = typeof choice === 'string' ? choice : '';
-  if (!text.trim()) throw new AiError('The provider answered with no text');
+  if (!text.trim()) throw new AiError('The provider answered with no text', undefined, 'request');
   return {
     text: text.trim(),
     model: data?.model ?? req.model,
@@ -254,7 +276,7 @@ async function anthropic(req: AiRequest, base: string): Promise<AiResult> {
     .filter((b: { type?: string }) => b?.type === 'text')
     .map((b: { text?: string }) => b.text ?? '')
     .join('');
-  if (!text.trim()) throw new AiError('The provider answered with no text');
+  if (!text.trim()) throw new AiError('The provider answered with no text', undefined, 'request');
   return {
     text: text.trim(),
     model: data?.model ?? req.model,
@@ -350,6 +372,22 @@ export async function validateGeminiModelAccess(options: {
   return available;
 }
 
+/** Thinking tokens Gemini may spend before it writes, on models whose thinking can't be switched off. */
+const GEMINI_THINKING_HEADROOM = 2_048;
+
+/**
+ * Gemini 2.5+ "thinks" before answering, and the thinking is paid out of `maxOutputTokens`: with a
+ * WhatsApp-sized budget it can use all of it and return no text (and it adds seconds). 2.5 Flash and
+ * Flash-Lite can turn thinking off; other models get headroom on top of the reply's own budget.
+ */
+function geminiGenerationConfig(model: string, temperature: number, maxTokens: number) {
+  if (/^gemini-2\.5-flash/.test(model)) {
+    return { temperature, maxOutputTokens: maxTokens, thinkingConfig: { thinkingBudget: 0 } };
+  }
+  const thinks = /^gemini-(?:2\.5|[3-9])/.test(model) || model === 'gemini-flash-latest';
+  return { temperature, maxOutputTokens: thinks ? maxTokens + GEMINI_THINKING_HEADROOM : maxTokens };
+}
+
 /** Gemini's generateContent: the system prompt is `systemInstruction`, the model role is `model`. */
 async function gemini(req: AiRequest, base: string): Promise<AiResult> {
   const model = normalizeGeminiModel(req.model);
@@ -359,17 +397,21 @@ async function gemini(req: AiRequest, base: string): Promise<AiResult> {
     {
       systemInstruction: { parts: [{ text: req.system }] },
       contents: req.messages.map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
-      generationConfig: { temperature: req.temperature ?? 0.7, maxOutputTokens: req.maxTokens ?? 800 },
+      generationConfig: geminiGenerationConfig(model, req.temperature ?? 0.7, req.maxTokens ?? 800),
     },
     req.timeoutMs ?? DEFAULT_TIMEOUT_MS,
   );
-  if (data?.promptFeedback?.blockReason) throw new AiError('The model declined to answer this message');
-  const parts = data?.candidates?.[0]?.content?.parts ?? [];
+  if (data?.promptFeedback?.blockReason) throw new AiError('The model declined to answer this message', undefined, 'request');
+  const candidate = data?.candidates?.[0];
+  const parts = candidate?.content?.parts ?? [];
   const text = parts
     .filter((p: { thought?: boolean }) => !p?.thought)
     .map((p: { text?: string }) => p?.text ?? '')
     .join('');
-  if (!text.trim()) throw new AiError('The provider answered with no text');
+  if (!text.trim() && candidate?.finishReason === 'MAX_TOKENS') {
+    throw new AiError('The model used its whole token budget before writing an answer; raise "max tokens"', undefined, 'request', undefined, 'invalid_request');
+  }
+  if (!text.trim()) throw new AiError('The provider answered with no text', undefined, 'request');
   const usage = data?.usageMetadata ?? {};
   return {
     text: text.trim(),
