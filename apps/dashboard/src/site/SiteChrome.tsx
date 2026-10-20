@@ -1,4 +1,4 @@
-import { ArrowRight, Mail, Menu, X } from 'lucide-react';
+import { ArrowRight, Mail, Menu, X } from '../icons';
 import { type ReactNode, useEffect, useState } from 'react';
 import { sessionHint } from '../api';
 import { BRAND } from '../brand';

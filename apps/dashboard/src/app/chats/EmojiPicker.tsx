@@ -1,4 +1,4 @@
-import { Car, Clock, Flag, Heart, Lightbulb, PawPrint, Search, Smile, Trophy, UtensilsCrossed, X, Hand } from 'lucide-react';
+import { Car, Clock, Flag, Heart, Lightbulb, PawPrint, Search, Smile, Trophy, UtensilsCrossed, X, Hand } from '../../icons';
 import { type KeyboardEvent, memo, useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../../i18n';
 import { cx } from '../../ui';

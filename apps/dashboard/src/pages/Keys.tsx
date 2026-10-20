@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, Plus, Trash2 } from 'lucide-react';
+import { KeyRound, Plus, Trash2 } from '../icons';
 import { type FormEvent, useMemo, useState } from 'react';
 import { api, errorMessage } from '../api';
 import { useI18n } from '../i18n';

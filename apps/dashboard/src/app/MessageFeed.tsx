@@ -19,7 +19,7 @@ import {
   Smile,
   Sticker,
   Video,
-} from 'lucide-react';
+} from '../icons';
 import { useState } from 'react';
 import { useI18n } from '../i18n';
 import type { Dict } from '../i18n/ar';

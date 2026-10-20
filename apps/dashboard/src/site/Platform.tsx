@@ -1,4 +1,4 @@
-import { Check, CheckCheck, Clock, Plus, SendHorizontal, ShieldCheck, Smartphone } from 'lucide-react';
+import { Check, CheckCheck, Clock, Plus, SendHorizontal, ShieldCheck, Smartphone } from '../icons';
 import type { ReactNode } from 'react';
 import { useI18n } from '../i18n';
 import { cx, Reveal } from '../ui';

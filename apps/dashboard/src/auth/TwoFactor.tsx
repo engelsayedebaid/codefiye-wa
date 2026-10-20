@@ -1,6 +1,6 @@
 import { asciiDigits } from '@wa/shared/phone';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Copy, Download, ShieldCheck, Smartphone } from 'lucide-react';
+import { Check, Copy, Download, ShieldCheck, Smartphone } from '../icons';
 import { type FormEvent, type ReactNode, useState } from 'react';
 import { api, ApiRequestError, errorMessage } from '../api';
 import type { Account } from '../app/account';

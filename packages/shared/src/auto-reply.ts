@@ -230,6 +230,10 @@ export type AutoReplySettings = {
   /** `auto` answers in the contact's language. */
   language: AutoReplyLanguage;
   variables: AutoReplyVariables;
+  /** Where a summary of each conversation goes (E.164); empty = no summaries. */
+  summaryPhone: string;
+  /** How long a conversation stays quiet before it is summarized, in minutes. */
+  summaryIdleMinutes: number;
 };
 
 export const DEFAULT_AUTO_REPLY_SETTINGS: AutoReplySettings = {
@@ -253,7 +257,36 @@ export const DEFAULT_AUTO_REPLY_SETTINGS: AutoReplySettings = {
   rules: [],
   language: 'auto',
   variables: DEFAULT_AUTO_REPLY_VARIABLES,
+  summaryPhone: '',
+  summaryIdleMinutes: 10,
 };
+
+/** The quiet spans the dashboard offers before a conversation is summarized, in minutes. */
+export const SUMMARY_IDLE_MINUTES = [5, 10, 15, 30, 60] as const;
+
+/**
+ * The instructions for a conversation summary sent to the business owner. The contact's name and
+ * number are written by the worker from WhatsApp, never by the model, so they can't be invented.
+ */
+export function buildSummaryPrompt(language: 'ar' | 'en'): string {
+  return language === 'ar'
+    ? `أنت مساعد يلخّص محادثة واتساب بين عميل ووكيل خدمة العملاء، لصاحب العمل.
+اكتب الملخص بالعربية في هذه الأقسام بالضبط، كل قسم في سطر يبدأ بالرمز:
+🎯 *الطلب:* ما يريده العميل في جملة واحدة.
+📝 *التفاصيل:* المتطلبات والمواصفات والميزانية والمواعيد التي ذكرها (نقاط قصيرة تبدأ بـ •).
+📇 *بيانات العميل:* الاسم أو الشركة أو البريد أو أي رقم آخر ذكره العميل بنفسه.
+📊 *الاهتمام:* عالٍ أو متوسط أو منخفض، مع السبب في كلمات.
+✅ *الخطوة التالية:* ما يجب أن يفعله الفريق الآن.
+القواعد: استخدم فقط ما ورد في المحادثة؛ إن لم يُذكر شيء فاكتب «غير مذكور». لا تحيّي ولا تضف مقدمة أو خاتمة. لا تستخدم Markdown غير النجمة الواحدة للعناوين.`
+    : `You summarize a WhatsApp conversation between a customer and a customer-service agent, for the business owner.
+Write the summary in English in exactly these sections, each on a line starting with its emoji:
+🎯 *Request:* what the customer wants, in one sentence.
+📝 *Details:* requirements, specs, budget and dates they mentioned (short points starting with •).
+📇 *Customer info:* name, company, e-mail or any other number the customer gave themselves.
+📊 *Interest:* high, medium or low, with the reason in a few words.
+✅ *Next step:* what the team should do now.
+Rules: use only what the conversation says; if something wasn't mentioned write "Not mentioned". No greeting, intro or sign-off. No Markdown except single asterisks for the headings.`;
+}
 
 /** How an auto-reply ended; the dashboard shows it as the activity log. */
 export const AUTO_REPLY_STATUSES = ['sent', 'failed', 'skipped'] as const;

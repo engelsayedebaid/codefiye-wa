@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, KeyRound, LogOut, Plug, PlugZap, RefreshCw, Send, Trash2 } from 'lucide-react';
+import { ArrowLeft, KeyRound, LogOut, Plug, PlugZap, RefreshCw, Send, Trash2 } from '../icons';
 import { type FormEvent, useState } from 'react';
 import { api, ApiRequestError, errorMessage } from '../api';
 import { MessageFeed } from '../app/MessageFeed';

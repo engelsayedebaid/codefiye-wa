@@ -16,7 +16,7 @@ import {
   Search,
   SearchX,
   X,
-} from 'lucide-react';
+} from '../../icons';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { api, errorMessage } from '../../api';
 import { useI18n } from '../../i18n';

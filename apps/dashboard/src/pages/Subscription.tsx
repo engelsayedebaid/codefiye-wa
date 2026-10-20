@@ -1,6 +1,6 @@
 import { getPlan } from '@wa/shared/plans';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Hourglass, Info, Infinity as InfinityIcon, Smartphone } from 'lucide-react';
+import { CheckCircle2, Hourglass, Info, Infinity as InfinityIcon, Smartphone } from '../icons';
 import { type ReactNode, useState } from 'react';
 import { api, errorMessage } from '../api';
 import { isUnlimitedPlan, type PlanRequest, planState, useAccount } from '../app/account';

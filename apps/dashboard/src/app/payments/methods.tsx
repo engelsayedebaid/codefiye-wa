@@ -1,6 +1,6 @@
 import type { PaymentDetails, PaymentMethod, PaymentSettings } from '@wa/shared/payments';
 import { useQuery } from '@tanstack/react-query';
-import { Check, Copy, Landmark, Smartphone, Zap } from 'lucide-react';
+import { Check, Copy, Landmark, Smartphone, Zap } from '../../icons';
 import { type ReactNode, useState } from 'react';
 import { api } from '../../api';
 import { useI18n } from '../../i18n';

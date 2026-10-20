@@ -1,7 +1,7 @@
 import { discountPercent } from '@wa/shared/plan-pricing';
 import { enabledPaymentMethods, PAYMENT_MONTHS, type PaymentDetails, type PaymentMethod, type PaymentMonths, type PaymentSettings, planPriceEgp } from '@wa/shared/payments';
 import { useMutation } from '@tanstack/react-query';
-import { ArrowLeft, Check, ImagePlus, Info, Loader2, Receipt } from 'lucide-react';
+import { ArrowLeft, Check, ImagePlus, Info, Loader2, Receipt } from '../../icons';
 import { type DragEvent, type FormEvent, useRef, useState } from 'react';
 import { api, ApiRequestError, errorMessage } from '../../api';
 import { useI18n } from '../../i18n';

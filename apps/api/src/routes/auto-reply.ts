@@ -26,6 +26,7 @@ import {
   generateText,
   ok,
   successSchema,
+  toJid,
   validateGeminiModelAccess,
 } from '@wa/shared';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
@@ -117,6 +118,8 @@ const settingsSchema = z.object({
   rules: z.array(ruleSchema).max(50).optional(),
   language: z.enum(AUTO_REPLY_LANGUAGES).optional(),
   variables: variablesSchema.partial().optional(),
+  summaryPhone: z.string().max(32).optional(),
+  summaryIdleMinutes: z.number().int().min(2).max(240).optional(),
 });
 
 const settingsDto = z.object({
@@ -140,6 +143,8 @@ const settingsDto = z.object({
   rules: z.array(ruleSchema),
   language: z.enum(AUTO_REPLY_LANGUAGES),
   variables: variablesSchema,
+  summaryPhone: z.string(),
+  summaryIdleMinutes: z.number(),
 });
 
 const numberDto = z.object({
@@ -567,11 +572,49 @@ export function autoReplyRoutes(deps: Deps): FastifyPluginAsyncZod {
         if (body.rules !== undefined) patch.rules = body.rules as AutoReplyRule[];
         if (body.language !== undefined) patch.language = body.language as AutoReplyLanguage;
         if (body.variables !== undefined) patch.variables = { ...DEFAULT_AUTO_REPLY_VARIABLES, ...body.variables } as AutoReplyVariables;
+        if (body.summaryPhone !== undefined) {
+          const phone = body.summaryPhone.trim();
+          const jid = phone ? toJid(phone) : '';
+          if (jid === null || (jid && !jid.endsWith('@s.whatsapp.net'))) {
+            throw unprocessable('The summary number is not a valid phone number', { summaryPhone: ['Write it in international form, like +201012345678'] });
+          }
+          patch.summaryPhone = jid ? `+${jid.split('@')[0]}` : '';
+        }
+        if (body.summaryIdleMinutes !== undefined) patch.summaryIdleMinutes = body.summaryIdleMinutes;
         if (patch.delayMaxMs !== undefined && patch.delayMinMs !== undefined && patch.delayMaxMs < patch.delayMinMs) {
           throw unprocessable('The longest pause is shorter than the shortest one', { delayMaxMs: ['It must be at least as long as the shortest pause'] });
         }
         const settings = await saveAutoReplySettings(sql, session.id, req.auth.workspaceId, patch);
         return ok({ settings });
+      },
+    );
+
+    app.get(
+      '/summaries',
+      {
+        schema: {
+          ...schemaBase,
+          summary: 'The latest conversation summaries sent to a number’s owner',
+          querystring: z.object({ sessionId: z.uuid(), limit: z.coerce.number().int().min(1).max(50).default(10) }),
+          response: {
+            200: successSchema(
+              z.object({
+                summaries: z.array(z.object({ id: z.number(), chatJid: z.string(), status: z.enum(['pending', 'sent', 'failed']), summary: z.string(), createdAt: z.string() })),
+              }),
+            ),
+          },
+        },
+      },
+      async (req) => {
+        const rows = await sql<{ id: number; chat_jid: string; status: 'pending' | 'sent' | 'failed'; summary: string; created_at: Date }[]>`
+          select x.id, x.chat_jid, x.status, x.summary, x.created_at
+          from auto_reply_summaries x
+          join sessions s on s.id = x.session_id and s.workspace_id = ${req.auth.workspaceId}
+          where x.session_id = ${req.query.sessionId}
+          order by x.id desc limit ${req.query.limit}`;
+        return ok({
+          summaries: rows.map((row) => ({ id: row.id, chatJid: row.chat_jid, status: row.status, summary: row.summary, createdAt: new Date(row.created_at).toISOString() })),
+        });
       },
     );
 

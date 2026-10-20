@@ -19,7 +19,7 @@ import {
   TrendingDown,
   TrendingUp,
   Wifi,
-} from 'lucide-react';
+} from '../icons';
 import { type ReactNode, useId, useState } from 'react';
 import { api } from '../api';
 import { isUnlimitedPlan, planState, useAccount } from '../app/account';

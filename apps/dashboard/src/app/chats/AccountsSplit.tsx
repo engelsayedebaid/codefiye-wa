@@ -1,6 +1,6 @@
 import type { ChatFilter } from '@wa/shared/chats';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, RefreshCw, WifiOff, X } from 'lucide-react';
+import { Plus, RefreshCw, WifiOff, X } from '../../icons';
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { api, errorMessage } from '../../api';
 import { useLiveEvents } from '../../events';

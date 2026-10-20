@@ -1,5 +1,5 @@
 import { youtubeWatchUrl } from '@wa/shared/site';
-import { ArrowUpRight, CheckCheck, Play } from 'lucide-react';
+import { ArrowUpRight, CheckCheck, Play } from '../icons';
 import { useEffect, useState } from 'react';
 import { BRAND } from '../brand';
 import { useI18n } from '../i18n';

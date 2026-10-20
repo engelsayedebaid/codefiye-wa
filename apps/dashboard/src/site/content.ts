@@ -18,7 +18,7 @@ import {
   ShieldHalf,
   ShoppingCart,
   Smartphone,
-} from 'lucide-react';
+} from '../icons';
 
 /**
  * Icons and links for the public pages. The copy lives in i18n/ (same order as these arrays), so

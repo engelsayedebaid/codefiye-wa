@@ -1,4 +1,4 @@
-import { Columns2, Columns3, Focus, Maximize2, MessageSquareText, Minimize2, PanelLeft, Search, Sparkles } from 'lucide-react';
+import { Columns2, Columns3, Focus, Maximize2, MessageSquareText, Minimize2, PanelLeft, Search, Sparkles } from '../../icons';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { useI18n } from '../../i18n';
 import { cx, flip, LangSwitch, ThemeSwitch } from '../../ui';

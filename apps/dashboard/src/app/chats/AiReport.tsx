@@ -16,7 +16,7 @@ import {
   Tags,
   Users,
   X,
-} from 'lucide-react';
+} from '../../icons';
 import { type ReactNode, useEffect, useState } from 'react';
 import { api, ApiRequestError, errorMessage } from '../../api';
 import { useI18n } from '../../i18n';

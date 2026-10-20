@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw } from '../../icons';
 import { useEffect, useState } from 'react';
 import { useLiveStatus } from '../../events';
 import { useI18n } from '../../i18n';

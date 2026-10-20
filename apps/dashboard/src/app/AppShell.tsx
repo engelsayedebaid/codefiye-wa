@@ -23,7 +23,7 @@ import {
   Smartphone,
   UserRound,
   X,
-} from 'lucide-react';
+} from '../icons';
 import { getPlan, planHasFeature } from '@wa/shared/plans';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';

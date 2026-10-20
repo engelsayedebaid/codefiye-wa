@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { ArrowDownLeft, ArrowUpRight, CheckCheck, Clock, MailWarning, MessageSquareReply, MessagesSquare, Sparkles } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, CheckCheck, Clock, MailWarning, MessageSquareReply, MessagesSquare, Sparkles } from '../../icons';
 import { type ReactNode, useMemo, useState } from 'react';
 import { api } from '../../api';
 import { useI18n } from '../../i18n';

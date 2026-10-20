@@ -50,11 +50,13 @@ export async function loadAutoReplySettings(sql: Sql, sessionId: string): Promis
       rules: AutoReplyRule[];
       language: AutoReplySettings['language'];
       variables: Partial<AutoReplyVariables>;
+      summary_phone: string;
+      summary_idle_minutes: number;
     }[]
   >`
     select enabled, personality, system_prompt, provider_id, model, fallback_provider_id, fallback_model,
       temperature, max_tokens, delay_min_ms, delay_max_ms, business_hours_only, hours_start, hours_end,
-      timezone, max_replies, ignore_list, rules, language, variables
+      timezone, max_replies, ignore_list, rules, language, variables, summary_phone, summary_idle_minutes
     from auto_reply_settings where session_id = ${sessionId}`;
   if (!row) return null;
   return {
@@ -78,7 +80,26 @@ export async function loadAutoReplySettings(sql: Sql, sessionId: string): Promis
     rules: row.rules ?? [],
     language: row.language,
     variables: { ...DEFAULT_AUTO_REPLY_VARIABLES, ...(row.variables ?? {}) },
+    summaryPhone: row.summary_phone,
+    summaryIdleMinutes: row.summary_idle_minutes,
   };
+}
+
+/**
+ * The session that answers for this session's phone number. One WhatsApp number linked as two
+ * sessions receives every message twice; with the agent on in both, the customer got two different
+ * answers. The oldest connected session with the agent on answers; the others stay quiet (and take
+ * over when it disconnects). Null when the number is unknown (the session answers for itself).
+ */
+export async function autoReplyOwner(sql: Sql, sessionId: string): Promise<string | null> {
+  const [row] = await sql<{ id: string }[]>`
+    select s.id from sessions s
+    join auto_reply_settings a on a.session_id = s.id and a.enabled
+    where s.phone = (select phone from sessions where id = ${sessionId})
+      and s.status = 'connected'
+    order by s.created_at, s.id
+    limit 1`;
+  return row?.id ?? null;
 }
 
 /** Every number of a workspace that has a row of its own. */
@@ -105,12 +126,13 @@ export async function saveAutoReplySettings(
   await sql`
     insert into auto_reply_settings (session_id, workspace_id, enabled, personality, system_prompt, provider_id,
       model, fallback_provider_id, fallback_model, temperature, max_tokens, delay_min_ms, delay_max_ms,
-      business_hours_only, hours_start, hours_end, timezone, max_replies, ignore_list, rules, language, variables)
+      business_hours_only, hours_start, hours_end, timezone, max_replies, ignore_list, rules, language, variables,
+      summary_phone, summary_idle_minutes)
     values (${sessionId}, ${workspaceId}, ${next.enabled}, ${next.personality}, ${next.systemPrompt}, ${next.providerId},
       ${next.model}, ${next.fallbackProviderId}, ${next.fallbackModel}, ${next.temperature}, ${next.maxTokens},
       ${next.delayMinMs}, ${next.delayMaxMs}, ${next.businessHoursOnly}, ${next.hoursStart}, ${next.hoursEnd},
       ${next.timezone}, ${next.maxReplies}, ${next.ignoreList}, ${sql.json(next.rules as never)}, ${next.language},
-      ${sql.json(next.variables as never)})
+      ${sql.json(next.variables as never)}, ${next.summaryPhone}, ${next.summaryIdleMinutes})
     on conflict (session_id) do update set
       enabled = excluded.enabled,
       personality = excluded.personality,
@@ -132,6 +154,8 @@ export async function saveAutoReplySettings(
       rules = excluded.rules,
       language = excluded.language,
       variables = excluded.variables,
+      summary_phone = excluded.summary_phone,
+      summary_idle_minutes = excluded.summary_idle_minutes,
       updated_at = now()`;
   return next;
 }
@@ -209,4 +233,98 @@ export async function queueAutoReply(
       now() + (${row.delayMs}::int * interval '1 millisecond'), now())
     returning id, created_at as queued_at`;
   return { id: inserted?.id ?? 0, queuedAt: inserted?.queued_at ?? new Date() };
+}
+
+/** A conversation ready to be summarized for the number's owner. */
+export type DueSummary = {
+  sessionId: string;
+  workspaceId: string;
+  chatJid: string;
+  /** The last inbound message (what the summary covers up to). */
+  lastMessageId: number;
+  summaryPhone: string;
+  /** The number's name in the dashboard, so the owner knows which line the customer wrote to. */
+  sessionName: string;
+};
+
+/**
+ * Conversations of these sessions that the agent answered in the last day and that have been quiet
+ * for the number's `summary_idle_minutes`, with no summary covering their last inbound message yet.
+ * The summary number's own chat is never summarized (it would summarize the summaries).
+ */
+export async function dueSummaries(sql: Sql, sessionIds: string[], limit = 10): Promise<DueSummary[]> {
+  if (sessionIds.length === 0) return [];
+  return await sql<DueSummary[]>`
+    with answered as (
+      select l.session_id, l.chat_jid
+      from auto_reply_log l
+      join auto_reply_settings s on s.session_id = l.session_id and s.enabled and s.summary_phone <> ''
+      where l.session_id = any(${sessionIds}::uuid[]) and l.status = 'sent' and l.created_at > now() - interval '1 day'
+      group by 1, 2
+    )
+    select a.session_id as "sessionId", s.workspace_id as "workspaceId", a.chat_jid as "chatJid",
+      last.id as "lastMessageId", s.summary_phone as "summaryPhone", ss.name as "sessionName"
+    from answered a
+    join auto_reply_settings s on s.session_id = a.session_id
+    join sessions ss on ss.id = a.session_id
+    cross join lateral (
+      select m.id, m.created_at from messages m
+      where m.session_id = a.session_id and m.remote_jid = a.chat_jid and m.direction = 'in'
+      order by m.id desc limit 1
+    ) last
+    where last.created_at < now() - make_interval(mins => s.summary_idle_minutes)
+      and coalesce(
+        (select l.pn from contact_lids l where l.session_id = a.session_id and l.lid = a.chat_jid),
+        a.chat_jid
+      ) <> regexp_replace(s.summary_phone, '[^0-9]', '', 'g') || '@s.whatsapp.net'
+      and not exists (
+        select 1 from auto_reply_summaries x
+        where x.session_id = a.session_id and x.chat_jid = a.chat_jid and x.last_message_id >= last.id
+      )
+    order by last.created_at
+    limit ${limit}`;
+}
+
+/** Takes a due summary for this worker; null when another pass took it first (the unique key decides). */
+export async function claimSummary(sql: Sql, due: DueSummary): Promise<number | null> {
+  const [row] = await sql<{ id: number }[]>`
+    insert into auto_reply_summaries (session_id, chat_jid, last_message_id)
+    values (${due.sessionId}, ${due.chatJid}, ${due.lastMessageId})
+    on conflict (session_id, chat_jid, last_message_id) do nothing
+    returning id`;
+  return row?.id ?? null;
+}
+
+export async function finishSummary(sql: Sql, id: number, result: { status: 'sent' | 'failed'; summary: string; messageId: number | null }) {
+  await sql`
+    update auto_reply_summaries set status = ${result.status}, summary = ${result.summary}, message_id = ${result.messageId}
+    where id = ${id}`;
+}
+
+/** Who the conversation is with: their WhatsApp name and phone number (a LID resolved through `contact_lids`). */
+export async function summaryContact(sql: Sql, sessionId: string, chatJid: string): Promise<{ name: string | null; phone: string | null }> {
+  const [row] = await sql<{ name: string | null; pn: string | null }[]>`
+    select
+      (select content->>'pushName' from messages
+        where session_id = ${sessionId} and remote_jid = ${chatJid} and direction = 'in' and content->>'pushName' is not null
+        order by id desc limit 1) as name,
+      coalesce(
+        (select pn from contact_lids where session_id = ${sessionId} and lid = ${chatJid}),
+        case when ${chatJid} like '%@s.whatsapp.net' then ${chatJid} end
+      ) as pn`;
+  const digits = row?.pn?.split('@')[0]?.split(':')[0];
+  return { name: row?.name?.trim() || null, phone: digits ? `+${digits}` : null };
+}
+
+/** Queues a summary to the owner's number, sent by the session's queue like any other message. */
+export async function queueSummaryMessage(
+  sql: Sql,
+  row: { workspaceId: string; sessionId: string; to: string; text: string },
+): Promise<number> {
+  const [inserted] = await sql<{ id: number }[]>`
+    insert into messages (workspace_id, session_id, direction, remote_jid, type, content, status)
+    values (${row.workspaceId}, ${row.sessionId}, 'out', ${row.to}, 'text',
+      ${sql.json({ type: 'text', text: row.text, sentFrom: 'auto', summary: true } as never)}, 'queued')
+    returning id`;
+  return inserted?.id ?? 0;
 }

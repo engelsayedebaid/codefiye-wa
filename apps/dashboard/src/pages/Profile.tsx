@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, Building2, Check, CheckCircle2, Lock, LockKeyhole, Mail, ShieldCheck, Smartphone, UserRound, XCircle } from 'lucide-react';
+import { ArrowRight, Building2, Check, CheckCircle2, Lock, LockKeyhole, Mail, ShieldCheck, Smartphone, UserRound, XCircle } from '../icons';
 import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { api, ApiRequestError, errorMessage } from '../api';
 import { type Account, planState, useAccount } from '../app/account';

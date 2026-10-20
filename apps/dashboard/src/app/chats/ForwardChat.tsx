@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { CircleCheck, Forward, Loader2, MessageSquareText, Phone, RefreshCw, X } from 'lucide-react';
+import { CircleCheck, Forward, Loader2, MessageSquareText, Phone, RefreshCw, X } from '../../icons';
 import { useEffect, useMemo, useState } from 'react';
 import { api, errorMessage } from '../../api';
 import { useI18n } from '../../i18n';

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Eye, EyeOff, Loader2, MessageSquareText, X } from 'lucide-react';
+import { Eye, EyeOff, Loader2, MessageSquareText, X } from '../../icons';
 import { type CSSProperties, Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../api';
 import { useLiveEvents } from '../../events';

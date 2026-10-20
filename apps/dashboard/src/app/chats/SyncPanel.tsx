@@ -1,7 +1,7 @@
 import type { SyncLogEntry, SyncLogLevel, SyncProgress } from '@wa/shared/sync';
 import { isActiveSync } from '@wa/shared/sync';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, ArrowRight, ChevronDown, CircleCheck, CircleX, Info, Loader2, Pause, Play, RefreshCw, RotateCcw, Square, X } from 'lucide-react';
+import { AlertTriangle, ArrowRight, ChevronDown, CircleCheck, CircleX, Info, Loader2, Pause, Play, RefreshCw, RotateCcw, Square, X } from '../../icons';
 import { type CSSProperties, type ReactNode, type UIEvent, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { api, errorMessage } from '../../api';
 import { useLiveEvents } from '../../events';

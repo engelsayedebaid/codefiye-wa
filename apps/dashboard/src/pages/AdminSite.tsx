@@ -1,6 +1,6 @@
 import { DEFAULT_SITE_SETTINGS, type SiteSettings, youtubeChannelUrl, youtubeVideoId } from '@wa/shared/site';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CirclePlay, ExternalLink } from 'lucide-react';
+import { CirclePlay, ExternalLink } from '../icons';
 import { useState } from 'react';
 import { api, ApiRequestError, errorMessage } from '../api';
 import { useI18n } from '../i18n';

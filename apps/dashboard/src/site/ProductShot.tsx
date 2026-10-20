@@ -13,7 +13,7 @@ import {
   Search,
   Smartphone,
   Smile,
-} from 'lucide-react';
+} from '../icons';
 import type { ReactNode } from 'react';
 import { useI18n } from '../i18n';
 import { cx, LogoMark } from '../ui';

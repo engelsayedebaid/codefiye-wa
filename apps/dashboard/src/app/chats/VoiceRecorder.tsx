@@ -1,4 +1,4 @@
-import { AlertTriangle, Loader2, Mic, Pause, Play, RotateCcw, SendHorizontal, Square, Trash2, X } from 'lucide-react';
+import { AlertTriangle, Loader2, Mic, Pause, Play, RotateCcw, SendHorizontal, Square, Trash2, X } from '../../icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useI18n } from '../../i18n';
 import { cx, flip } from '../../ui';

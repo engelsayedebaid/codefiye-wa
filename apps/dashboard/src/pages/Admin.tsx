@@ -20,7 +20,7 @@ import {
   Smartphone,
   Users,
   ZoomIn,
-} from 'lucide-react';
+} from '../icons';
 import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { api, errorMessage } from '../api';
 import { type PlanRequest, useAccount } from '../app/account';

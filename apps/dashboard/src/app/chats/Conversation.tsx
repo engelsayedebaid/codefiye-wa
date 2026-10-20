@@ -26,7 +26,7 @@ import {
   User,
   Users,
   X,
-} from 'lucide-react';
+} from '../../icons';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiRequestError, errorMessage } from '../../api';
 import { useLiveEvents } from '../../events';

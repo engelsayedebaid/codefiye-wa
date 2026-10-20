@@ -1,5 +1,5 @@
 import { asciiDigits, phoneWithCountry } from '@wa/shared/phone';
-import { Check, Code2, LayoutDashboard, LifeBuoy, Mail, Smartphone, Wallet } from 'lucide-react';
+import { Check, Code2, LayoutDashboard, LifeBuoy, Mail, Smartphone, Wallet } from '../icons';
 import { type FormEvent, type ReactNode, useState } from 'react';
 import { api, ApiRequestError, errorMessage } from '../api';
 import { BRAND } from '../brand';

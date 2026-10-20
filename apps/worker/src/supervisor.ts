@@ -29,6 +29,8 @@ const FENCE_CHECK_MS = 2_000;
 const STALL_RESTART_MS = 15_000;
 /** NOTIFY payloads are capped at 8000 bytes; a relayed answer above this is refused rather than lost. */
 const RPC_RESULT_MAX_BYTES = 7_500;
+/** How often the AI agent looks for quiet conversations to summarize. */
+const SUMMARY_EVERY_MS = 60_000;
 
 /**
  * Distributed supervisor: every worker runs one. Each tick it heartbeats, drops sessions it no
@@ -42,6 +44,7 @@ export class Supervisor {
   private timer: NodeJS.Timeout | null = null;
   private fenceTimer: NodeJS.Timeout | null = null;
   private beatTimer: NodeJS.Timeout | null = null;
+  private summaryTimer: NodeJS.Timeout | null = null;
   private beating = false;
   /** When the last heartbeat that reached the database was sent (local clock). */
   private lastBeat = Date.now();
@@ -78,6 +81,11 @@ export class Supervisor {
     this.beatTimer = setInterval(() => void this.heartbeat(), every);
     this.timer = setInterval(() => void this.tick(), every);
     this.fenceTimer = setInterval(() => void this.fenceIfCutOff(), FENCE_CHECK_MS);
+    // Conversation summaries for the numbers' owners, from the sessions this worker runs (connected only).
+    this.summaryTimer = setInterval(() => {
+      const connected = [...this.runners.values()].filter((r) => r.connected).map((r) => r.sessionId);
+      void this.options.autoReply.summarize?.(connected, (id) => this.runners.get(id)?.requestDrain());
+    }, SUMMARY_EVERY_MS);
     if (this.options.claim === false) {
       this.options.logger.warn('WORKER_CLAIM is off: this worker runs no sessions (they stay with the deployed worker)');
     }
@@ -298,6 +306,7 @@ export class Supervisor {
     if (this.timer) clearInterval(this.timer);
     if (this.beatTimer) clearInterval(this.beatTimer);
     if (this.fenceTimer) clearInterval(this.fenceTimer);
+    if (this.summaryTimer) clearInterval(this.summaryTimer);
     await this.running;
     await Promise.allSettled([...this.runners.values()].map((r) => r.stop()));
     await this.options.sql`delete from workers where id = ${this.options.workerId}`;

@@ -269,4 +269,105 @@ describe('AutoReplyAgent', () => {
 
     expect(ask).not.toHaveBeenCalled();
   });
+
+  describe('one number linked as two sessions', () => {
+    const input = {
+      sessionId: 'session-2',
+      workspaceId: 'workspace-1',
+      messageId: 1,
+      chatJid: '201012345678@s.whatsapp.net',
+      from: '201012345678@s.whatsapp.net',
+      isGroup: false,
+      text: 'عايز موقع',
+      history: false,
+    };
+
+    const prepare = (owner: string | null) => {
+      vi.spyOn(agent as any, 'loadSettings').mockResolvedValue({ ...DEFAULT_AUTO_REPLY_SETTINGS, enabled: true, rules: [] });
+      vi.spyOn(agent as any, 'loadOwner').mockResolvedValue(owner);
+      vi.spyOn(agent as any, 'send').mockResolvedValue(undefined);
+      return vi.spyOn(agent as any, 'ask').mockResolvedValue({ text: 'أهلاً', provider: 'gemini', model: 'gemini-2.5-flash' });
+    };
+
+    it('stays quiet when another session of the number answers', async () => {
+      const ask = prepare('session-1');
+      await agent.handle(input);
+      expect(ask).not.toHaveBeenCalled();
+    });
+
+    it('answers when it is the session that answers for the number', async () => {
+      const ask = prepare('session-2');
+      await agent.handle(input);
+      expect(ask).toHaveBeenCalledOnce();
+    });
+  });
+});
+
+describe('conversation summaries', () => {
+  const due = {
+    sessionId: 'session-1',
+    workspaceId: 'workspace-1',
+    chatJid: '140261082558467@lid',
+    lastMessageId: 42,
+    summaryPhone: '+201000000001',
+    sessionName: 'CodeFiye',
+  };
+
+  const setup = (claimed: boolean) => {
+    const calls: { query: string; values: unknown[] }[] = [];
+    const sql = Object.assign(
+      async (parts: TemplateStringsArray, ...values: unknown[]) => {
+        const query = parts.join('?');
+        calls.push({ query, values });
+        if (query.includes('with answered')) return [due];
+        if (query.includes('insert into auto_reply_summaries')) return claimed ? [{ id: 7 }] : [];
+        if (query.includes('select direction, type, content')) {
+          return [
+            { direction: 'out', type: 'text', content: { text: 'أهلاً، كيف أساعدك؟' } },
+            { direction: 'in', type: 'text', content: { text: 'عايز موقع أفلام' } },
+          ];
+        }
+        if (query.includes('pushName')) return [{ name: 'Mohamed', pn: '201000000002@s.whatsapp.net' }];
+        if (query.includes('insert into messages')) return [{ id: 99 }];
+        return [];
+      },
+      { json: (value: unknown) => value },
+    ) as unknown as Sql;
+    const agent = new AutoReplyAgent({ sql, log: pino({ level: 'silent' }), masterKey: Buffer.alloc(32) });
+    vi.spyOn(agent as any, 'loadSettings').mockResolvedValue({ ...DEFAULT_AUTO_REPLY_SETTINGS, enabled: true, providerId: 'gemini', summaryPhone: due.summaryPhone });
+    const ask = vi.spyOn((agent as any).keyManager, 'executeWithFailover').mockResolvedValue({
+      text: '🎯 *الطلب:* موقع أفلام',
+      model: 'gemini-2.5-flash',
+      provider: 'gemini',
+      keyId: 'k1',
+    });
+    return { agent, calls, ask };
+  };
+
+  it('sends one summary with the name and number from WhatsApp, then wakes the queue', async () => {
+    const { agent, calls, ask } = setup(true);
+    const wake = vi.fn();
+
+    await agent.summarize(['session-1'], wake);
+
+    expect(ask).toHaveBeenCalledOnce();
+    const queued = calls.find((c) => c.query.includes('insert into messages'))!;
+    expect(queued.values).toContain('201000000001@s.whatsapp.net');
+    const content = queued.values.find((v) => typeof v === 'object' && v && 'text' in v) as { text: string; summary: boolean };
+    expect(content.summary).toBe(true);
+    expect(content.text).toContain('Mohamed');
+    expect(content.text).toContain('+201000000002');
+    expect(content.text).toContain('موقع أفلام');
+    expect(calls.some((c) => c.query.includes('update auto_reply_summaries') && c.values.includes('sent'))).toBe(true);
+    expect(wake).toHaveBeenCalledWith('session-1');
+  });
+
+  it('does nothing when another pass already claimed the conversation', async () => {
+    const { agent, calls, ask } = setup(false);
+
+    await agent.summarize(['session-1'], vi.fn());
+
+    expect(ask).not.toHaveBeenCalled();
+    expect(calls.some((c) => c.query.includes('insert into messages'))).toBe(false);
+  });
 });

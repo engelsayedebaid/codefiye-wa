@@ -1,4 +1,4 @@
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown } from '../icons';
 import { useEffect, useState } from 'react';
 import { cx } from '../ui';
 

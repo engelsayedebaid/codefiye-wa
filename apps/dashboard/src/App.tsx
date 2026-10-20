@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Ban, CloudOff, RefreshCw } from 'lucide-react';
+import { Ban, CloudOff, RefreshCw } from './icons';
 import { Component, lazy, type ReactNode, Suspense, useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { api, ApiRequestError, errorMessage, onSessionProblem, sessionHint } from './api';
 import type { Account } from './app/account';

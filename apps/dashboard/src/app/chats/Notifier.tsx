@@ -1,5 +1,5 @@
 import { type InfiniteData, useQueryClient } from '@tanstack/react-query';
-import { ChevronUp, X } from 'lucide-react';
+import { ChevronUp, X } from '../../icons';
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
 import { useBackgroundLiveEvents, useLiveEvents } from '../../events';
 import { useI18n } from '../../i18n';

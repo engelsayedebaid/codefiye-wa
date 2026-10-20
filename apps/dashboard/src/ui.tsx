@@ -23,7 +23,7 @@ import {
   Wifi,
   X,
   XCircle,
-} from 'lucide-react';
+} from './icons';
 import {
   type ButtonHTMLAttributes,
   type CSSProperties,

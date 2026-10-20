@@ -1,11 +1,18 @@
 import { randomInt } from 'node:crypto';
 import {
+  autoReplyOwner,
+  claimSummary,
   countChatReplies,
+  type DueSummary,
+  dueSummaries,
+  finishSummary,
   loadAutoReplySettings,
   notify,
   queueAutoReply,
+  queueSummaryMessage,
   recentChatLines,
   recordAutoReply,
+  summaryContact,
   type Sql,
 } from '@wa/db';
 import {
@@ -13,11 +20,13 @@ import {
   type AiMessage,
   type AiProviderId,
   type ReplyLanguage,
+  buildSummaryPrompt,
   buildSystemPrompt,
   CHANNELS,
   detectLanguage,
   formatForWhatsApp,
   matchRule,
+  toJid,
   type AutoReplySettings,
 } from '@wa/shared';
 import type { Logger } from 'pino';
@@ -48,6 +57,9 @@ const SETTINGS_TTL_MS = 30_000;
 const REPLY_CAP_WINDOW_MS = 10 * 60_000;
 /** `not_before` is the database's clock: wake a little after it, so the row is due when claimed. */
 const WAKE_MARGIN_MS = 250;
+/** How much of a conversation a summary reads, and how much of each message. */
+const SUMMARY_MESSAGES = 60;
+const SUMMARY_LINE_CHARS = 1_000;
 export type AutoReplyInput = {
   sessionId: string;
   workspaceId: string;
@@ -68,10 +80,12 @@ export type AutoReplyInput = {
 type Cached<T> = { value: T; at: number };
 
 /** What the runner needs from the agent (the class itself, or a stub in the tests). */
-export type AutoReplyHandler = Pick<AutoReplyAgent, 'handle'>;
+export type AutoReplyHandler = Pick<AutoReplyAgent, 'handle'> & Partial<Pick<AutoReplyAgent, 'summarize'>>;
 
 export class AutoReplyAgent {
   private readonly settings = new Map<string, Cached<AutoReplySettings | null>>();
+  private readonly owners = new Map<string, Cached<string | null>>();
+  private summarizing = false;
   private readonly keyManager: AiKeyManager;
 
   constructor(
@@ -100,10 +114,18 @@ export class AutoReplyAgent {
     if (!settings?.enabled) return; // the number answers on its own: off
     if (input.history) return this.skip(input, settings, 'history', 'en');
     if (input.isGroup) return this.skip(input, settings, 'group', 'en');
+    // The same number linked twice gets each message twice: only one of its sessions answers.
+    const owner = await this.loadOwner(input.sessionId);
+    if (owner && owner !== input.sessionId) {
+      log.debug({ sessionId: input.sessionId, owner }, 'auto-reply: another session of this number answers');
+      return;
+    }
     const text = input.text?.trim() ?? '';
     if (!text) return this.skip(input, settings, 'no_words', 'en');
     const language: ReplyLanguage = settings.language === 'auto' ? detectLanguage(text) : settings.language;
     if (this.ignored(settings, input)) return this.skip(input, settings, 'ignored', language);
+    // The owner's number gets the summaries; the agent never answers it (that would summarize itself).
+    if (settings.summaryPhone && (await this.fromSummaryPhone(input, settings.summaryPhone))) return;
     if (!this.withinHours(settings)) return this.skip(input, settings, 'outside_hours', language);
 
     // The cap that stops a loop with another bot: this conversation got its answers already.
@@ -272,6 +294,85 @@ export class AutoReplyAgent {
     });
   }
 
+  /**
+   * Summarizes the quiet conversations of these sessions and sends each summary to its number's
+   * `summary_phone`. Called every minute by the supervisor with the sessions this worker runs;
+   * never throws, and one pass at a time.
+   */
+  async summarize(sessionIds: string[], wake: (sessionId: string) => void): Promise<void> {
+    if (this.summarizing || sessionIds.length === 0) return;
+    this.summarizing = true;
+    try {
+      for (const due of await dueSummaries(this.deps.sql, sessionIds)) {
+        await this.summarizeOne(due, wake).catch((err) =>
+          this.deps.log.warn({ err, sessionId: due.sessionId }, 'auto-reply: conversation summary failed'),
+        );
+      }
+    } catch (err) {
+      this.deps.log.warn({ err }, 'auto-reply: could not look for conversations to summarize');
+    } finally {
+      this.summarizing = false;
+    }
+  }
+
+  private async summarizeOne(due: DueSummary, wake: (sessionId: string) => void) {
+    const { sql, log } = this.deps;
+    const to = toJid(due.summaryPhone);
+    if (!to) return;
+    const claim = await claimSummary(sql, due);
+    if (claim === null) return; // another pass took it
+    const settings = await this.loadSettings(due.sessionId);
+    const lines = await recentChatLines(sql, due.sessionId, due.chatJid, SUMMARY_MESSAGES);
+    if (!settings || lines.length === 0) return finishSummary(sql, claim, { status: 'failed', summary: '', messageId: null });
+
+    const language = detectLanguage(lines.filter((l) => l.role === 'user').map((l) => l.content).join(' '));
+    const [customer, agent] = language === 'ar' ? ['العميل', 'الوكيل'] : ['Customer', 'Agent'];
+    const transcript = lines.map((l) => `${l.role === 'user' ? customer : agent}: ${l.content.slice(0, SUMMARY_LINE_CHARS)}`).join('\n');
+    const result = await this.keyManager.executeWithFailover({
+      providerId: settings.providerId,
+      fallbackProviderId: settings.fallbackProviderId,
+      model: settings.model.trim() || AI_PROVIDERS[settings.providerId].defaultModel,
+      fallbackModel: settings.fallbackModel,
+      system: buildSummaryPrompt(language),
+      messages: [{ role: 'user', content: transcript }],
+      temperature: 0.2,
+      maxTokens: 700,
+      timeoutMs: MODEL_TIMEOUT_MS,
+    });
+    if (!result) return finishSummary(sql, claim, { status: 'failed', summary: '', messageId: null });
+
+    // Who and where come from WhatsApp, not from the model.
+    const contact = await summaryContact(sql, due.sessionId, due.chatJid);
+    const digits = contact.phone?.replace(/\D/g, '');
+    const header =
+      language === 'ar'
+        ? [
+            `📋 *ملخص محادثة* — ${due.sessionName}`,
+            `👤 *العميل:* ${contact.name ?? 'بدون اسم'}`,
+            `📞 *الرقم:* ${contact.phone ?? 'غير معروف'}${digits ? `\nhttps://wa.me/${digits}` : ''}`,
+          ]
+        : [
+            `📋 *Conversation summary* — ${due.sessionName}`,
+            `👤 *Customer:* ${contact.name ?? 'No name'}`,
+            `📞 *Number:* ${contact.phone ?? 'Unknown'}${digits ? `\nhttps://wa.me/${digits}` : ''}`,
+          ];
+    const text = `${header.join('\n')}\n\n${formatForWhatsApp(result.text)}`;
+    const messageId = await queueSummaryMessage(sql, { workspaceId: due.workspaceId, sessionId: due.sessionId, to, text });
+    await finishSummary(sql, claim, { status: 'sent', summary: text, messageId });
+    wake(due.sessionId);
+    log.info({ sessionId: due.sessionId, provider: result.provider, model: result.model }, 'auto-reply: conversation summary queued');
+  }
+
+  /** Whether the message came from the number the summaries go to (a LID resolved to its phone). */
+  private async fromSummaryPhone(input: AutoReplyInput, summaryPhone: string) {
+    const target = toJid(summaryPhone);
+    if (!target) return false;
+    if (input.chatJid === target) return true;
+    if (!input.chatJid.endsWith('@lid')) return false;
+    const { phone } = await summaryContact(this.deps.sql, input.sessionId, input.chatJid);
+    return phone !== null && toJid(phone) === target;
+  }
+
   /** A number on the ignore list (by phone number or by JID). */
   private ignored(settings: AutoReplySettings, input: AutoReplyInput) {
     if (settings.ignoreList.length === 0) return false;
@@ -298,6 +399,15 @@ export class AutoReplyAgent {
     if (hoursStart === hoursEnd) return true;
     // Hours that run past midnight (22 → 6) wrap around.
     return hoursStart < hoursEnd ? hour >= hoursStart && hour < hoursEnd : hour >= hoursStart || hour < hoursEnd;
+  }
+
+  /** Which session answers for this session's number (cached like the settings). */
+  private async loadOwner(sessionId: string): Promise<string | null> {
+    const hit = this.owners.get(sessionId);
+    if (hit && Date.now() - hit.at < SETTINGS_TTL_MS) return hit.value;
+    const value = await autoReplyOwner(this.deps.sql, sessionId);
+    this.owners.set(sessionId, { value, at: Date.now() });
+    return value;
   }
 
   /** The number's settings (cached briefly, so a burst of messages reads them once). */

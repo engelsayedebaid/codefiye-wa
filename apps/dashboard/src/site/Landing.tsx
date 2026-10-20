@@ -1,4 +1,4 @@
-import { ArrowUpRight, BookOpen, Building2, Check, ChevronRight, Mail, Play, Plus, ShieldCheck } from 'lucide-react';
+import { ArrowUpRight, BookOpen, Building2, Check, ChevronRight, Mail, Play, Plus, ShieldCheck } from '../icons';
 import { useEffect } from 'react';
 import { BRAND } from '../brand';
 import { useI18n } from '../i18n';

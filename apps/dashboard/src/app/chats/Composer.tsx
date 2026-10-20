@@ -1,5 +1,5 @@
 import { UPLOAD_MAX_BYTES } from '@wa/shared/chats';
-import { FileText, FileUp, Image as ImageIcon, Loader2, Mic, Paperclip, Plus, Reply, SendHorizontal, Smile, WifiOff, X } from 'lucide-react';
+import { FileText, FileUp, Image as ImageIcon, Loader2, Mic, Paperclip, Plus, Reply, SendHorizontal, Smile, WifiOff, X } from '../../icons';
 import { type FormEvent, type KeyboardEvent, lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '../../api';

@@ -1,6 +1,6 @@
 import { asciiDigits, phoneWithCountry } from '@wa/shared/phone';
 import { useQueryClient } from '@tanstack/react-query';
-import { MessageSquareText, RotateCw } from 'lucide-react';
+import { MessageSquareText, RotateCw } from '../icons';
 import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { api, ApiRequestError, errorMessage } from '../api';
 import { useI18n } from '../i18n';

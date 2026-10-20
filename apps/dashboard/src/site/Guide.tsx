@@ -1,5 +1,5 @@
 import { DEFAULT_OTP_TEMPLATES } from '@wa/shared';
-import { ArrowUpRight, BookOpen, Check, ChevronRight, Copy, KeyRound, LayoutTemplate, LifeBuoy, Mail, ShieldCheck, Smartphone } from 'lucide-react';
+import { ArrowUpRight, BookOpen, Check, ChevronRight, Copy, KeyRound, LayoutTemplate, LifeBuoy, Mail, ShieldCheck, Smartphone } from '../icons';
 import { type ReactNode, useState } from 'react';
 import { sessionHint } from '../api';
 import { BRAND } from '../brand';

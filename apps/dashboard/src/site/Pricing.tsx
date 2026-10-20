@@ -1,5 +1,5 @@
 import { DEFAULT_PLAN_PRICING, discountPercent, offeredPlans, roundMoney } from '@wa/shared/plan-pricing';
-import { BadgePercent, Check } from 'lucide-react';
+import { BadgePercent, Check } from '../icons';
 import type { ReactNode } from 'react';
 import { usePlanPricing } from '../app/plan-pricing';
 import { useI18n } from '../i18n';

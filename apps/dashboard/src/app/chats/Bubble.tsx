@@ -26,7 +26,7 @@ import {
   Trash2,
   User,
   Users,
-} from 'lucide-react';
+} from '../../icons';
 import { EDIT_WINDOW_MS } from '@wa/shared/chats';
 import { memo, type ReactNode, useEffect, useRef, useState } from 'react';
 import { useI18n } from '../../i18n';

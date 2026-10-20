@@ -1,4 +1,4 @@
-import { Ban, CalendarDays, Eye, LockKeyhole, Mail, ShieldCheck } from 'lucide-react';
+import { Ban, CalendarDays, Eye, LockKeyhole, Mail, ShieldCheck } from '../icons';
 import { BRAND } from '../brand';
 import { useI18n } from '../i18n';
 import { delay, Reveal } from '../ui';

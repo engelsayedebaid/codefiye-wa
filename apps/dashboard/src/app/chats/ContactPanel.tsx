@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Archive, BellOff, Download, ExternalLink, FileText, MailOpen, Pin, Play, Search, Users, X } from 'lucide-react';
+import { Archive, BellOff, Download, ExternalLink, FileText, MailOpen, Pin, Play, Search, Users, X } from '../../icons';
 import { useState } from 'react';
 import { api } from '../../api';
 import { useI18n } from '../../i18n';

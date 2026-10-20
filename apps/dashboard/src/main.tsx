@@ -5,6 +5,7 @@ import { adoptLegacyToken } from './api';
 import { App } from './App';
 import { configureLiveEvents } from './events';
 import { I18nProvider } from './i18n';
+import { LucideProvider } from './icons';
 import { createQueryClient, qk } from './queries';
 import { ThemeProvider } from './theme';
 import './index.css';
@@ -26,7 +27,10 @@ createRoot(document.getElementById('root')!).render(
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <I18nProvider>
-          <App />
+          {/* Iconly's 1.5px line, for its icons and for the lucide ones beside them (src/icons). */}
+          <LucideProvider strokeWidth={1.5}>
+            <App />
+          </LucideProvider>
         </I18nProvider>
       </ThemeProvider>
     </QueryClientProvider>

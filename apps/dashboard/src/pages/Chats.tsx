@@ -28,7 +28,7 @@ import {
   Sparkles,
   Split,
   WifiOff,
-} from 'lucide-react';
+} from '../icons';
 import { type FormEvent, type ReactNode, useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { api, errorMessage } from '../api';
 import { useAccount } from '../app/account';

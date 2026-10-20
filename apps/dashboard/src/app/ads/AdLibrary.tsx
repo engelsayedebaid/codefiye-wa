@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowUpRight, Bookmark, ExternalLink, Eye, Globe, Info, Layers, Link2, Loader2, Play, Plus, Search, Sparkles, X, Zap } from 'lucide-react';
+import { ArrowUpRight, Bookmark, ExternalLink, Eye, Globe, Info, Layers, Link2, Loader2, Play, Plus, Search, Sparkles, X, Zap } from '../../icons';
 import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, ApiRequestError, errorMessage } from '../../api';

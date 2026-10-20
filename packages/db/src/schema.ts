@@ -829,8 +829,36 @@ export const autoReplySettings = pgTable('auto_reply_settings', {
   language: text().$type<AutoReplyLanguage>().notNull().default('auto'),
   /** What the prompts may refer to ({{business_name}}, {{pricing}}, …). */
   variables: jsonb().$type<AutoReplyVariables>().notNull().default(sql`'{}'::jsonb`),
+  /** Where a summary of each conversation goes (E.164); empty = no summaries. */
+  summaryPhone: text().notNull().default(''),
+  /** How long a conversation stays quiet before it is summarized, in minutes. */
+  summaryIdleMinutes: integer().notNull().default(10),
   updatedAt: updatedAt(),
 });
+
+/**
+ * The conversation summaries sent to the number's `summary_phone`: one row per conversation up to
+ * its last inbound message, so a summary is never sent twice (the unique key is the claim) and a
+ * conversation that goes on later gets a new one.
+ */
+export const autoReplySummaries = pgTable(
+  'auto_reply_summaries',
+  {
+    id: bigint({ mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    sessionId: uuid()
+      .notNull()
+      .references(() => sessions.id, { onDelete: 'cascade' }),
+    chatJid: text().notNull(),
+    /** The last inbound message the summary covers. */
+    lastMessageId: bigint({ mode: 'number' }).notNull(),
+    status: text().$type<'pending' | 'sent' | 'failed'>().notNull().default('pending'),
+    summary: text().notNull().default(''),
+    /** The outbound message that carried it. */
+    messageId: bigint({ mode: 'number' }),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex().on(t.sessionId, t.chatJid, t.lastMessageId), index().on(t.sessionId, t.createdAt)],
+);
 
 /**
  * What the agent did: one row per answer, and one per message it stayed quiet about. The activity

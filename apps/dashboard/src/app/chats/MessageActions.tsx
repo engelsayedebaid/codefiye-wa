@@ -1,5 +1,5 @@
 import { REVOKE_WINDOW_MS } from '@wa/shared/chats';
-import { Trash2, Users } from 'lucide-react';
+import { Trash2, Users } from '../../icons';
 import { type FormEvent, useState } from 'react';
 import { api, errorMessage } from '../../api';
 import { useI18n } from '../../i18n';

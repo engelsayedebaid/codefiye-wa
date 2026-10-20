@@ -1,6 +1,6 @@
 import { SESSION_STATUSES, type SessionStatus } from '@wa/shared/constants';
 import { suggestNames } from '@wa/shared/name-suggestions';
-import { Plus, RefreshCw, Settings2, Smartphone, Trash2 } from 'lucide-react';
+import { Plus, RefreshCw, Settings2, Smartphone, Trash2 } from '../icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
 import { api, ApiRequestError, errorMessage } from '../api';

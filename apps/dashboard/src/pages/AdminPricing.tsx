@@ -14,7 +14,7 @@ import {
 } from '@wa/shared/plan-pricing';
 import { PLANS } from '@wa/shared/plans';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { BadgePercent, Eye } from 'lucide-react';
+import { BadgePercent, Eye } from '../icons';
 import { type FormEvent, useState } from 'react';
 import { api, errorMessage } from '../api';
 import { usePlanPricing } from '../app/plan-pricing';

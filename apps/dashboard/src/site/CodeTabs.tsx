@@ -1,4 +1,4 @@
-import { Check, Copy } from 'lucide-react';
+import { Check, Copy } from '../icons';
 import { type ReactNode, useState } from 'react';
 import { useI18n } from '../i18n';
 import { cx } from '../ui';

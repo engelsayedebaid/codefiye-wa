@@ -21,7 +21,7 @@ import {
   TrendingUp,
   UserPlus,
   Users,
-} from 'lucide-react';
+} from '../icons';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { useI18n } from '../i18n';

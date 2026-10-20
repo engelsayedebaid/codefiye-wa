@@ -1,5 +1,5 @@
 import { type InfiniteData, type QueryClient, useQueryClient } from '@tanstack/react-query';
-import { CheckCheck, X } from 'lucide-react';
+import { CheckCheck, X } from '../../icons';
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../../api';
 import { useLiveEvents } from '../../events';

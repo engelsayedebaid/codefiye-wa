@@ -1,4 +1,4 @@
-import { Table2, TrendingUp } from 'lucide-react';
+import { Table2, TrendingUp } from '../icons';
 import { type KeyboardEvent, type PointerEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../i18n';
 import { cx } from '../ui';

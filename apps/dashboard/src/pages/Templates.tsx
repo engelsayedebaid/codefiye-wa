@@ -17,7 +17,7 @@ import {
   Plus,
   Trash2,
   X,
-} from 'lucide-react';
+} from '../icons';
 import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiRequestError, errorMessage } from '../api';
 import { useI18n } from '../i18n';
