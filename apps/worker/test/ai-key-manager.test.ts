@@ -87,7 +87,7 @@ describe('AiKeyManager', () => {
     loadProvider.mockImplementation(async (id) => ({ ...provider(id), hasKeys: true }));
     keysByProvider.set('anthropic', [key('bad'), key('good')]);
     generate
-      .mockRejectedValueOnce(new AiError('The API key was refused by the provider', 401, 'key'))
+      .mockRejectedValueOnce(new AiError('The API key was refused by the provider', 401, 'key', undefined, 'invalid_credentials'))
       .mockResolvedValueOnce(answer('from second'));
 
     const result = await manager().executeWithFailover(request);
@@ -101,7 +101,7 @@ describe('AiKeyManager', () => {
     loadProvider.mockImplementation(async (id) => ({ ...provider(id), hasKeys: true }));
     keysByProvider.set('anthropic', [key('limited'), key('ready')]);
     generate
-      .mockRejectedValueOnce(new AiError('rate limited', 429, 'key', 12_000))
+      .mockRejectedValueOnce(new AiError('rate limited', 429, 'key', 12_000, 'rate_limited'))
       .mockResolvedValueOnce(answer('rotated'));
 
     const result = await manager().executeWithFailover(request);
@@ -110,12 +110,28 @@ describe('AiKeyManager', () => {
     expect(failure).toHaveBeenCalledWith('limited', expect.objectContaining({ cooldownMs: 12_000 }));
   });
 
+  it('tries the backup key when a model is unavailable to the primary credential', async () => {
+    loadProvider.mockImplementation(async (id) => ({ ...provider(id), hasKeys: true }));
+    keysByProvider.set('gemini', [key('without-access', 'gemini'), key('with-access', 'gemini')]);
+    generate
+      .mockRejectedValueOnce(new AiError('model unavailable', 404, 'key', undefined, 'model_unavailable'))
+      .mockResolvedValueOnce(answer('available'));
+
+    const result = await manager().executeWithFailover({ ...request, providerId: 'gemini' });
+
+    expect(result?.keyId).toBe('with-access');
+    expect(failure).toHaveBeenCalledWith('without-access', expect.objectContaining({
+      cooldownMs: 300_000,
+      countTowardsCircuit: false,
+    }));
+  });
+
   it('does not burn remaining keys when the provider has an account-wide quota restriction', async () => {
     loadProvider.mockImplementation(async (id) => ({ ...provider(id), hasKeys: true }));
     keysByProvider.set('anthropic', [key('primary-1'), key('primary-2')]);
     keysByProvider.set('openai', [key('fallback-1', 'openai')]);
     generate
-      .mockRejectedValueOnce(new AiError('provider quota', 429, 'provider', 90_000))
+      .mockRejectedValueOnce(new AiError('provider quota', 429, 'provider', 90_000, 'rate_limited'))
       .mockResolvedValueOnce(answer('fallback answer', 'fallback-model'));
 
     const result = await manager().executeWithFailover({

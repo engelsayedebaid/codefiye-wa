@@ -26,6 +26,7 @@ import {
   generateText,
   ok,
   successSchema,
+  validateGeminiModelAccess,
 } from '@wa/shared';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -292,6 +293,14 @@ export function autoReplyRoutes(deps: Deps): FastifyPluginAsyncZod {
         if (selected && !key) throw unprocessable('The selected API key cannot be decrypted');
         const started = Date.now();
         try {
+          if (id === 'gemini') {
+            await validateGeminiModelAccess({
+              apiKey: key ?? '',
+              model: selected?.model?.trim() || model,
+              baseUrl: selected?.baseUrl ?? row?.base_url ?? undefined,
+              timeoutMs: 20_000,
+            });
+          }
           const answer = await generateText({
             provider: id,
             apiKey: key ?? '',
@@ -464,11 +473,20 @@ export function autoReplyRoutes(deps: Deps): FastifyPluginAsyncZod {
         if (!plaintext) throw unprocessable('This API key cannot be decrypted');
         const started = Date.now();
         try {
+          const selectedModel = key.model?.trim() || provider?.model?.trim() || AI_PROVIDERS[id].defaultModel;
+          if (id === 'gemini') {
+            await validateGeminiModelAccess({
+              apiKey: plaintext,
+              model: selectedModel,
+              baseUrl: key.baseUrl ?? provider?.base_url ?? undefined,
+              timeoutMs: 20_000,
+            });
+          }
           const answer = await generateText({
             provider: id,
             apiKey: plaintext,
             baseUrl: key.baseUrl ?? provider?.base_url ?? undefined,
-            model: key.model?.trim() || provider?.model?.trim() || AI_PROVIDERS[id].defaultModel,
+            model: selectedModel,
             system: 'You are a test. Answer with one short word.',
             messages: [{ role: 'user', content: 'Say: ready' }],
             temperature: 0,

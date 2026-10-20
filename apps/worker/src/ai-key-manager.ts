@@ -13,6 +13,7 @@ import { AI_PROVIDERS, AiError, generateText, type AiMessage, type AiProviderId,
 import type { Logger } from 'pino';
 
 const KEY_RATE_LIMIT_COOLDOWN_MS = 60_000;
+const MODEL_UNAVAILABLE_COOLDOWN_MS = 5 * 60_000;
 const PROVIDER_FAILURE_COOLDOWN_MS = 30_000;
 const PROVIDER_QUOTA_COOLDOWN_MS = 15 * 60_000;
 
@@ -155,12 +156,18 @@ export class AiKeyManager {
       }
 
       if (error.scope === 'key') {
-        const auth = error.status === 401 || error.status === 403;
+        const auth = error.code === 'invalid_credentials';
+        const modelUnavailable = error.code === 'model_unavailable';
         await this.failure(key.id, {
           message: error.message,
-          cooldownMs: error.status === 429 ? (error.retryAfterMs ?? KEY_RATE_LIMIT_COOLDOWN_MS) : undefined,
+          cooldownMs: error.status === 429
+            ? (error.retryAfterMs ?? KEY_RATE_LIMIT_COOLDOWN_MS)
+            : modelUnavailable
+              ? MODEL_UNAVAILABLE_COOLDOWN_MS
+              : undefined,
           openCircuit: auth,
           disable: auth,
+          countTowardsCircuit: !modelUnavailable,
         });
         this.opts.log.warn(safe, 'auto-reply: AI key unavailable; rotating to the next key');
         return { result: null, stop: false };

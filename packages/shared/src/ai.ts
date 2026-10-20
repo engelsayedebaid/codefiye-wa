@@ -45,8 +45,8 @@ export const AI_PROVIDERS: Record<AiProviderId, AiProviderInfo> = {
   gemini: {
     id: 'gemini',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
-    models: ['gemini-flash-latest', 'gemini-pro-latest', 'gemini-2.5-flash'],
-    defaultModel: 'gemini-flash-latest',
+    models: ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-latest'],
+    defaultModel: 'gemini-3.8-flash',
     openaiCompatible: false,
     needsKey: true,
   },
@@ -91,6 +91,7 @@ export class AiError extends Error {
     readonly scope: 'key' | 'provider' | 'request' = 'provider',
     /** A provider-supplied retry delay, when available. */
     readonly retryAfterMs?: number,
+    readonly code: 'invalid_credentials' | 'model_unavailable' | 'rate_limited' | 'invalid_request' | 'provider_unavailable' | 'configuration' = 'provider_unavailable',
   ) {
     super(message);
     this.name = 'AiError';
@@ -136,12 +137,19 @@ async function refusal(res: Response, body: string): Promise<never> {
       ? Math.max(0, retryDate - Date.now())
       : undefined;
   if (res.status === 401 || res.status === 403) {
-    throw new AiError('The API key was refused by the provider', res.status, 'key');
+    throw new AiError('The API key was refused by the provider', res.status, 'key', undefined, 'invalid_credentials');
+  }
+  const detail = body.toLowerCase();
+  if (res.status === 400 && (
+    detail.includes('api_key_invalid')
+    || detail.includes('api key not valid')
+    || detail.includes('invalid api key')
+  )) {
+    throw new AiError('The API key was refused by the provider', res.status, 'key', undefined, 'invalid_credentials');
   }
   if (res.status === 429) {
     // A hard account/project quota applies to every key in that account. Do not burn through keys
     // when the provider explicitly says that is the restriction; move to the fallback provider.
-    const detail = body.toLowerCase();
     const providerWide = [
       'insufficient_quota',
       'billing',
@@ -158,13 +166,24 @@ async function refusal(res: Response, body: string): Promise<never> {
       res.status,
       providerWide ? 'provider' : 'key',
       retryAfterMs,
+      'rate_limited',
     );
   }
-  if (res.status === 400) throw new AiError('The provider rejected the request (400); check the model and settings', res.status, 'request');
-  if (res.status === 404) throw new AiError('The model was not found (404); check the model name', res.status, 'request');
+  if (res.status === 400) {
+    throw new AiError('The provider rejected the request (400); check the model and settings', res.status, 'request', undefined, 'invalid_request');
+  }
+  if (res.status === 404) {
+    throw new AiError('The model is not available for this API key and API version (404)', res.status, 'key', undefined, 'model_unavailable');
+  }
   // Deliberately omit the response body. Some compatible servers echo headers or request data,
   // which must never put an API key, prompt, or customer message in application logs.
-  throw new AiError(`The provider answered ${res.status}`, res.status, res.status >= 500 ? 'provider' : 'request', retryAfterMs);
+  throw new AiError(
+    `The provider answered ${res.status}`,
+    res.status,
+    res.status >= 500 ? 'provider' : 'request',
+    retryAfterMs,
+    res.status >= 500 ? 'provider_unavailable' : 'invalid_request',
+  );
 }
 
 async function post(url: string, headers: Record<string, string>, body: unknown, timeoutMs: number): Promise<{ data: any; res: Response }> {
@@ -178,9 +197,9 @@ async function post(url: string, headers: Record<string, string>, body: unknown,
     });
   } catch (err) {
     if ((err as Error).name === 'TimeoutError' || (err as Error).name === 'AbortError') {
-      throw new AiError('The provider took too long to answer', undefined, 'provider');
+      throw new AiError('The provider took too long to answer', undefined, 'provider', undefined, 'provider_unavailable');
     }
-    throw new AiError('Could not reach the provider', undefined, 'provider');
+    throw new AiError('Could not reach the provider', undefined, 'provider', undefined, 'provider_unavailable');
   }
   const text = await res.text();
   if (!res.ok) await refusal(res, text);
@@ -244,10 +263,98 @@ async function anthropic(req: AiRequest, base: string): Promise<AiResult> {
   };
 }
 
+export type GeminiModel = {
+  id: string;
+  displayName: string;
+  supportedGenerationMethods: string[];
+};
+
+/** Accepts both the short id and the `models/...` resource name returned by models.list. */
+export function normalizeGeminiModel(model: string): string {
+  return model.trim().replace(/^models\//, '');
+}
+
+/** Lists the models visible to one Gemini credential without ever returning or logging that key. */
+export async function listGeminiModels(options: {
+  apiKey: string;
+  baseUrl?: string;
+  timeoutMs?: number;
+}): Promise<GeminiModel[]> {
+  const base = strip(options.baseUrl?.trim() || AI_PROVIDERS.gemini.baseUrl);
+  const models: GeminiModel[] = [];
+  let pageToken = '';
+  for (let page = 0; page < 10; page += 1) {
+    const query = new URLSearchParams({ pageSize: '1000' });
+    if (pageToken) query.set('pageToken', pageToken);
+    let res: Response;
+    try {
+      res = await fetch(`${base}/models?${query}`, {
+        headers: { 'x-goog-api-key': options.apiKey },
+        signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+      });
+    } catch (err) {
+      if ((err as Error).name === 'TimeoutError' || (err as Error).name === 'AbortError') {
+        throw new AiError('The provider took too long to list its models', undefined, 'provider', undefined, 'provider_unavailable');
+      }
+      throw new AiError('Could not reach the provider', undefined, 'provider', undefined, 'provider_unavailable');
+    }
+    const text = await res.text();
+    if (!res.ok) await refusal(res, text);
+    let data: any;
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      throw new AiError('The provider answered with something that is not JSON', undefined, 'provider');
+    }
+    for (const model of Array.isArray(data?.models) ? data.models : []) {
+      const id = normalizeGeminiModel(typeof model?.name === 'string' ? model.name : '');
+      if (!id) continue;
+      models.push({
+        id,
+        displayName: typeof model?.displayName === 'string' ? model.displayName : id,
+        supportedGenerationMethods: Array.isArray(model?.supportedGenerationMethods)
+          ? model.supportedGenerationMethods.filter((method: unknown): method is string => typeof method === 'string')
+          : [],
+      });
+    }
+    pageToken = typeof data?.nextPageToken === 'string' ? data.nextPageToken : '';
+    if (!pageToken) break;
+  }
+  return models;
+}
+
+/** Verifies model access with the same credential used for generation and returns usable ids. */
+export async function validateGeminiModelAccess(options: {
+  apiKey: string;
+  model: string;
+  baseUrl?: string;
+  timeoutMs?: number;
+}): Promise<string[]> {
+  const requested = normalizeGeminiModel(options.model);
+  const models = await listGeminiModels(options);
+  const available = models
+    .filter((model) => model.supportedGenerationMethods.includes('generateContent'))
+    .map((model) => model.id);
+  if (!available.includes(requested)) {
+    const suggestions = available.slice(0, 12).join(', ');
+    throw new AiError(
+      suggestions
+        ? `The model "${requested}" is not available to this API key. Available models: ${suggestions}`
+        : `The model "${requested}" is not available to this API key for generateContent`,
+      404,
+      'key',
+      undefined,
+      'model_unavailable',
+    );
+  }
+  return available;
+}
+
 /** Gemini's generateContent: the system prompt is `systemInstruction`, the model role is `model`. */
 async function gemini(req: AiRequest, base: string): Promise<AiResult> {
+  const model = normalizeGeminiModel(req.model);
   const { data } = await post(
-    `${strip(base)}/models/${encodeURIComponent(req.model)}:generateContent`,
+    `${strip(base)}/models/${encodeURIComponent(model)}:generateContent`,
     { 'x-goog-api-key': req.apiKey },
     {
       systemInstruction: { parts: [{ text: req.system }] },
@@ -266,7 +373,7 @@ async function gemini(req: AiRequest, base: string): Promise<AiResult> {
   const usage = data?.usageMetadata ?? {};
   return {
     text: text.trim(),
-    model: data?.modelVersion ?? req.model,
+    model: data?.modelVersion ?? model,
     inputTokens: usage.promptTokenCount ?? 0,
     outputTokens: usage.candidatesTokenCount ?? 0,
   };
