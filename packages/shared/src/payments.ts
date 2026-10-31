@@ -47,7 +47,12 @@ export const DEFAULT_PAYMENT_SETTINGS: PaymentSettings = {
   instructions: '',
 };
 
-/** XPay methods a checkout may offer (each must be switched on in the XPay account too). */
+/**
+ * Every method XPay's API knows (`paymentMethodTypes` on a Checkout Session and in `GET /account`:
+ * `card | fawry | valu | apple_pay`; Apple Pay is its only wallet). Egyptian mobile wallets (Vodafone
+ * Cash, Orange Cash, e& Cash, WE Pay) are not among them, so they aren't offered here. Each method must
+ * also be provisioned on the XPay account, which `GET /account` reports (see `XPayCapabilities`).
+ */
 export const XPAY_METHODS = ['card', 'apple_pay', 'valu', 'fawry'] as const;
 export type XPayMethod = (typeof XPAY_METHODS)[number];
 
@@ -86,7 +91,30 @@ export type XPayModeView = {
   validationError: XPayConnectionError | null;
   /** Last event with a valid signature (ISO): proves the webhook secret and URL work. */
   lastWebhookAt: string | null;
+  /** What XPay reported for this mode's account at the last passing connection test; null until then. */
+  capabilities: XPayCapabilities | null;
 };
+
+/** One mode's XPay account as `GET /account` describes it. */
+export type XPayCapabilities = {
+  /** The account's display name in XPay (absent until its onboarding is complete). */
+  accountName: string | null;
+  /** Methods the account can charge in EGP. */
+  methods: XPayMethod[];
+  /** Apple Pay can run on our own website (Elements); otherwise XPay only offers it on its hosted pages. */
+  applePayOnWebsite: boolean;
+  /** Live mode only: XPay has switched live payments on for the account. */
+  livePaymentsEnabled: boolean;
+};
+
+/**
+ * The methods a checkout of this mode will actually offer: the admin's choice, narrowed to what the XPay
+ * account can do (once a connection test has told us). Apple Pay needs to be ready for our website.
+ */
+export function xpayAvailableMethods(selected: readonly XPayMethod[], caps: XPayCapabilities | null): XPayMethod[] {
+  if (!caps) return [...selected];
+  return selected.filter((m) => caps.methods.includes(m) && (m !== 'apple_pay' || caps.applePayOnWebsite));
+}
 
 /** The admin's XPay configuration (`GET /api/admin/xpay`). */
 export type XPaySettings = {
@@ -113,7 +141,9 @@ export type XPaySettingsInput = {
   confirmLive?: boolean;
 };
 
-export type XPayConnectionError = 'invalid_key' | 'forbidden' | 'wrong_mode' | 'unreachable' | 'unexpected' | 'missing_key';
+export const XPAY_CONNECTION_ERRORS = ['invalid_key', 'forbidden', 'wrong_mode', 'unreachable', 'unexpected', 'missing_key', 'live_not_enabled', 'egp_unsupported'] as const;
+/** `live_not_enabled`: XPay hasn't switched live payments on for the account yet. `egp_unsupported`: the account can't charge EGP. */
+export type XPayConnectionError = (typeof XPAY_CONNECTION_ERRORS)[number];
 
 /** A key belongs to a mode by its prefix: `pk_test_…`, `sk_live_…`. */
 export const keyMode = (key: string): XPayMode | null => (/^(pk|sk)_test_/.test(key) ? 'test' : /^(pk|sk)_live_/.test(key) ? 'live' : null);
@@ -123,9 +153,10 @@ export function xpayModeComplete(v: Pick<XPayModeView, 'publishableKey' | 'secre
   return keyMode(v.publishableKey) === mode && v.secretKeyHint !== null && v.webhookSecretHint !== null && !v.unreadable;
 }
 
-/** XPay takes payments once switched on with the active mode complete and at least one method. */
+/** XPay takes payments once switched on with the active mode complete and at least one method its account can offer. */
 export function xpayReady(s: Pick<XPaySettings, 'enabled' | 'mode' | 'methods' | 'test' | 'live' | 'encryptionReady'>): boolean {
-  return s.enabled && s.encryptionReady && s.methods.length > 0 && xpayModeComplete(s[s.mode], s.mode);
+  const active = s[s.mode];
+  return s.enabled && s.encryptionReady && xpayModeComplete(active, s.mode) && xpayAvailableMethods(s.methods, active.capabilities ?? null).length > 0;
 }
 
 /** Customers (not only admins) pay through XPay: live mode, ready. */

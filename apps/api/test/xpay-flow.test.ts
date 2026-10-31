@@ -54,6 +54,8 @@ describe.skipIf(!url)('xpay payments (integration)', () => {
   const sessions = new Map<string, FakeSession>();
   const created: { body: Record<string, unknown>; idempotencyKey: string | null; key: string | null }[] = [];
   let outage: 'none' | 'http500' | 'network' = 'none';
+  // What each mode's XPay account reports in GET /account.
+  const account = { test: { methods: ['card', 'fawry', 'valu'], live: true }, live: { methods: ['card', 'fawry', 'valu'], live: true } };
   const realFetch = globalThis.fetch;
   const fakeFetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const href = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -66,6 +68,19 @@ describe.skipIf(!url)('xpay payments (integration)', () => {
     const mode = key === KEYS.live.secretKey ? 'live' : key === KEYS.test.secretKey ? 'test' : null;
     if (!mode) return json(401, { error: { code: 'unauthorized', message: 'Invalid API key' } });
     const path = new URL(href).pathname;
+    if ((!init?.method || init.method === 'GET') && path === '/account') {
+      return json(200, {
+        id: `acct_${mode}`,
+        displayName: 'CodeFiye',
+        defaultCurrency: 'EGP',
+        defaultLocale: 'ar',
+        livemode: mode === 'live',
+        livePaymentsEnabled: mode === 'live' ? account.live.live : false,
+        apiKey: { type: 'SECRET', mode, permissions: [] },
+        supportedCurrencies: [{ code: 'EGP', decimals: 2, paymentMethodTypes: account[mode].methods }],
+        wallets: [],
+      });
+    }
     if (init?.method === 'POST' && path === '/checkout/sessions') {
       const body = JSON.parse(String(init.body)) as { lineItems: { priceData: { unitAmount: number } }[]; metadata: Record<string, unknown> };
       created.push({ body: body as never, idempotencyKey: headers.get('idempotency-key'), key });
@@ -359,33 +374,34 @@ describe.skipIf(!url)('xpay payments (integration)', () => {
     expect((await planOf(customer)).plan_id).toBe('basic');
   });
 
-  it('holds a payment whose amounts or order do not match for review, without activating', async () => {
-    const cases: [string, (s: FakeSession, amount: number) => void][] = [
-      ['subtotal_mismatch', (s, a) => Object.assign(s, { amountSubtotal: a - 100, amountTotal: a - 100 })],
-      ['total_mismatch', (s, a) => Object.assign(s, { amountTotal: a + 5_000 })],
-      ['currency_mismatch', (s) => Object.assign(s, { currency: 'USD' })],
-      ['discounted', (s, a) => Object.assign(s, { amountTotal: a - 1_000, totalDetails: { amountDiscount: 1_000, amountTax: 0 } })],
-      ['order_mismatch', (s) => Object.assign(s, { metadata: { paymentId: '00000000-0000-4000-8000-000000000000', workspaceId: customer.id } })],
-    ];
-    for (const [reason, tamper] of cases) {
-      await resetPlan(customer);
-      const { session, payment } = await openCheckout();
-      markPaid(session);
-      tamper(session, payment.amountCents);
-      expect((await deliver('live', { type: 'checkout.session.completed', object: { id: session.id } })).statusCode).toBe(200);
-      const row = await paymentRow(payment.id);
-      expect(row.status, reason).toBe('review');
-      expect(row.error).toContain(reason);
-      expect((await planOf(customer)).plan_id, reason).toBe(BASE);
-      // The admin sees it as a pending request carrying the reasons.
-      const [request] = await sql<{ status: string; payment: { review: string[] } }[]>`select status, payment from plan_requests where id = ${row.plan_request_id}`;
-      expect(request).toMatchObject({ status: 'pending' });
-      expect(request!.payment.review).toContain(reason);
-      // A redelivery doesn't change the held payment.
-      await deliver('live', { type: 'checkout.session.completed', object: { id: session.id } });
-      expect((await paymentRow(payment.id)).status).toBe('review');
-    }
-    // XPay's fee passed through to the customer, itemised, is accepted.
+  // One test per case: each walks a whole checkout → webhook → redelivery against the test database.
+  const reviewCases: [string, (s: FakeSession, amount: number) => void][] = [
+    ['subtotal_mismatch', (s, a) => Object.assign(s, { amountSubtotal: a - 100, amountTotal: a - 100 })],
+    ['total_mismatch', (s, a) => Object.assign(s, { amountTotal: a + 5_000 })],
+    ['currency_mismatch', (s) => Object.assign(s, { currency: 'USD' })],
+    ['discounted', (s, a) => Object.assign(s, { amountTotal: a - 1_000, totalDetails: { amountDiscount: 1_000, amountTax: 0 } })],
+    ['order_mismatch', (s) => Object.assign(s, { metadata: { paymentId: '00000000-0000-4000-8000-000000000000', workspaceId: customer.id } })],
+  ];
+  it.each(reviewCases)('holds a paid session for review without activating: %s', async (reason, tamper) => {
+    await resetPlan(customer);
+    const { session, payment } = await openCheckout();
+    markPaid(session);
+    tamper(session, payment.amountCents);
+    expect((await deliver('live', { type: 'checkout.session.completed', object: { id: session.id } })).statusCode).toBe(200);
+    const row = await paymentRow(payment.id);
+    expect(row.status).toBe('review');
+    expect(row.error).toContain(reason);
+    expect((await planOf(customer)).plan_id).toBe(BASE);
+    // The admin sees it as a pending request carrying the reasons.
+    const [request] = await sql<{ status: string; payment: { review: string[] } }[]>`select status, payment from plan_requests where id = ${row.plan_request_id}`;
+    expect(request).toMatchObject({ status: 'pending' });
+    expect(request!.payment.review).toContain(reason);
+    // A redelivery doesn't change the held payment.
+    await deliver('live', { type: 'checkout.session.completed', object: { id: session.id } });
+    expect((await paymentRow(payment.id)).status).toBe('review');
+  });
+
+  it("accepts XPay's fee passed through to the customer when itemised", async () => {
     await resetPlan(customer);
     const fee = await openCheckout();
     markPaid(fee.session);
@@ -393,8 +409,7 @@ describe.skipIf(!url)('xpay payments (integration)', () => {
     await deliver('live', { type: 'checkout.session.completed', object: { id: fee.session.id } });
     expect((await paymentRow(fee.payment.id)).status).toBe('paid');
     expect((await planOf(customer)).plan_id).toBe('basic');
-    // Six round trips per case to the test database: more than the default 30 s on a remote Neon branch.
-  }, 180_000);
+  });
 
   it('marks a refunded payment and tells the admin, leaving the plan for the admin to decide', async () => {
     await resetPlan(customer);
@@ -513,7 +528,7 @@ describe.skipIf(!url)('xpay payments (integration)', () => {
     expect(good.json().data).toMatchObject({ ok: true, error: null });
     expect(good.json().data.settings.live.validatedAt).not.toBeNull();
     const probe = fakeFetch.mock.calls.at(-1)!;
-    expect(String(probe[0])).toMatch(/\/checkout\/sessions\/cs_live_connection_check$/);
+    expect(String(probe[0])).toBe('https://api.xpay.app/account');
     expect(probe[1]?.method ?? 'GET').toBe('GET');
 
     outage = 'network';
@@ -563,5 +578,78 @@ describe.skipIf(!url)('xpay payments (integration)', () => {
     expect((await call(admin, 'PUT', '/api/admin/xpay', { enabled: false, mode: 'live', methods: ['card'] })).statusCode).toBe(200);
     expect((await call(customer, 'GET', '/api/payments/xpay')).json().data.enabled).toBe(false);
     expect((await call(customer, 'POST', '/api/plan-requests', { planId: 'basic', payment: { method: 'vodafone_cash', senderPhone: '01012345678' } })).json().code).not.toBe('pay_online');
+    await sql`update plan_requests set status = 'cancelled' where workspace_id = ${customer.id} and status = 'pending'`;
+  });
+
+  // --- payment methods per XPay account --------------------------------------------------------------
+
+  it('offers only the methods the XPay account has, and refuses the others in the settings', async () => {
+    await configure();
+    account.live.methods = ['fawry'];
+    const tested = await call(admin, 'POST', '/api/admin/xpay/test', { mode: 'live' });
+    expect(tested.json().data.settings.live.capabilities).toMatchObject({ methods: ['fawry'], livePaymentsEnabled: true, applePayOnWebsite: false });
+
+    // Cards only, on an account without cards: refused, and XPay is off rather than offering something else.
+    const refused = await call(admin, 'PUT', '/api/admin/xpay', { enabled: true, mode: 'live', methods: ['card'] });
+    expect(refused.statusCode).toBe(422);
+    expect(Object.keys(refused.json().errors)).toContain('methods');
+    await saveXPaySettings(sql, encryptionKey, { enabled: true, mode: 'live', methods: ['card'] });
+    expect((await call(customer, 'GET', '/api/payments/xpay')).json().data.enabled).toBe(false);
+
+    // Cards + Fawry: the checkout offers Fawry only.
+    expect((await call(admin, 'PUT', '/api/admin/xpay', { enabled: true, mode: 'live', methods: ['card', 'fawry'] })).statusCode).toBe(200);
+    await openCheckout();
+    expect(created.at(-1)!.body.paymentMethodTypes).toEqual(['fawry']);
+    account.live.methods = ['card', 'fawry', 'valu'];
+    await configure();
+  });
+
+  it('cannot switch live on for an account XPay has not enabled for live payments', async () => {
+    await configure({ enabled: false, mode: 'test' });
+    account.live.live = false;
+    expect((await call(admin, 'POST', '/api/admin/xpay/test', { mode: 'live' })).json().data).toMatchObject({ ok: false, error: 'live_not_enabled' });
+    const res = await call(admin, 'PUT', '/api/admin/xpay', { enabled: true, mode: 'live', methods: ['card'], confirmLive: true });
+    expect(res.statusCode).toBe(422);
+    expect(res.json().code).toBe('test_connection_first');
+    account.live.live = true;
+    await configure();
+  });
+
+  // --- switching environments ----------------------------------------------------------------------
+
+  it('switching modes keeps payments, secrets and records apart', async () => {
+    // A test checkout opened by the admin while in test mode…
+    await configure({ mode: 'test' });
+    await resetPlan(admin);
+    const test = await openCheckout(admin);
+    expect(test.payment.mode).toBe('test');
+    // …then the admin switches to live.
+    await configure();
+    const live = await openCheckout(customer);
+    expect(live.payment.mode).toBe('live');
+
+    // The test payment still settles on the test endpoint, with the test keys…
+    markPaid(test.session);
+    expect((await deliver('test', { id: 'evt_test_switch', type: 'checkout.session.completed', object: { id: test.session.id } })).statusCode).toBe(200);
+    expect(await paymentRow(test.payment.id)).toMatchObject({ status: 'paid', mode: 'test' });
+    // …and never through the live endpoint (the live key can't see a test session).
+    expect((await deliver('live', { id: 'evt_live_switch', type: 'checkout.session.completed', object: { id: test.session.id } })).statusCode).toBe(200);
+    const [handled] = await sql<{ outcome: string }[]>`select outcome from payment_events where event_id = 'evt_live_switch'`;
+    expect(handled!.outcome).toBe('unknown_session');
+    // The live payment isn't touched by the test endpoint either.
+    markPaid(live.session);
+    await deliver('test', { type: 'checkout.session.completed', object: { id: live.session.id } });
+    expect((await paymentRow(live.payment.id)).status).toBe('pending');
+
+    // The admin lists each mode's payments separately, labelled.
+    const testList = (await call(admin, 'GET', '/api/admin/xpay/payments?mode=test')).json().data as { id: string; mode: string }[];
+    const liveList = (await call(admin, 'GET', '/api/admin/xpay/payments?mode=live')).json().data as { id: string; mode: string }[];
+    expect(testList.map((p) => p.id)).toContain(test.payment.id);
+    expect(testList.map((p) => p.id)).not.toContain(live.payment.id);
+    expect(liveList.map((p) => p.id)).toContain(live.payment.id);
+    expect(liveList.map((p) => p.id)).not.toContain(test.payment.id);
+    expect(new Set(testList.map((p) => p.mode))).toEqual(new Set(['test']));
+    expect(new Set(liveList.map((p) => p.mode))).toEqual(new Set(['live']));
+    expect((await call(customer, 'GET', '/api/admin/xpay/payments?mode=live')).statusCode).toBe(403);
   });
 });

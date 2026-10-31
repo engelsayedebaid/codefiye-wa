@@ -32,6 +32,7 @@ import { navigate, useQuery as useSearchParams } from '../router';
 import { ActivityLog, ActivityUsers, AdminOverview, type Period, PeriodPicker, PERIODS, useActivitySummary } from './AdminActivity';
 import { PlanPricingSettings } from './AdminPricing';
 import { useXPayEnabled, XPaySettingsCard } from './AdminXPay';
+import { XPayPaymentsCard } from './AdminXPayPayments';
 import { SiteContactCard, SiteSettingsCard } from './AdminSite';
 import { TemplatePreview } from './Templates';
 import { Badge, Button, Card, cx, delay, EmptyState, ErrorNote, Field, inputClass, Loading, LoadError, Modal, Pagination, Select, SuccessNote, TextArea, usePlanName } from '../ui';
@@ -1093,6 +1094,7 @@ export function AdminPage() {
           {tab === 'payments' && (
             <div className="space-y-8">
               <XPaySettingsCard />
+              <XPayPaymentsCard />
               <PaymentMethodsSettings />
             </div>
           )}

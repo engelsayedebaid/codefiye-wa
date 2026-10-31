@@ -338,13 +338,15 @@ export function Field({
     />
   );
   return (
-    <label className="grid gap-2">
+    // content-start: stretched beside a taller field (one with a hint), the label and input stay at the top.
+    <label className="grid content-start gap-2">
       <span className="flex items-center justify-between text-sm leading-none font-medium">
         {label}
         {aside}
       </span>
       {secret ? (
-        <span className="relative block">
+        // Same direction as the input, so the eye sits on the side its padding leaves free (an ltr key on an rtl page).
+        <span className="relative block" dir={input.dir}>
           {field}
           <button
             type="button"

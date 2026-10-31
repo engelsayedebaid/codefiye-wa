@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { PAYMENT_MONTHS, type PaymentDetails, type PaymentSettings, type TransferDetails, XPAY_METHODS, XPAY_MODES, type XPayMode, type XPayModeInput, type XPayModeView, type XPaySettings, type XPaySettingsInput } from './payments';
+import { PAYMENT_MONTHS, type PaymentDetails, type PaymentSettings, type TransferDetails, XPAY_CONNECTION_ERRORS, XPAY_METHODS, XPAY_MODES, type XPayMode, type XPayModeInput, type XPayModeView, type XPaySettings, type XPaySettingsInput } from './payments';
 
 const egyptianMobile = z
   .string()
@@ -72,7 +72,9 @@ export const paymentSettingsSchema: z.ZodType<PaymentSettings> = z.object({
 
 const xpayMethods = z.array(z.enum(XPAY_METHODS)).max(XPAY_METHODS.length);
 
-const connectionErrors = z.enum(['invalid_key', 'forbidden', 'wrong_mode', 'unreachable', 'unexpected', 'missing_key']);
+const connectionErrors = z.enum(XPAY_CONNECTION_ERRORS);
+
+const capabilities = z.object({ accountName: z.string().nullable(), methods: z.array(z.enum(XPAY_METHODS)), applePayOnWebsite: z.boolean(), livePaymentsEnabled: z.boolean() });
 
 const modeView: z.ZodType<XPayModeView> = z.object({
   publishableKey: z.string(),
@@ -83,6 +85,7 @@ const modeView: z.ZodType<XPayModeView> = z.object({
   validatedAt: z.string().nullable(),
   validationError: connectionErrors.nullable(),
   lastWebhookAt: z.string().nullable(),
+  capabilities: capabilities.nullable(),
 });
 
 export const xpaySettingsDto: z.ZodType<XPaySettings> = z.object({

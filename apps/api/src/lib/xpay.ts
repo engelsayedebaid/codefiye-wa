@@ -11,6 +11,8 @@ import {
   type XPayMode,
   type XPayModeView,
   type XPayPublicConfig,
+  xpayAvailableMethods,
+  type XPayCapabilities,
   xpayReady,
   type XPaySettings,
   type XPaySettingsInput,
@@ -37,12 +39,13 @@ type StoredMode = {
   validatedAt: string | null;
   validationError: XPayConnectionError | null;
   lastWebhookAt: string | null;
+  capabilities: XPayCapabilities | null;
 };
 
 /** Stored in `settings` under `xpay`. */
 type StoredXPay = { enabled: boolean; mode: XPayMode; methods: XPayMethod[]; test: StoredMode; live: StoredMode };
 
-const EMPTY_MODE: StoredMode = { publishableKey: '', secretKey: null, webhookSecret: null, validatedAt: null, validationError: null, lastWebhookAt: null };
+const EMPTY_MODE: StoredMode = { publishableKey: '', secretKey: null, webhookSecret: null, validatedAt: null, validationError: null, lastWebhookAt: null, capabilities: null };
 const SALT = 'wa-xpay';
 type SecretName = 'secretKey' | 'webhookSecret';
 
@@ -96,7 +99,7 @@ async function writeStored(sql: Sql, value: StoredXPay) {
 }
 
 /** Sets one field of one mode in place, so a webhook or a connection test never overwrites the admin's edits. */
-async function patchMode(sql: Sql, mode: XPayMode, fields: Partial<Pick<StoredMode, 'validatedAt' | 'validationError' | 'lastWebhookAt'>>) {
+async function patchMode(sql: Sql, mode: XPayMode, fields: Partial<Pick<StoredMode, 'validatedAt' | 'validationError' | 'lastWebhookAt' | 'capabilities'>>) {
   await sql`
     update settings set value = jsonb_set(value, ${sql.array([mode])}::text[], coalesce(value -> ${mode}, '{}'::jsonb) || ${sql.json(fields as never)}::jsonb), updated_at = now()
     where key = 'xpay'`;
@@ -116,6 +119,7 @@ function modeView(master: Buffer | null, mode: XPayMode, s: StoredMode, publicUr
     validatedAt: s.validatedAt,
     validationError: s.validationError,
     lastWebhookAt: s.lastWebhookAt,
+    capabilities: s.capabilities ?? null,
   };
 }
 
@@ -154,7 +158,7 @@ export async function saveXPaySettings(sql: Sql, master: Buffer, input: XPaySett
       publishableKey: change.publishableKey ?? current.publishableKey,
       secretKey: change.secretKey ? seal(master, mode, 'secretKey', change.secretKey) : current.secretKey,
       webhookSecret: change.webhookSecret ? seal(master, mode, 'webhookSecret', change.webhookSecret) : current.webhookSecret,
-      ...(keysChanged ? { validatedAt: null, validationError: null } : {}),
+      ...(keysChanged ? { validatedAt: null, validationError: null, capabilities: null } : {}),
       ...(change.webhookSecret ? { lastWebhookAt: null } : {}),
     };
   }
@@ -174,7 +178,8 @@ export async function getXPayModeAccount(sql: Sql, master: Buffer | null, mode: 
   const secretKey = open(master, mode, 'secretKey', m.secretKey);
   const webhookSecret = open(master, mode, 'webhookSecret', m.webhookSecret);
   if (!secretKey || !webhookSecret || keyMode(m.publishableKey) !== mode || keyMode(secretKey) !== mode) return null;
-  return { mode, publishableKey: m.publishableKey, secretKey, webhookSecret, methods: s.methods };
+  // Only what the admin chose and the XPay account can actually offer (once a connection test told us).
+  return { mode, publishableKey: m.publishableKey, secretKey, webhookSecret, methods: xpayAvailableMethods(s.methods, m.capabilities ?? null) };
 }
 
 /** The account new checkouts are opened with: the active mode, when XPay is on and ready. */
@@ -284,28 +289,57 @@ export function getCheckoutSession(account: XPayAccount, id: string, fetchImpl?:
   return call<XPaySession>(account, `/checkout/sessions/${encodeURIComponent(id)}`, {}, fetchImpl);
 }
 
+/** `GET /account` (any secret key, no permission needed), as XPay documents it. */
+type XPayAccountInfo = {
+  displayName?: string;
+  livemode?: boolean;
+  livePaymentsEnabled?: boolean;
+  apiKey?: { mode?: string };
+  supportedCurrencies?: { code?: string; decimals?: number; paymentMethodTypes?: string[] }[];
+  wallets?: { type?: string; websiteReady?: boolean }[];
+};
+
+export type ConnectionResult = { error: XPayConnectionError | null; capabilities: XPayCapabilities | null };
+
 /**
- * Checks a mode's secret key without changing anything: reads a session id that can't exist.
- * XPay documents `GET /checkout/sessions/{id}` as 401 for an invalid key, 403 for a key without
- * permission and 404 for a session not in this account and mode — so 404 means the key works.
+ * Checks a mode's secret key with a read-only `GET /account` and learns what the account can do:
+ * - the key must belong to this mode (`apiKey.mode`, `livemode`), and a live account must have live payments on;
+ * - EGP must be chargeable with 2 decimals (our amounts are piastres);
+ * - the EGP payment methods and whether Apple Pay is ready for our website narrow what checkouts offer.
  */
-export async function testConnection(account: XPayAccount, fetchImpl?: typeof fetch): Promise<XPayConnectionError | null> {
-  if (keyMode(account.secretKey) !== account.mode || keyMode(account.publishableKey) !== account.mode) return 'wrong_mode';
+export async function testConnection(account: XPayAccount, fetchImpl?: typeof fetch): Promise<ConnectionResult> {
+  const fail = (error: XPayConnectionError): ConnectionResult => ({ error, capabilities: null });
+  if (keyMode(account.secretKey) !== account.mode || keyMode(account.publishableKey) !== account.mode) return fail('wrong_mode');
+  let info: XPayAccountInfo;
   try {
-    await getCheckoutSession(account, `cs_${account.mode}_connection_check`, fetchImpl);
-    return 'unexpected';
+    info = await call<XPayAccountInfo>(account, '/account', {}, fetchImpl);
   } catch (err) {
     if (!(err instanceof XPayError)) throw err;
-    if (err.status === 404) return null;
-    if (err.status === 401) return 'invalid_key';
-    if (err.status === 403) return 'forbidden';
-    if (err.status === 0) return 'unreachable';
-    return 'unexpected';
+    if (err.status === 401) return fail('invalid_key');
+    if (err.status === 403) return fail('forbidden');
+    if (err.status === 0) return fail('unreachable');
+    return fail('unexpected');
   }
+  if (info.apiKey?.mode !== account.mode || info.livemode !== (account.mode === 'live')) return fail('wrong_mode');
+  const egp = info.supportedCurrencies?.find((c) => c.code === 'EGP');
+  if (!egp) return fail('egp_unsupported');
+  if (egp.decimals !== 2) return fail('unexpected');
+  const capabilities: XPayCapabilities = {
+    accountName: info.displayName ?? null,
+    methods: XPAY_METHODS.filter((m) => egp.paymentMethodTypes?.includes(m)),
+    applePayOnWebsite: info.wallets?.some((w) => w.type === 'apple_pay' && w.websiteReady === true) ?? false,
+    livePaymentsEnabled: info.livePaymentsEnabled === true,
+  };
+  if (account.mode === 'live' && !capabilities.livePaymentsEnabled) return { error: 'live_not_enabled', capabilities };
+  return { error: null, capabilities };
 }
 
-export async function recordConnectionTest(sql: Sql, mode: XPayMode, error: XPayConnectionError | null) {
-  await patchMode(sql, mode, error ? { validationError: error } : { validatedAt: new Date().toISOString(), validationError: null });
+export async function recordConnectionTest(sql: Sql, mode: XPayMode, result: ConnectionResult) {
+  await patchMode(
+    sql,
+    mode,
+    result.error ? { validationError: result.error, ...(result.capabilities ? { capabilities: result.capabilities } : {}) } : { validatedAt: new Date().toISOString(), validationError: null, capabilities: result.capabilities },
+  );
 }
 
 // --- webhooks ------------------------------------------------------------------------------------

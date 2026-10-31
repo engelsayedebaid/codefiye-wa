@@ -6,7 +6,11 @@ import {
   ok,
   keyMode,
   paymentSettingsSchema,
+  ONLINE_PAYMENT_STATUSES,
+  type OnlinePaymentStatus,
   XPAY_MODES,
+  xpayAvailableMethods,
+  type XPayMode,
   xpayModeComplete,
   xpaySettingsDto,
   xpaySettingsInputSchema,
@@ -672,6 +676,10 @@ export function adminRoutes({ sql, db, auth, workers, encryptionKey }: Deps, opt
           if (!after.webhookSecretHint) errors[`${m}.webhookSecret`] = ['Required (whsec_…)'];
           if (after.unreadable) errors[`${m}.secretKey`] = ['The stored keys can no longer be read: enter them again'];
           if (body.methods.length === 0) errors.methods = ['Pick at least one'];
+          // What the account reported at the last connection test (forgotten when its keys change).
+          else if (!keysChanged && xpayAvailableMethods(body.methods, current[m].capabilities).length === 0) {
+            errors.methods = [`None of these methods is enabled on the ${m} XPay account`];
+          }
           if (Object.keys(errors).length > 0 || !xpayModeComplete(after, m)) throw unprocessable(`Fill in every ${m} key before switching XPay on`, errors);
         }
         const turningLiveOn = body.enabled && m === 'live' && !(current.enabled && current.mode === 'live');
@@ -717,10 +725,71 @@ export function adminRoutes({ sql, db, auth, workers, encryptionKey }: Deps, opt
         if (!encryptionKey) throw unavailable('This server has no AUTH_ENCRYPTION_KEY, so XPay keys cannot be read', 'no_encryption_key');
         const { mode } = req.body;
         const account = await getXPayModeAccount(sql, encryptionKey, mode);
-        const error = account ? await testConnection(account) : 'missing_key';
-        await recordConnectionTest(sql, mode, error);
-        await audit(sql, req, { action: 'xpay.test_connection', targetType: 'feature', targetId: 'xpay', details: { mode, ok: error === null, error } });
-        return ok({ ok: error === null, error, settings: await getXPaySettings(sql, encryptionKey, options.publicUrl) });
+        const result = account ? await testConnection(account) : { error: 'missing_key' as const, capabilities: null };
+        await recordConnectionTest(sql, mode, result);
+        await audit(sql, req, {
+          action: 'xpay.test_connection',
+          targetType: 'feature',
+          targetId: 'xpay',
+          details: { mode, ok: result.error === null, error: result.error, methods: result.capabilities?.methods ?? null },
+        });
+        return ok({ ok: result.error === null, error: result.error, settings: await getXPaySettings(sql, encryptionKey, options.publicUrl) });
+      },
+    );
+
+    app.get(
+      '/xpay/payments',
+      {
+        schema: {
+          ...schemaBase,
+          summary: 'Recent XPay payments of one mode (Test and Live are listed separately)',
+          querystring: z.object({ mode: z.enum(XPAY_MODES), limit: z.coerce.number().int().min(1).max(100).default(25) }),
+          response: {
+            200: successSchema(
+              z.array(
+                z.object({
+                  id: z.uuid(),
+                  mode: z.enum(XPAY_MODES),
+                  status: z.enum(ONLINE_PAYMENT_STATUSES),
+                  workspace: z.object({ id: z.uuid(), name: z.string() }),
+                  planId: z.string(),
+                  months: z.number(),
+                  amountCents: z.number(),
+                  refundedCents: z.number(),
+                  currency: z.string(),
+                  error: z.string().nullable(),
+                  createdAt: z.string(),
+                  paidAt: z.string().nullable(),
+                }),
+              ),
+            ),
+          },
+        },
+      },
+      async (req) => {
+        const rows = await sql<
+          { id: string; mode: XPayMode; status: OnlinePaymentStatus; workspace_id: string; workspace_name: string; plan_id: string; months: number; amount_cents: number; refunded_cents: number; currency: string; error: string | null; created_at: Date; paid_at: Date | null }[]
+        >`
+          select p.id, p.mode, p.status, p.workspace_id, w.name as workspace_name, p.plan_id, p.months, p.amount_cents, p.refunded_cents, p.currency, p.error, p.created_at, p.paid_at
+          from payments p join workspaces w on w.id = p.workspace_id
+          where p.provider = 'xpay' and p.mode = ${req.query.mode}
+          order by p.created_at desc limit ${req.query.limit}`;
+        return ok(
+          rows.map((r) => ({
+            id: r.id,
+            mode: r.mode,
+            status: r.status,
+            workspace: { id: r.workspace_id, name: r.workspace_name },
+            planId: r.plan_id,
+            months: r.months,
+            amountCents: r.amount_cents,
+            refundedCents: r.refunded_cents,
+            currency: r.currency,
+            error: r.error,
+            createdAt: r.created_at.toISOString(),
+            paidAt: r.paid_at?.toISOString() ?? null,
+          })),
+        );
       },
     );
 

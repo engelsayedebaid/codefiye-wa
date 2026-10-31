@@ -63,6 +63,7 @@ export const qk = {
     audit: (page: number) => ['admin', 'audit', page] as const,
     otpText: ['admin', 'otp-text'] as const,
     xpay: ['admin', 'xpay'] as const,
+    xpayPayments: (mode: string) => ['admin', 'xpay', 'payments', mode] as const,
     broadcasts: ['admin', 'broadcasts'] as const,
     broadcast: (id: string) => ['admin', 'broadcasts', id] as const,
     /** Each number's campaign load; under `broadcasts` so a launch refreshes it. */
