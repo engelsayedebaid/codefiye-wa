@@ -15,7 +15,15 @@ export type PaymentDetails =
   | { method: 'vodafone_cash'; senderPhone: string; amount?: number }
   /** `sender`: the sender's mobile number or InstaPay address (e.g. `name@instapay`). */
   | { method: 'instapay'; sender: string; amount?: number }
-  | { method: 'bank_transfer'; senderName: string; bankName?: string; reference?: string; amount?: number };
+  | { method: 'bank_transfer'; senderName: string; bankName?: string; reference?: string; amount?: number }
+  /** Paid online through XPay (recorded by the platform, never sent by customers). */
+  | { method: 'xpay'; sessionId: string; paymentId?: string; amount?: number };
+
+/** Every way a plan can be paid: the manual transfers above, plus XPay. */
+export type PaidMethod = PaymentDetails['method'];
+
+/** What a customer sends with a manual plan request. */
+export type TransferDetails = Extract<PaymentDetails, { method: PaymentMethod }>;
 
 /** The admin's receiving accounts, shown to customers in the payment popup. */
 export type PaymentSettings = {
@@ -35,6 +43,51 @@ export const DEFAULT_PAYMENT_SETTINGS: PaymentSettings = {
   bank_transfer: { enabled: false, bankName: '', accountName: '', accountNumber: '', iban: '' },
   instructions: '',
 };
+
+/** XPay methods a checkout may offer (each must be switched on in the XPay account too). */
+export const XPAY_METHODS = ['card', 'apple_pay', 'valu', 'fawry'] as const;
+export type XPayMethod = (typeof XPAY_METHODS)[number];
+
+/** What the dashboard needs to open XPay's checkout (`GET /api/payments/xpay`). */
+export type XPayPublicConfig = {
+  /** On = customers pay online through XPay and the manual transfers are hidden. */
+  enabled: boolean;
+  publishableKey: string;
+};
+
+/** The admin's XPay account. The secrets are write-only: responses only say whether they are set. */
+export type XPaySettings = {
+  enabled: boolean;
+  /** `pk_test_…` / `pk_live_…` */
+  publishableKey: string;
+  methods: XPayMethod[];
+  hasSecretKey: boolean;
+  hasWebhookSecret: boolean;
+  /** The endpoint to add in XPay → Developers → Webhooks. */
+  webhookUrl: string;
+};
+
+/** What the admin saves; a blank or missing secret keeps the stored one. */
+export type XPaySettingsInput = {
+  enabled: boolean;
+  publishableKey: string;
+  methods: XPayMethod[];
+  /** `sk_test_…` / `sk_live_…` */
+  secretKey?: string;
+  /** `whsec_…` */
+  webhookSecret?: string;
+};
+
+/** XPay is usable once switched on with both keys, the webhook secret and at least one method. */
+export function xpayReady(s: Pick<XPaySettings, 'enabled' | 'publishableKey' | 'methods' | 'hasSecretKey' | 'hasWebhookSecret'>): boolean {
+  return s.enabled && s.publishableKey !== '' && s.methods.length > 0 && s.hasSecretKey && s.hasWebhookSecret;
+}
+
+/** Test keys charge nothing; the admin page and the payment popup say so. */
+export const isTestKey = (key: string) => /^(pk|sk)_test_/.test(key);
+
+export const ONLINE_PAYMENT_STATUSES = ['pending', 'paid', 'failed'] as const;
+export type OnlinePaymentStatus = (typeof ONLINE_PAYMENT_STATUSES)[number];
 
 /** Methods the admin switched on with their details filled in — the only ones customers may pick. */
 export function enabledPaymentMethods(s: PaymentSettings): PaymentMethod[] {

@@ -14,10 +14,13 @@ export const qk = {
   planRequests: ['plan-requests'] as const,
   /** Accepted payment methods and receiving accounts (what the admin set). */
   paymentMethods: ['payment-methods'] as const,
+  xpay: ['xpay'] as const,
   /** Customer-facing plan prices and discounts (what the admin set). */
   planPricing: ['plan-pricing'] as const,
-  /** The website's explainer video and YouTube links (what the admin set). */
+  /** The website's explainer video, YouTube links and contact details (what the admin set). */
   site: ['site'] as const,
+  /** Units of each currency per 1 USD, for showing prices in the visitor's currency. */
+  currencyRates: ['currency-rates'] as const,
   chats: {
     all: ['chats'] as const,
     numbers: ['chats', 'numbers'] as const,
@@ -59,6 +62,7 @@ export const qk = {
     users: (params: { q: string; status: string; page: number }) => ['admin', 'users', params] as const,
     audit: (page: number) => ['admin', 'audit', page] as const,
     otpText: ['admin', 'otp-text'] as const,
+    xpay: ['admin', 'xpay'] as const,
     broadcasts: ['admin', 'broadcasts'] as const,
     broadcast: (id: string) => ['admin', 'broadcasts', id] as const,
     /** Each number's campaign load; under `broadcasts` so a launch refreshes it. */

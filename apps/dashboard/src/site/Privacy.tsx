@@ -2,7 +2,7 @@ import { Ban, CalendarDays, Eye, LockKeyhole, Mail, ShieldCheck } from '../icons
 import { BRAND } from '../brand';
 import { useI18n } from '../i18n';
 import { delay, Reveal } from '../ui';
-import { SiteFooter, SiteHeader } from './SiteChrome';
+import { ContactDetails, SiteFooter, SiteHeader } from './SiteChrome';
 import { TocAside, TocFold, useActiveSection } from './TocNav';
 
 const HIGHLIGHT_ICONS = [ShieldCheck, Eye, LockKeyhole, Ban];
@@ -104,6 +104,7 @@ export function PrivacyPage() {
                       <Mail className="size-4 shrink-0" />
                       {BRAND.supportEmail}
                     </a>
+                    <ContactDetails className="mt-4 border-t border-line pt-4" />
                   </section>
                 </Reveal>
               </div>

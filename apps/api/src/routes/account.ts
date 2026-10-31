@@ -30,6 +30,7 @@ import { getFeatures } from '../lib/features';
 import { generateKey, hashKey } from '../lib/keys';
 import { getPaymentSettings } from '../lib/payments';
 import { getPlanPricing } from '../lib/plan-pricing';
+import { getXPayPublicConfig } from '../lib/xpay';
 import { hashPassword, needsRehash, passwordProblems, verifyPassword } from '../lib/passwords';
 import { generateRecoveryCodes, generateTotpSecret, hashRecoveryCode, looksLikeRecoveryCode, matchTotp, otpauthUrl, totpCipher, twoFactorGraceUntil, type TotpCipher } from '../lib/totp';
 import { createVerifications, type Lang, normalizeCode, type VerificationTicket } from '../lib/verification';
@@ -1303,9 +1304,13 @@ export function accountRoutes(deps: Deps): FastifyPluginAsyncZod {
           throw forbidden('Verify your phone number before requesting a plan', 'phone_unverified');
         }
         const { planId, months, payment, note } = req.body;
-        const [settings, pricing] = await Promise.all([getPaymentSettings(sql), getPlanPricing(sql)]);
+        const [settings, pricing, xpay] = await Promise.all([getPaymentSettings(sql), getPlanPricing(sql), getXPayPublicConfig(sql, deps.encryptionKey)]);
         const accepted = enabledPaymentMethods(settings);
         const price = listedPriceUsd(planId, pricing);
+        // With XPay on, the manual transfers are switched off: priced plans are paid online (POST /api/payments/xpay).
+        if (xpay.enabled && price !== null && price > 0) {
+          throw unprocessable('Pay for this plan online', { payment: ['Pay online with XPay'] }, { code: 'pay_online' });
+        }
         // Payment is expected when the plan costs money and there is a way to pay. A 100% discount and custom-priced plans need no transfer.
         if (price !== null && price > 0 && accepted.length > 0) {
           if (!payment) throw unprocessable('Choose how you paid', { payment: ['Pick a payment method'] });

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { PAYMENT_MONTHS, type PaymentDetails, type PaymentSettings } from './payments';
+import { PAYMENT_MONTHS, type PaymentDetails, type PaymentSettings, type TransferDetails, XPAY_METHODS, type XPaySettings, type XPaySettingsInput } from './payments';
 
 const egyptianMobile = z
   .string()
@@ -11,7 +11,7 @@ const amount = z.number().positive().max(1_000_000).optional();
 
 export const paymentMonthsSchema = z.union(PAYMENT_MONTHS.map((n) => z.literal(n)) as [z.ZodLiteral<1>, z.ZodLiteral<3>, z.ZodLiteral<6>, z.ZodLiteral<12>]);
 
-export const paymentDetailsSchema: z.ZodType<PaymentDetails, unknown> = z.discriminatedUnion('method', [
+export const paymentDetailsSchema: z.ZodType<TransferDetails, unknown> =z.discriminatedUnion('method', [
   z.object({ method: z.literal('vodafone_cash'), senderPhone: egyptianMobile, amount }),
   z.object({
     method: z.literal('instapay'),
@@ -46,6 +46,7 @@ export const paymentDetailsDto: z.ZodType<PaymentDetails> = z.discriminatedUnion
     reference: z.string().optional(),
     amount: z.number().optional(),
   }),
+  z.object({ method: z.literal('xpay'), sessionId: z.string(), paymentId: z.string().optional(), amount: z.number().optional() }),
 ]);
 
 export const paymentSettingsSchema: z.ZodType<PaymentSettings> = z.object({
@@ -60,4 +61,29 @@ export const paymentSettingsSchema: z.ZodType<PaymentSettings> = z.object({
     iban: z.string().trim().max(40),
   }),
   instructions: z.string().trim().max(500),
+});
+
+const xpayMethods = z.array(z.enum(XPAY_METHODS)).max(XPAY_METHODS.length);
+
+export const xpaySettingsDto: z.ZodType<XPaySettings> = z.object({
+  enabled: z.boolean(),
+  publishableKey: z.string(),
+  methods: xpayMethods,
+  hasSecretKey: z.boolean(),
+  hasWebhookSecret: z.boolean(),
+  webhookUrl: z.string(),
+});
+
+const blankOr = (re: RegExp, message: string) => z.string().trim().max(300).refine((s) => s === '' || re.test(s), message).optional();
+
+export const xpaySettingsInputSchema: z.ZodType<XPaySettingsInput> = z.object({
+  enabled: z.boolean(),
+  publishableKey: z
+    .string()
+    .trim()
+    .max(300)
+    .refine((s) => s === '' || /^pk_(test|live)_\w+$/.test(s), 'Paste the publishable key (pk_test_… or pk_live_…)'),
+  methods: xpayMethods,
+  secretKey: blankOr(/^sk_(test|live)_\w+$/, 'Paste the secret key (sk_test_… or sk_live_…)'),
+  webhookSecret: blankOr(/^whsec_\w+$/, 'Paste the webhook signing secret (whsec_…)'),
 });

@@ -1,7 +1,9 @@
-import { ArrowRight, Mail, Menu, X } from '../icons';
+import { phoneHref } from '@wa/shared/site';
+import { ArrowRight, Mail, MapPin, Menu, Phone, X } from '../icons';
 import { type ReactNode, useEffect, useState } from 'react';
 import { sessionHint } from '../api';
 import { BRAND } from '../brand';
+import { CurrencySwitch } from '../currency';
 import { useI18n } from '../i18n';
 import { Link, usePath } from '../router';
 import { buttonClass, cx, flip, LangSwitch, Logo, Reveal, ThemeSwitch } from '../ui';
@@ -117,6 +119,7 @@ export function SiteHeader() {
         </nav>
 
         <div className="ms-auto hidden items-center gap-1 lg:flex">
+          <CurrencySwitch />
           <ThemeSwitch />
           <LangSwitch />
           <span aria-hidden className="mx-1.5 h-5 w-px bg-line" />
@@ -165,9 +168,12 @@ export function SiteHeader() {
               {l.getStarted}
             </Link>
           </div>
-          {/* Theme last: its popup opens toward the start from the button's end edge. */}
+          {/* Currency first and theme last: their popups open from the near edge toward the middle. */}
           <div className="mx-auto flex max-w-7xl items-center justify-between border-t border-line px-4 py-3 sm:px-6">
-            <LangSwitch />
+            <div className="flex items-center gap-1">
+              <CurrencySwitch align="start" />
+              <LangSwitch />
+            </div>
             <ThemeSwitch />
           </div>
         </div>
@@ -178,6 +184,40 @@ export function SiteHeader() {
 
 const socialClass =
   'inline-flex h-9 items-center gap-2 rounded-lg border border-line bg-card px-3 text-sm font-medium text-ink-2 transition-colors hover:border-line-strong hover:text-ink';
+
+/** The company's address in Egypt and phone number (the Central Bank's rules for online payments ask for both). */
+export function ContactDetails({ className, withEmail }: { className?: string; withEmail?: boolean }) {
+  const { t } = useI18n();
+  const f = t.landing.footer;
+  const site = useSiteSettings();
+  if (!site.localAddress && !site.phone && !withEmail) return null;
+  return (
+    <ul className={cx('space-y-2.5 text-sm', className)}>
+      {site.localAddress && (
+        <li className="flex items-start gap-2.5 text-ink-2">
+          <MapPin className="mt-0.5 size-4 shrink-0 text-muted" aria-label={f.address} />
+          <address className="not-italic">{site.localAddress}</address>
+        </li>
+      )}
+      {site.phone && (
+        <li className="flex items-center gap-2.5">
+          <Phone className="size-4 shrink-0 text-muted" aria-label={f.phone} />
+          <a href={phoneHref(site.phone)} className="ltr font-medium text-ink-2 transition-colors hover:text-ink">
+            {site.phone}
+          </a>
+        </li>
+      )}
+      {withEmail && (
+        <li className="flex items-center gap-2.5">
+          <Mail className="size-4 shrink-0 text-muted" aria-label={f.email} />
+          <a href={`mailto:${BRAND.supportEmail}`} className="ltr font-medium break-all text-ink-2 transition-colors hover:text-ink">
+            {BRAND.supportEmail}
+          </a>
+        </li>
+      )}
+    </ul>
+  );
+}
 
 export function SiteFooter() {
   const { t } = useI18n();
@@ -193,6 +233,7 @@ export function SiteFooter() {
             <Logo />
           </Link>
           <p className="mt-4 text-sm leading-relaxed text-muted">{t.brand.about}</p>
+          <ContactDetails className="mt-5" />
           <div className="mt-6 flex flex-wrap items-center gap-2">
             {site.youtubeChannelUrl && (
               <a href={site.youtubeChannelUrl} target="_blank" rel="noreferrer" className={socialClass}>

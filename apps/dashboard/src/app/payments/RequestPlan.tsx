@@ -8,13 +8,22 @@ import { useI18n } from '../../i18n';
 import type { PricedPlan } from '../../site/content';
 import { Button, cx, ErrorNote, Field, flip, Modal, usePlanName } from '../../ui';
 import { CopyLine, METHOD_LOOK, MethodGlyph, shrinkImage, usePaymentSettings } from './methods';
+import { useXPayConfig, XPayCheckout } from './XPayCheckout';
 
 type Proof = { mimetype: 'image/jpeg'; data: string; previewUrl: string };
 
-/** Months → total, as a row of choices. */
-function MonthsPicker({ plan, value, onChange }: { plan: PricedPlan; value: PaymentMonths; onChange: (m: PaymentMonths) => void }) {
+/** A USD price as the customer pays it: in Egyptian pounds once the admin set a rate, else in dollars. */
+function usePayPrice(egpPerUsd: number) {
   const { t } = useI18n();
   const p = t.subscription.payment;
+  return (usd: number, months = 1) => (egpPerUsd > 0 ? p.egp(planPriceEgp(usd, months, egpPerUsd)!) : p.usd(usd * months));
+}
+
+/** Months → total, as a row of choices. */
+function MonthsPicker({ plan, egpPerUsd, value, onChange }: { plan: PricedPlan; egpPerUsd: number; value: PaymentMonths; onChange: (m: PaymentMonths) => void }) {
+  const { t } = useI18n();
+  const p = t.subscription.payment;
+  const price = usePayPrice(egpPerUsd);
   const compare = discountPercent(plan.priceUsd, plan.compareAtUsd) !== null ? plan.compareAtUsd : null;
   return (
     <div role="radiogroup" aria-label={p.duration} className="grid grid-cols-4 gap-2">
@@ -34,8 +43,8 @@ function MonthsPicker({ plan, value, onChange }: { plan: PricedPlan; value: Paym
           >
             <span className={cx('text-sm font-semibold', active && 'text-brand')}>{p.months(m)}</span>
             <span className="ltr flex flex-col text-[11px] text-muted tabular-nums">
-              {compare !== null && <span className="line-through opacity-70">{p.usd(compare * m)}</span>}
-              <span>{p.usd(plan.priceUsd * m)}</span>
+              {compare !== null && <span className="line-through opacity-70">{price(compare, m)}</span>}
+              <span>{price(plan.priceUsd, m)}</span>
             </span>
           </button>
         );
@@ -200,10 +209,11 @@ export function RequestPlanModal({ plan, onClose, onSent, onNeedsPhone }: { plan
   const settings = usePaymentSettings();
   const methods = settings.data ? enabledPaymentMethods(settings.data) : [];
   const egpPerUsd = settings.data?.egpPerUsd ?? 0;
+  const price = usePayPrice(egpPerUsd);
 
   const [months, setMonths] = useState<PaymentMonths>(1);
   const [method, setMethod] = useState<PaymentMethod | null>(null);
-  const [step, setStep] = useState<'plan' | 'details'>('plan');
+  const [step, setStep] = useState<'plan' | 'details' | 'pay'>('plan');
   const [fields, setFields] = useState({ senderPhone: '', sender: '', senderName: '', bankName: '', reference: '', amount: '' });
   const [proof, setProof] = useState<Proof | null>(null);
   const [note, setNote] = useState('');
@@ -215,7 +225,12 @@ export function RequestPlanModal({ plan, onClose, onSent, onNeedsPhone }: { plan
   const compare = off !== null ? plan.compareAtUsd : null;
   // No transfer when nothing is configured, or the plan is free after a 100% discount.
   const free = plan.priceUsd === 0;
-  const payable = methods.length > 0 && !free;
+  const xpay = useXPayConfig();
+  // With XPay on, priced plans are paid online right here and the manual transfers are hidden.
+  const online = Boolean(xpay.data?.enabled) && !free && totalEgp !== null && totalEgp > 0;
+  const payable = !online && methods.length > 0 && !free;
+  const loadingMethods = settings.isPending || xpay.isPending;
+  const o = p.online;
 
   const request = useMutation({
     mutationFn: (body: Record<string, unknown>) => api('/api/plan-requests', { method: 'POST', body, timeoutMs: 60_000 }),
@@ -237,7 +252,8 @@ export function RequestPlanModal({ plan, onClose, onSent, onNeedsPhone }: { plan
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (request.isPending) return;
+    // Online payments confirm from the checkout's own button; Enter must not file a manual request.
+    if (request.isPending || online) return;
     setFieldErrors({});
     const body: Record<string, unknown> = { planId: plan.id, months, note: note.trim() || undefined };
     if (payable) {
@@ -262,13 +278,13 @@ export function RequestPlanModal({ plan, onClose, onSent, onNeedsPhone }: { plan
     ((method === 'vodafone_cash' && fields.senderPhone.trim().length >= 11) || (method === 'instapay' && fields.sender.trim().length >= 3) || (method === 'bank_transfer' && fields.senderName.trim().length >= 2));
 
   return (
-    <Modal title={s.modalTitle(planName(plan))} description={step === 'plan' ? undefined : p.steps.details} onClose={onClose} size="lg" tall>
+    <Modal title={s.modalTitle(planName(plan))} description={step === 'details' ? p.steps.details : undefined} onClose={onClose} size="lg" tall>
       <form onSubmit={submit} className="space-y-5">
         {/* step indicator */}
-        {payable && (
+        {(payable || online) && (
           <ol className="flex items-center gap-2 text-xs">
-            {(['plan', 'details'] as const).map((k, i) => {
-              const done = k === 'plan' && step === 'details';
+            {(online ? (['plan', 'pay'] as const) : (['plan', 'details'] as const)).map((k, i) => {
+              const done = k === 'plan' && step !== 'plan';
               const active = k === step;
               return (
                 <li key={k} className="flex items-center gap-2">
@@ -276,14 +292,24 @@ export function RequestPlanModal({ plan, onClose, onSent, onNeedsPhone }: { plan
                   <span className={cx('flex size-5 items-center justify-center rounded-full text-[11px] font-semibold', active || done ? 'bg-brand text-on-brand' : 'bg-raised text-muted')}>
                     {done ? <Check className="size-3" /> : i + 1}
                   </span>
-                  <span className={cx('font-medium', active ? 'text-ink' : 'text-muted')}>{p.steps[k]}</span>
+                  <span className={cx('font-medium', active ? 'text-ink' : 'text-muted')}>{k === 'pay' ? o.steps.pay : online ? o.steps.plan : p.steps[k]}</span>
                 </li>
               );
             })}
           </ol>
         )}
 
-        {step === 'plan' ? (
+        {step === 'pay' && totalEgp !== null ? (
+          <XPayCheckout
+            planId={plan.id}
+            planLabel={planName(plan)}
+            months={months}
+            amountLabel={p.egp(totalEgp)}
+            onBack={() => setStep('plan')}
+            onPaid={onSent}
+            onNeedsPhone={onNeedsPhone}
+          />
+        ) : step === 'plan' ? (
           <>
             {/* plan + total */}
             <div className="flex items-center justify-between gap-4 rounded-xl border border-line bg-gradient-to-br from-raised/40 to-transparent p-4">
@@ -293,24 +319,33 @@ export function RequestPlanModal({ plan, onClose, onSent, onNeedsPhone }: { plan
                   {off !== null && <span className="rounded-full border border-warning/40 bg-warning/15 px-2 py-0.5 text-[11px] font-bold text-warning">{t.plans.off(off)}</span>}
                 </p>
                 <p className="ltr text-sm text-muted">
-                  {compare !== null && <span className="me-1.5 line-through opacity-70">{p.usd(compare)}</span>}
-                  {p.perMonth(p.usd(plan.priceUsd))}
+                  {compare !== null && <span className="me-1.5 line-through opacity-70">{price(compare)}</span>}
+                  {p.perMonth(price(plan.priceUsd))}
                 </p>
               </div>
               <div className="text-end">
                 <p className="text-[11px] text-muted uppercase">{p.total}</p>
-                <p className="ltr text-xl font-bold tabular-nums">{p.usd(totalUsd)}</p>
-                {totalEgp !== null && egpPerUsd > 0 && <p className="text-xs text-brand tabular-nums">≈ {p.egp(totalEgp)}</p>}
+                {/* Paid in pounds: the EGP total leads, the dollar price is the reference. */}
+                <p className="ltr text-xl font-bold tabular-nums">{totalEgp !== null && egpPerUsd > 0 ? p.egp(totalEgp) : p.usd(totalUsd)}</p>
+                {totalEgp !== null && egpPerUsd > 0 && <p className="ltr text-xs text-muted tabular-nums">{p.usd(totalUsd)}</p>}
               </div>
             </div>
             <div className="space-y-2">
               <p className="text-sm font-medium">{p.duration}</p>
-              <MonthsPicker plan={plan} value={months} onChange={setMonths} />
+              <MonthsPicker plan={plan} egpPerUsd={egpPerUsd} value={months} onChange={setMonths} />
             </div>
 
-            {settings.isPending ? (
+            {loadingMethods ? (
               <div className="flex justify-center py-4">
                 <Loader2 className="size-5 animate-spin text-brand" />
+              </div>
+            ) : online ? (
+              <div className="flex items-start gap-3 rounded-xl border border-brand/30 bg-brand/[0.06] p-3.5">
+                <MethodGlyph method="xpay" />
+                <span className="min-w-0 text-sm">
+                  <span className="block font-semibold">{o.secure}</span>
+                  <span className="block text-xs text-muted">{o.secureHint}</span>
+                </span>
               </div>
             ) : payable ? (
               <div className="space-y-2">
@@ -325,18 +360,22 @@ export function RequestPlanModal({ plan, onClose, onSent, onNeedsPhone }: { plan
               </div>
             )}
 
-            {!payable && !settings.isPending && <Field label={s.noteLabel} placeholder={s.notePlaceholder} value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} />}
+            {!payable && !online && !loadingMethods && <Field label={s.noteLabel} placeholder={s.notePlaceholder} value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} />}
             <ErrorNote>{topError}</ErrorNote>
             <div className="sticky bottom-0 z-10 -mx-6 flex justify-end gap-2 border-t border-line bg-card px-6 py-4">
               <Button variant="outline" onClick={onClose}>
                 {t.common.cancel}
               </Button>
-              {payable ? (
+              {online ? (
+                <Button variant="brand" onClick={() => setStep('pay')}>
+                  {o.next}
+                </Button>
+              ) : payable ? (
                 <Button variant="brand" disabled={!method} onClick={goDetails}>
                   {p.next}
                 </Button>
               ) : (
-                <Button type="submit" variant="brand" loading={request.isPending} disabled={settings.isPending}>
+                <Button type="submit" variant="brand" loading={request.isPending} disabled={loadingMethods}>
                   {s.submit}
                 </Button>
               )}

@@ -1,11 +1,12 @@
 import { getPlan } from '@wa/shared/plans';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Hourglass, Info, Infinity as InfinityIcon, Smartphone } from '../icons';
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { api, errorMessage } from '../api';
 import { isUnlimitedPlan, type PlanRequest, planState, useAccount } from '../app/account';
 import { MethodChip, PaymentDetailsRows } from '../app/payments/methods';
 import { RequestPlanModal } from '../app/payments/RequestPlan';
+import { PaymentReturnModal } from '../app/payments/XPayCheckout';
 import { PhoneVerifyModal } from '../auth/Otp';
 import { BRAND } from '../brand';
 import { useI18n } from '../i18n';
@@ -63,6 +64,14 @@ export function SubscriptionPage() {
   const [requesting, setRequesting] = useState<PricedPlan | null>(null);
   const [verifying, setVerifying] = useState(false);
   const [sent, setSent] = useState(false);
+  // Back from a full-page bank check: XPay returns the customer to /subscription?payment=<id>.
+  const [returned, setReturned] = useState<string | null>(() => {
+    const id = new URLSearchParams(window.location.search).get('payment');
+    return id && /^[0-9a-f-]{36}$/i.test(id) ? id : null;
+  });
+  useEffect(() => {
+    if (returned) window.history.replaceState(window.history.state, '', window.location.pathname);
+  }, [returned]);
 
   const plan = account?.plan;
   const state = account && planState(account);
@@ -212,6 +221,15 @@ export function SubscriptionPage() {
         />
       )}
       {verifying && <PhoneVerifyModal onClose={() => setVerifying(false)} />}
+      {returned && (
+        <PaymentReturnModal
+          id={returned}
+          onClose={() => {
+            setReturned(null);
+            changed();
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 /**
- * Public-website settings an admin edits in /admin → Website, stored in `settings` under `site`.
+ * Public-website settings an admin edits in /admin → Website, stored in `settings` under `site`:
+ * the explainer video, the YouTube channel and the company's contact details.
  * Zod-free so the dashboard can import it; the request schema is in `site-schema.ts`.
  */
 export type SiteSettings = {
@@ -7,9 +8,35 @@ export type SiteSettings = {
   demoVideoUrl: string | null;
   /** The company's YouTube channel (or a playlist), linked under the video and in the footer. */
   youtubeChannelUrl: string | null;
+  /** The company's address in Egypt, in Arabic (the Central Bank's rules for online payments ask for it on the site). */
+  address: string | null;
+  /** The same address in English; the English site falls back to the Arabic one. */
+  addressEn: string | null;
+  /** A contact phone number, shown in the footer and on the privacy page. */
+  phone: string | null;
 };
 
-export const DEFAULT_SITE_SETTINGS: SiteSettings = { demoVideoUrl: null, youtubeChannelUrl: null };
+export const DEFAULT_SITE_SETTINGS: SiteSettings = { demoVideoUrl: null, youtubeChannelUrl: null, address: null, addressEn: null, phone: null };
+
+export const SITE_ADDRESS_MAX = 300;
+
+/** A phone number as people write it (`+20 2 1234 5678`, `01012345678`, a `19xxx` hotline): 5–15 digits, nothing else but spaces, dashes and brackets. */
+export function sitePhone(input: string | null | undefined): string | null {
+  const trimmed = input?.trim().replace(/\s+/g, ' ') ?? '';
+  if (!/^\+?[\d ()-]+$/.test(trimmed)) return null;
+  const digits = trimmed.replace(/\D/g, '').length;
+  return digits >= 5 && digits <= 15 ? trimmed : null;
+}
+
+/** `tel:` link for a phone accepted by `sitePhone`. */
+export const phoneHref = (phone: string) => `tel:${phone.startsWith('+') ? '+' : ''}${phone.replace(/\D/g, '')}`;
+
+/** Free text on one line, or null when blank. */
+function oneLine(input: unknown, max: number): string | null {
+  if (typeof input !== 'string') return null;
+  const text = input.replace(/\s+/g, ' ').trim().slice(0, max);
+  return text || null;
+}
 
 const CHANNEL_HOSTS = new Set(['youtube.com', 'www.youtube.com', 'm.youtube.com']);
 const VIDEO_HOSTS = new Set([...CHANNEL_HOSTS, 'music.youtube.com', 'youtube-nocookie.com', 'www.youtube-nocookie.com']);
@@ -57,12 +84,15 @@ export function youtubeChannelUrl(input: string | null | undefined): string | nu
 
 export const youtubeWatchUrl = (id: string) => `https://www.youtube.com/watch?v=${id}`;
 
-/** What the landing page reads: links that aren't YouTube are dropped, video links are made canonical. */
+/** What the website reads: links that aren't YouTube are dropped, video links are made canonical, a malformed phone is dropped. */
 export function normalizeSiteSettings(raw: unknown): SiteSettings {
   const src = raw && typeof raw === 'object' ? (raw as Partial<Record<keyof SiteSettings, unknown>>) : {};
   const videoId = typeof src.demoVideoUrl === 'string' ? youtubeVideoId(src.demoVideoUrl) : null;
   return {
     demoVideoUrl: videoId ? youtubeWatchUrl(videoId) : null,
     youtubeChannelUrl: typeof src.youtubeChannelUrl === 'string' ? youtubeChannelUrl(src.youtubeChannelUrl) : null,
+    address: oneLine(src.address, SITE_ADDRESS_MAX),
+    addressEn: oneLine(src.addressEn, SITE_ADDRESS_MAX),
+    phone: typeof src.phone === 'string' ? sitePhone(src.phone) : null,
   };
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeSiteSettings, youtubeChannelUrl, youtubeVideoId } from '../src/site';
+import { normalizeSiteSettings, phoneHref, sitePhone, youtubeChannelUrl, youtubeVideoId } from '../src/site';
 
 describe('YouTube links', () => {
   it('finds the video id in every common link shape', () => {
@@ -46,10 +46,32 @@ describe('YouTube links', () => {
   });
 
   it('keeps only valid links when reading the stored settings', () => {
-    expect(normalizeSiteSettings(undefined)).toEqual({ demoVideoUrl: null, youtubeChannelUrl: null });
+    expect(normalizeSiteSettings(undefined)).toEqual({ demoVideoUrl: null, youtubeChannelUrl: null, address: null, addressEn: null, phone: null });
     expect(normalizeSiteSettings({ demoVideoUrl: 'https://youtu.be/dQw4w9WgXcQ?si=x', youtubeChannelUrl: 'https://vimeo.com/x' })).toEqual({
       demoVideoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
       youtubeChannelUrl: null,
+      address: null,
+      addressEn: null,
+      phone: null,
     });
+  });
+
+  it('keeps the contact details on one line and drops a malformed phone', () => {
+    const site = normalizeSiteSettings({ address: '  12 شارع التحرير،\n الدقي، الجيزة ', addressEn: '', phone: 'call me' });
+    expect(site).toMatchObject({ address: '12 شارع التحرير، الدقي، الجيزة', addressEn: null, phone: null });
+  });
+});
+
+describe('contact phone', () => {
+  it('accepts the shapes Egyptian numbers are written in', () => {
+    expect(sitePhone(' +20 2  3333 4444 ')).toBe('+20 2 3333 4444');
+    expect(sitePhone('010-1234-5678')).toBe('010-1234-5678');
+    expect(sitePhone('19555')).toBe('19555');
+    for (const bad of ['', '123', '+20 abc', '1234567890123456', '+20+2']) expect(sitePhone(bad), bad).toBeNull();
+  });
+
+  it('links to the digits only', () => {
+    expect(phoneHref('+20 (2) 3333-4444')).toBe('tel:+20233334444');
+    expect(phoneHref('010 1234 5678')).toBe('tel:01012345678');
   });
 });

@@ -31,7 +31,8 @@ import { qk } from '../queries';
 import { navigate, useQuery as useSearchParams } from '../router';
 import { ActivityLog, ActivityUsers, AdminOverview, type Period, PeriodPicker, PERIODS, useActivitySummary } from './AdminActivity';
 import { PlanPricingSettings } from './AdminPricing';
-import { SiteSettingsCard } from './AdminSite';
+import { useXPayEnabled, XPaySettingsCard } from './AdminXPay';
+import { SiteContactCard, SiteSettingsCard } from './AdminSite';
 import { TemplatePreview } from './Templates';
 import { Badge, Button, Card, cx, delay, EmptyState, ErrorNote, Field, inputClass, Loading, LoadError, Modal, Pagination, Select, SuccessNote, TextArea, usePlanName } from '../ui';
 
@@ -427,6 +428,7 @@ function PaymentMethodsSettings() {
   const dirty = draft !== null && JSON.stringify(draft) !== JSON.stringify(settings.data);
   const enabled = enabledPaymentMethods(current);
   const [saved, setSaved] = useState(false);
+  const xpayOn = useXPayEnabled();
 
   const save = useMutation({
     mutationFn: () => api<PaymentSettings>('/api/admin/payment-methods', { method: 'PUT', body: current }),
@@ -456,6 +458,12 @@ function PaymentMethodsSettings() {
         <h2 className="text-lg font-semibold">{a.title}</h2>
         <p className="max-w-2xl text-sm text-muted">{a.text}</p>
       </div>
+
+      {xpayOn && (
+        <p className="flex items-start gap-2 rounded-lg border border-info/25 bg-info/10 px-3 py-2 text-sm text-info">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" /> {a.manualHidden}
+        </p>
+      )}
 
       <Card bodyClassName="grid gap-4 md:grid-cols-[14rem_1fr] md:items-start">
         <Field
@@ -1082,10 +1090,20 @@ export function AdminPage() {
           {tab === 'logs' && <ActivityLog days={days} />}
           {tab === 'requests' && <Requests />}
           {tab === 'users' && <UsersTable selfId={account?.user?.id ?? null} />}
-          {tab === 'payments' && <PaymentMethodsSettings />}
+          {tab === 'payments' && (
+            <div className="space-y-8">
+              <XPaySettingsCard />
+              <PaymentMethodsSettings />
+            </div>
+          )}
           {tab === 'pricing' && <PlanPricingSettings />}
           {tab === 'messages' && <OtpText />}
-          {tab === 'site' && <SiteSettingsCard />}
+          {tab === 'site' && (
+            <div className="space-y-6">
+              <SiteContactCard />
+              <SiteSettingsCard />
+            </div>
+          )}
           {tab === 'audit' && <AuditLog />}
         </div>
       </div>

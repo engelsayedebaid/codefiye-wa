@@ -4,10 +4,15 @@ import {
   enabledPaymentMethods,
   offerProblem,
   ok,
+  isTestKey,
   paymentSettingsSchema,
+  xpayReady,
+  xpaySettingsDto,
+  xpaySettingsInputSchema,
   planPricingSchema,
   PLANS,
   preparePlanPricing,
+  sitePhone,
   siteSettingsSchema,
   successSchema,
   TRIAL_DAYS,
@@ -20,11 +25,13 @@ import { z } from 'zod';
 import type { Deps } from '../deps';
 import { audit, auditIn } from '../lib/audit';
 import { requireAdmin } from '../lib/auth';
-import { conflict, forbidden, notFound, unprocessable } from '../lib/errors';
+import { conflict, forbidden, notFound, unavailable, unprocessable } from '../lib/errors';
 import { getFeatures, type RuntimeFeature, setFeature } from '../lib/features';
 import { OTP_DEFAULT_TEXTS } from '../lib/otp';
 import { getOtpTexts, setOtpTexts } from '../lib/otp-text';
 import { getPaymentSettings, setPaymentSettings } from '../lib/payments';
+import { applyPlan, type Tx } from '../lib/plans';
+import { getXPaySettings, saveXPaySettings } from '../lib/xpay';
 import { setPlanPricing } from '../lib/plan-pricing';
 import { setSiteSettings } from '../lib/site';
 import { planRequestDto, type PlanRequestRow, planRequestRowDto, toPlanRequestDto, toWorkspaceDto } from './account';
@@ -39,35 +46,6 @@ const pageQuery = {
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
 };
 
-type Tx = Db | Parameters<Parameters<Db['transaction']>[0]>[0];
-
-function addMonths(from: Date, n: number) {
-  const d = new Date(from);
-  d.setMonth(d.getMonth() + n);
-  return d;
-}
-
-/**
- * Moves a workspace to a plan. Renewing the same plan extends from its current expiry, so paying
- * early never loses days; any other change starts counting today.
- */
-async function applyPlan(db: Tx, workspaceId: string, planId: string, durationMonths: number | null) {
-  const [current] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId)).for('update');
-  if (!current) throw notFound('Workspace not found');
-  const now = new Date();
-  const values =
-    planId === 'trial'
-      ? { planId, trialEndsAt: new Date(now.getTime() + TRIAL_DAYS * 86_400_000), planExpiresAt: null }
-      : {
-          planId,
-          planExpiresAt:
-            durationMonths === null
-              ? null
-              : addMonths(current.planId === planId && current.planExpiresAt && current.planExpiresAt > now ? current.planExpiresAt : now, durationMonths),
-        };
-  const [updated] = await db.update(workspaces).set(values).where(eq(workspaces.id, workspaceId)).returning();
-  return { before: current, after: updated! };
-}
 
 const ownerDto = z.object({ name: z.string().nullable(), email: z.string(), isAdmin: z.boolean(), status: z.enum(['active', 'suspended']) });
 
@@ -171,7 +149,7 @@ const page = <T extends z.ZodType>(item: T) => z.object({ items: z.array(item), 
 /** `%term%` for ILIKE with the user's wildcards escaped. */
 const likeTerm = (q: string | undefined) => (q ? `%${q.replace(/[%_\\]/g, '\\$&')}%` : null);
 
-export function adminRoutes({ sql, db, auth, workers }: Deps): FastifyPluginAsyncZod {
+export function adminRoutes({ sql, db, auth, workers, encryptionKey }: Deps, options: { publicUrl: string }): FastifyPluginAsyncZod {
   /** Users with their primary workspace and usage. `where` filters `u`. */
   const selectUsers = (where: SqlFragment, limit: number, offset: number) => sql<AdminUserRow[]>`
     select u.id, u.name, u.email, u.role, u.status, u.suspended_at, u.suspended_reason, u.phone, u.phone_verified_at, u.created_at,
@@ -651,6 +629,43 @@ export function adminRoutes({ sql, db, auth, workers }: Deps): FastifyPluginAsyn
       },
     );
 
+    app.get(
+      '/xpay',
+      { schema: { ...schemaBase, summary: 'The XPay account (secrets only as set / not set)', response: { 200: successSchema(xpaySettingsDto) } } },
+      async () => ok(await getXPaySettings(sql, encryptionKey, options.publicUrl)),
+    );
+
+    app.put(
+      '/xpay',
+      { schema: { ...schemaBase, summary: 'Set the XPay account; a blank secret keeps the stored one', body: xpaySettingsInputSchema, response: { 200: successSchema(xpaySettingsDto) } } },
+      async (req) => {
+        if (!encryptionKey) throw unavailable('This server has no AUTH_ENCRYPTION_KEY, so XPay keys cannot be stored', 'no_encryption_key');
+        const current = await getXPaySettings(sql, encryptionKey, options.publicUrl);
+        const next = { ...req.body, hasSecretKey: !!req.body.secretKey || current.hasSecretKey, hasWebhookSecret: !!req.body.webhookSecret || current.hasWebhookSecret };
+        if (next.enabled && !xpayReady(next)) {
+          throw unprocessable('Fill in every XPay key before switching it on', {
+            ...(next.publishableKey ? {} : { publishableKey: ['Required'] }),
+            ...(next.methods.length ? {} : { methods: ['Pick at least one'] }),
+            ...(next.hasSecretKey ? {} : { secretKey: ['Required'] }),
+            ...(next.hasWebhookSecret ? {} : { webhookSecret: ['Required'] }),
+          });
+        }
+        const mode = (key: string) => (key.includes('_live_') ? 'live' : 'test');
+        if (req.body.secretKey && req.body.publishableKey && mode(req.body.secretKey) !== mode(req.body.publishableKey)) {
+          throw unprocessable('Both keys must be from the same mode', { secretKey: ['Use the test keys together, or the live keys together'] });
+        }
+        await saveXPaySettings(sql, encryptionKey, req.body);
+        const saved = await getXPaySettings(sql, encryptionKey, options.publicUrl);
+        await audit(sql, req, {
+          action: 'xpay.update',
+          targetType: 'feature',
+          targetId: 'xpay',
+          details: { enabled: saved.enabled, methods: saved.methods, live: !isTestKey(saved.publishableKey), secretKeyChanged: !!req.body.secretKey, webhookSecretChanged: !!req.body.webhookSecret },
+        });
+        return ok(saved);
+      },
+    );
+
     app.put(
       '/plan-pricing',
       {
@@ -686,7 +701,7 @@ export function adminRoutes({ sql, db, auth, workers }: Deps): FastifyPluginAsyn
       {
         schema: {
           ...schemaBase,
-          summary: 'Set the explainer video and the YouTube channel shown on the website (empty or null = none)',
+          summary: 'Set the explainer video, the YouTube channel and the contact details shown on the website (empty or null = none)',
           body: siteSettingsSchema,
           response: { 200: successSchema(siteSettingsSchema) },
         },
@@ -694,11 +709,13 @@ export function adminRoutes({ sql, db, auth, workers }: Deps): FastifyPluginAsyn
       async (req) => {
         const video = req.body.demoVideoUrl || null;
         const channel = req.body.youtubeChannelUrl || null;
+        const phone = req.body.phone || null;
         const errors: Record<string, string[]> = {};
         if (video && !youtubeVideoId(video)) errors.demoVideoUrl = ['Paste the link of a YouTube video'];
         if (channel && !youtubeChannelUrl(channel)) errors.youtubeChannelUrl = ['Paste the link of a YouTube channel or playlist'];
-        if (Object.keys(errors).length > 0) throw unprocessable('Check the YouTube links', errors);
-        const saved = await setSiteSettings(sql, { demoVideoUrl: video, youtubeChannelUrl: channel });
+        if (phone && !sitePhone(phone)) errors.phone = ['Enter a phone number: digits, spaces, dashes and an optional leading +'];
+        if (Object.keys(errors).length > 0) throw unprocessable('Check the website settings', errors);
+        const saved = await setSiteSettings(sql, { demoVideoUrl: video, youtubeChannelUrl: channel, address: req.body.address || null, addressEn: req.body.addressEn || null, phone });
         await audit(sql, req, { action: 'site.update', targetType: 'feature', targetId: 'site', details: { ...saved } });
         return ok(saved);
       },

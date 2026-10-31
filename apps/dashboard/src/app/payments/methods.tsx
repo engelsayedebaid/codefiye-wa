@@ -1,20 +1,21 @@
-import type { PaymentDetails, PaymentMethod, PaymentSettings } from '@wa/shared/payments';
+import type { PaidMethod, PaymentDetails, PaymentSettings } from '@wa/shared/payments';
 import { useQuery } from '@tanstack/react-query';
-import { Check, Copy, Landmark, Smartphone, Zap } from '../../icons';
+import { Check, Copy, CreditCard, Landmark, Smartphone, Zap } from '../../icons';
 import { type ReactNode, useState } from 'react';
 import { api } from '../../api';
 import { useI18n } from '../../i18n';
 import { qk } from '../../queries';
 import { cx } from '../../ui';
 
-/** Each method's look: a glyph and its brand colours (Vodafone red, InstaPay purple, banks blue). */
-export const METHOD_LOOK: Record<PaymentMethod, { icon: typeof Smartphone; tint: string; ring: string; soft: string }> = {
+/** Each method's look: a glyph and its brand colours (Vodafone red, InstaPay purple, banks blue, online payments in ours). */
+export const METHOD_LOOK: Record<PaidMethod, { icon: typeof Smartphone; tint: string; ring: string; soft: string }> = {
   vodafone_cash: { icon: Smartphone, tint: 'bg-[#e60000] text-white', ring: 'border-[#e60000]/50', soft: 'bg-[#e60000]/10 text-[#e60000] light:text-[#c00000]' },
   instapay: { icon: Zap, tint: 'bg-[#6f3fa3] text-white', ring: 'border-[#6f3fa3]/50', soft: 'bg-[#6f3fa3]/10 text-[#9b6ad6] light:text-[#6f3fa3]' },
   bank_transfer: { icon: Landmark, tint: 'bg-sky-600 text-white', ring: 'border-sky-500/50', soft: 'bg-sky-500/10 text-sky-400 light:text-sky-700' },
+  xpay: { icon: CreditCard, tint: 'bg-brand text-on-brand', ring: 'border-brand/50', soft: 'bg-brand/10 text-brand' },
 };
 
-export function MethodGlyph({ method, size = 'md' }: { method: PaymentMethod; size?: 'sm' | 'md' | 'lg' }) {
+export function MethodGlyph({ method, size = 'md' }: { method: PaidMethod; size?: 'sm' | 'md' | 'lg' }) {
   const look = METHOD_LOOK[method];
   const dims = { sm: 'size-6 rounded-md [&>svg]:size-3.5', md: 'size-9 rounded-lg [&>svg]:size-4.5', lg: 'size-11 rounded-xl [&>svg]:size-5' }[size];
   return (
@@ -25,7 +26,7 @@ export function MethodGlyph({ method, size = 'md' }: { method: PaymentMethod; si
 }
 
 /** Small coloured chip naming the method. */
-export function MethodChip({ method }: { method: PaymentMethod }) {
+export function MethodChip({ method }: { method: PaidMethod }) {
   const { t } = useI18n();
   const look = METHOD_LOOK[method];
   return (
@@ -82,6 +83,7 @@ export function PaymentDetailsRows({ payment, className }: { payment: PaymentDet
     if (payment.bankName) rows.push([r.bank, <bdi>{payment.bankName}</bdi>]);
     if (payment.reference) rows.push([r.reference, <span className="ltr font-mono">{payment.reference}</span>]);
   }
+  if (payment.method === 'xpay') rows.push([r.reference, <span className="ltr font-mono text-xs">{payment.paymentId ?? payment.sessionId}</span>]);
   if (payment.amount) rows.push([r.amount, p.egp(payment.amount)]);
   return (
     <dl className={cx('grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm', className)}>

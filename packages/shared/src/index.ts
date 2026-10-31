@@ -5,6 +5,7 @@ export * from './chats';
 export * from './whatsapp-formatter';
 export * from './constants';
 export * from './contracts';
+export * from './currency';
 export * from './events';
 export * from './jid';
 export * from './messages';

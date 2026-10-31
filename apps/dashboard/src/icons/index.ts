@@ -179,6 +179,7 @@ export {
   Code2,
   CodeXml,
   Coffee,
+  Coins,
   Columns2,
   Columns3,
   Contact,

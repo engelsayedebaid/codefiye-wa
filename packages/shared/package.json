@@ -11,6 +11,7 @@
     "./plan-pricing": "./src/plan-pricing.ts",
     "./broadcasts": "./src/broadcasts.ts",
     "./constants": "./src/constants.ts",
+    "./currency": "./src/currency.ts",
     "./name-suggestions": "./src/name-suggestions.ts",
     "./payments": "./src/payments.ts",
     "./phone": "./src/phone.ts",

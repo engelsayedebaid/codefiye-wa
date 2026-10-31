@@ -1,4 +1,4 @@
-import { DEFAULT_SITE_SETTINGS, type SiteSettings, youtubeChannelUrl, youtubeVideoId } from '@wa/shared/site';
+import { DEFAULT_SITE_SETTINGS, SITE_ADDRESS_MAX, type SiteSettings, sitePhone, youtubeChannelUrl, youtubeVideoId } from '@wa/shared/site';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CirclePlay, ExternalLink } from '../icons';
 import { useState } from 'react';
@@ -28,7 +28,7 @@ export function SiteSettingsCard() {
     mutationFn: () =>
       api<SiteSettings>('/api/admin/site', {
         method: 'PUT',
-        body: { demoVideoUrl: current.video.trim() || null, youtubeChannelUrl: current.channel.trim() || null },
+        body: { ...saved, demoVideoUrl: current.video.trim() || null, youtubeChannelUrl: current.channel.trim() || null },
       }),
     onSuccess: (data) => {
       queryClient.setQueryData(qk.site, data);
@@ -98,6 +98,94 @@ export function SiteSettingsCard() {
           </div>
         </div>
       </div>
+    </Card>
+  );
+}
+
+type ContactDraft = { address: string; addressEn: string; phone: string };
+
+/** The company's address in Egypt and a phone number, shown in the website footer and the privacy policy. */
+export function SiteContactCard() {
+  const { t } = useI18n();
+  const s = t.admin.siteContact;
+  const queryClient = useQueryClient();
+  const site = useQuery({ queryKey: qk.site, queryFn: ({ signal }) => api<SiteSettings>('/api/site', { signal }) });
+  const saved = site.data ?? DEFAULT_SITE_SETTINGS;
+  const [draft, setDraft] = useState<ContactDraft | null>(null);
+  const current: ContactDraft = draft ?? { address: saved.address ?? '', addressEn: saved.addressEn ?? '', phone: saved.phone ?? '' };
+
+  const phoneBad = current.phone.trim() !== '' && !sitePhone(current.phone);
+  const dirty =
+    draft !== null &&
+    (draft.address.trim() !== (saved.address ?? '') || draft.addressEn.trim() !== (saved.addressEn ?? '') || draft.phone.trim() !== (saved.phone ?? ''));
+
+  const save = useMutation({
+    mutationFn: () =>
+      api<SiteSettings>('/api/admin/site', {
+        method: 'PUT',
+        body: { ...saved, address: current.address.trim() || null, addressEn: current.addressEn.trim() || null, phone: current.phone.trim() || null },
+      }),
+    onSuccess: (data) => {
+      queryClient.setQueryData(qk.site, data);
+      setDraft(null);
+    },
+  });
+  const fieldErrors = save.error instanceof ApiRequestError ? save.error.errors : undefined;
+
+  return (
+    <Card title={s.title} description={s.text} className="animate-fade-up">
+      <form
+        className="max-w-2xl space-y-5"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (dirty && !phoneBad) save.mutate();
+        }}
+      >
+        <Field
+          label={s.addressLabel}
+          hint={s.addressHint}
+          value={current.address}
+          onChange={(e) => setDraft({ ...current, address: e.target.value })}
+          dir="rtl"
+          autoComplete="street-address"
+          maxLength={SITE_ADDRESS_MAX}
+          error={fieldErrors?.address}
+        />
+        <Field
+          label={s.addressEnLabel}
+          hint={s.addressEnHint}
+          value={current.addressEn}
+          onChange={(e) => setDraft({ ...current, addressEn: e.target.value })}
+          dir="ltr"
+          autoComplete="off"
+          maxLength={SITE_ADDRESS_MAX}
+          error={fieldErrors?.addressEn}
+        />
+        <Field
+          label={s.phoneLabel}
+          hint={s.phoneHint}
+          value={current.phone}
+          onChange={(e) => setDraft({ ...current, phone: e.target.value })}
+          placeholder="+20 2 3333 4444"
+          dir="ltr"
+          type="tel"
+          inputMode="tel"
+          autoComplete="tel"
+          maxLength={40}
+          error={phoneBad ? [s.invalidPhone] : fieldErrors?.phone}
+        />
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="submit" variant="brand" loading={save.isPending} disabled={!dirty || phoneBad}>
+            {s.save}
+          </Button>
+          <a href="/privacy#contact" target="_blank" rel="noreferrer" className={buttonClass('ghost', 'md')}>
+            {t.admin.site.view}
+            <ExternalLink className="size-3.5" />
+          </a>
+        </div>
+        {save.isSuccess && !dirty && <SuccessNote>{s.saved}</SuccessNote>}
+        <ErrorNote>{save.isError && !fieldErrors ? errorMessage(save.error) : null}</ErrorNote>
+      </form>
     </Card>
   );
 }

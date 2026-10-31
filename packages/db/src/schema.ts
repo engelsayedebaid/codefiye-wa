@@ -12,6 +12,7 @@ import type {
   MessageType,
   OutboundContent,
   PaymentDetails,
+  OnlinePaymentStatus,
   SendingWindow,
   SessionStatus,
   SyncChatStatus,
@@ -291,6 +292,40 @@ export const planRequests = pgTable(
   ],
 );
 
+/**
+ * One online checkout (XPay): created when the customer opens the payment form, settled by XPay's
+ * signed webhook (or by asking XPay when the dashboard reports the payment done). A paid row
+ * activates the plan and records an approved `plan_requests` row, so the admin's history stays in one place.
+ */
+export const payments = pgTable(
+  'payments',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    workspaceId: uuid()
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    userId: uuid().references(() => users.id, { onDelete: 'set null' }),
+    provider: text().notNull().default('xpay'),
+    planId: text().notNull(),
+    months: integer().notNull(),
+    amountCents: integer().notNull(),
+    currency: text().notNull().default('EGP'),
+    status: text().$type<OnlinePaymentStatus>().notNull().default('pending'),
+    /** The provider's checkout session; webhooks are matched on it. */
+    sessionId: text(),
+    /** The provider's payment (XPay PaymentIntent) once the customer paid. */
+    providerPaymentId: text(),
+    /** Why it failed (`expired`, `amount_mismatch`, or the provider's message). */
+    error: text(),
+    planRequestId: uuid().references(() => planRequests.id, { onDelete: 'set null' }),
+    /** The checkout session as the provider reported it last. */
+    raw: jsonb(),
+    createdAt: createdAt(),
+    paidAt: timestamp({ withTimezone: true }),
+  },
+  (t) => [index().on(t.workspaceId, t.createdAt), uniqueIndex().on(t.sessionId), check('payments_status_check', sql`${t.status} in ('pending', 'paid', 'failed')`)],
+);
+
 export type SessionSettings = {
   /** Mark inbound messages as read automatically. */
   autoRead?: boolean;
@@ -512,6 +547,7 @@ export type User = typeof users.$inferSelect;
 export type PhoneVerification = typeof phoneVerifications.$inferSelect;
 export type Workspace = typeof workspaces.$inferSelect;
 export type PlanRequest = typeof planRequests.$inferSelect;
+export type Payment = typeof payments.$inferSelect;
 export type MessageTemplate = typeof messageTemplates.$inferSelect;
 export type Session = typeof sessions.$inferSelect;
 export type ApiKey = typeof apiKeys.$inferSelect;
