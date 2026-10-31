@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { PAYMENT_MONTHS, type PaymentDetails, type PaymentSettings, type TransferDetails, XPAY_METHODS, type XPaySettings, type XPaySettingsInput } from './payments';
+import { PAYMENT_MONTHS, type PaymentDetails, type PaymentSettings, type TransferDetails, XPAY_METHODS, XPAY_MODES, type XPayMode, type XPayModeInput, type XPayModeView, type XPaySettings, type XPaySettingsInput } from './payments';
 
 const egyptianMobile = z
   .string()
@@ -46,7 +46,14 @@ export const paymentDetailsDto: z.ZodType<PaymentDetails> = z.discriminatedUnion
     reference: z.string().optional(),
     amount: z.number().optional(),
   }),
-  z.object({ method: z.literal('xpay'), sessionId: z.string(), paymentId: z.string().optional(), amount: z.number().optional() }),
+  z.object({
+    method: z.literal('xpay'),
+    sessionId: z.string(),
+    paymentId: z.string().optional(),
+    amount: z.number().optional(),
+    test: z.boolean().optional(),
+    review: z.array(z.string()).optional(),
+  }),
 ]);
 
 export const paymentSettingsSchema: z.ZodType<PaymentSettings> = z.object({
@@ -65,25 +72,44 @@ export const paymentSettingsSchema: z.ZodType<PaymentSettings> = z.object({
 
 const xpayMethods = z.array(z.enum(XPAY_METHODS)).max(XPAY_METHODS.length);
 
+const connectionErrors = z.enum(['invalid_key', 'forbidden', 'wrong_mode', 'unreachable', 'unexpected', 'missing_key']);
+
+const modeView: z.ZodType<XPayModeView> = z.object({
+  publishableKey: z.string(),
+  secretKeyHint: z.string().nullable(),
+  webhookSecretHint: z.string().nullable(),
+  unreadable: z.boolean(),
+  webhookUrl: z.string(),
+  validatedAt: z.string().nullable(),
+  validationError: connectionErrors.nullable(),
+  lastWebhookAt: z.string().nullable(),
+});
+
 export const xpaySettingsDto: z.ZodType<XPaySettings> = z.object({
   enabled: z.boolean(),
-  publishableKey: z.string(),
+  mode: z.enum(XPAY_MODES),
   methods: xpayMethods,
-  hasSecretKey: z.boolean(),
-  hasWebhookSecret: z.boolean(),
-  webhookUrl: z.string(),
+  test: modeView,
+  live: modeView,
+  encryptionReady: z.boolean(),
 });
 
 const blankOr = (re: RegExp, message: string) => z.string().trim().max(300).refine((s) => s === '' || re.test(s), message).optional();
 
+/** Each mode takes only its own keys: a live key pasted into Test (or the reverse) is refused. */
+const modeInput = (mode: XPayMode): z.ZodType<XPayModeInput> =>
+  z.object({
+    publishableKey: blankOr(new RegExp(`^pk_${mode}_\\w+$`), `Paste the ${mode} publishable key (pk_${mode}_…)`),
+    secretKey: blankOr(new RegExp(`^sk_${mode}_\\w+$`), `Paste the ${mode} secret key (sk_${mode}_…)`),
+    webhookSecret: blankOr(/^whsec_\w+$/, 'Paste the webhook signing secret (whsec_…)'),
+    clear: z.boolean().optional(),
+  });
+
 export const xpaySettingsInputSchema: z.ZodType<XPaySettingsInput> = z.object({
   enabled: z.boolean(),
-  publishableKey: z
-    .string()
-    .trim()
-    .max(300)
-    .refine((s) => s === '' || /^pk_(test|live)_\w+$/.test(s), 'Paste the publishable key (pk_test_… or pk_live_…)'),
+  mode: z.enum(XPAY_MODES),
   methods: xpayMethods,
-  secretKey: blankOr(/^sk_(test|live)_\w+$/, 'Paste the secret key (sk_test_… or sk_live_…)'),
-  webhookSecret: blankOr(/^whsec_\w+$/, 'Paste the webhook signing secret (whsec_…)'),
+  test: modeInput('test').optional(),
+  live: modeInput('live').optional(),
+  confirmLive: z.boolean().optional(),
 });

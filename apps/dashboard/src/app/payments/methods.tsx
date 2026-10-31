@@ -85,15 +85,24 @@ export function PaymentDetailsRows({ payment, className }: { payment: PaymentDet
   }
   if (payment.method === 'xpay') rows.push([r.reference, <span className="ltr font-mono text-xs">{payment.paymentId ?? payment.sessionId}</span>]);
   if (payment.amount) rows.push([r.amount, p.egp(payment.amount)]);
+  const flags = payment.method === 'xpay' && (payment.review?.length || payment.test);
   return (
-    <dl className={cx('grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm', className)}>
-      {rows.map(([label, value]) => (
-        <div key={label} className="contents">
-          <dt className="text-muted">{label}</dt>
-          <dd className="min-w-0 truncate font-medium">{value}</dd>
+    <div className={cx('grid gap-2', className)}>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+        {rows.map(([label, value]) => (
+          <div key={label} className="contents">
+            <dt className="text-muted">{label}</dt>
+            <dd className="min-w-0 truncate font-medium">{value}</dd>
+          </div>
+        ))}
+      </dl>
+      {flags && payment.method === 'xpay' && (
+        <div className="flex flex-wrap gap-1.5 text-xs">
+          {payment.test && <span className="rounded-full bg-warning/15 px-2 py-0.5 font-medium text-warning">{r.xpayTest}</span>}
+          {payment.review?.length ? <span className="rounded-md bg-destructive-ink/10 px-2 py-1 text-destructive-ink">{r.xpayReview(payment.review.join(', '))}</span> : null}
         </div>
-      ))}
-    </dl>
+      )}
+    </div>
   );
 }
 

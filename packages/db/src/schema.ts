@@ -13,6 +13,7 @@ import type {
   OutboundContent,
   PaymentDetails,
   OnlinePaymentStatus,
+  XPayMode,
   SendingWindow,
   SessionStatus,
   SyncChatStatus,
@@ -311,19 +312,54 @@ export const payments = pgTable(
     amountCents: integer().notNull(),
     currency: text().notNull().default('EGP'),
     status: text().$type<OnlinePaymentStatus>().notNull().default('pending'),
+    /**
+     * The XPay mode the checkout was opened in. Its events are only accepted on that mode's webhook,
+     * verified with that mode's secret, and read back with that mode's key. (Rows from before the
+     * column existed were made while testing, hence the default.)
+     */
+    mode: text().$type<XPayMode>().notNull().default('test'),
     /** The provider's checkout session; webhooks are matched on it. */
     sessionId: text(),
     /** The provider's payment (XPay PaymentIntent) once the customer paid. */
     providerPaymentId: text(),
-    /** Why it failed (`expired`, `amount_mismatch`, or the provider's message). */
+    /** Why it failed or needs review (`expired`, `payment_failed`, `amount_mismatch`, …). */
     error: text(),
+    /** Refunded in XPay so far, in piastres (from `charge.refunded`). */
+    refundedCents: integer().notNull().default(0),
     planRequestId: uuid().references(() => planRequests.id, { onDelete: 'set null' }),
     /** The checkout session as the provider reported it last. */
     raw: jsonb(),
     createdAt: createdAt(),
     paidAt: timestamp({ withTimezone: true }),
   },
-  (t) => [index().on(t.workspaceId, t.createdAt), uniqueIndex().on(t.sessionId), check('payments_status_check', sql`${t.status} in ('pending', 'paid', 'failed')`)],
+  (t) => [
+    index().on(t.workspaceId, t.createdAt),
+    uniqueIndex().on(t.sessionId),
+    index().on(t.providerPaymentId),
+    check('payments_status_check', sql`${t.status} in ('pending', 'paid', 'failed', 'review', 'refunded')`),
+    check('payments_mode_check', sql`${t.mode} in ('test', 'live')`),
+  ],
+);
+
+/**
+ * Provider events already handled, by their id (XPay keeps an event's id across retries). A
+ * redelivered event is acknowledged without running again. Written only after an event was fully
+ * handled, so one that failed half-way is processed again when the provider retries it.
+ */
+export const paymentEvents = pgTable(
+  'payment_events',
+  {
+    provider: text().notNull(),
+    eventId: text().notNull(),
+    mode: text().$type<XPayMode>().notNull(),
+    type: text().notNull(),
+    /** The checkout session or charge it was about. */
+    objectId: text(),
+    /** What handling it did: `paid`, `failed`, `review`, `refunded`, `ignored`, `unknown_session`, … */
+    outcome: text().notNull(),
+    receivedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.provider, t.eventId] }), index().on(t.receivedAt)],
 );
 
 export type SessionSettings = {

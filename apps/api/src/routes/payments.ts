@@ -1,5 +1,5 @@
 import { and, eq, payments } from '@wa/db';
-import { listedPriceUsd, ok, ONLINE_PAYMENT_STATUSES, paymentMonthsSchema, planPriceEgp, PLANS, REQUESTABLE_PLANS, successSchema } from '@wa/shared';
+import { listedPriceUsd, ok, ONLINE_PAYMENT_STATUSES, paymentMonthsSchema, planPriceEgp, PLANS, REQUESTABLE_PLANS, successSchema, XPAY_MODES, type XPayMode } from '@wa/shared';
 import type { FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -8,7 +8,21 @@ import { requirePat } from '../lib/auth';
 import { ApiError, forbidden, notFound, unavailable, unprocessable } from '../lib/errors';
 import { getPaymentSettings } from '../lib/payments';
 import { getPlanPricing } from '../lib/plan-pricing';
-import { createCheckoutSession, getCheckoutSession, getXPayAccount, getXPayPublicConfig, settlePayment, verifyWebhook, XPayError, type XPaySession } from '../lib/xpay';
+import {
+  createCheckoutSession,
+  eventSeen,
+  getActiveXPayAccount,
+  getCheckoutSession,
+  getXPayModeAccount,
+  getXPayPublicConfig,
+  recordEvent,
+  recordRefund,
+  recordWebhookSeen,
+  settlePayment,
+  type Settled,
+  verifyWebhook,
+  XPayError,
+} from '../lib/xpay';
 
 type Options = { publicUrl: string; corsOrigins: string[] };
 
@@ -21,7 +35,8 @@ const paymentDto = z.object({
   months: z.number(),
   amountCents: z.number(),
   currency: z.string(),
-  /** Why it failed: `expired`, `payment_failed`, or XPay's message. */
+  mode: z.enum(XPAY_MODES),
+  /** Why it failed or is held: `expired`, `payment_failed`, or the review reasons. */
   error: z.string().nullable(),
   createdAt: z.string(),
   paidAt: z.string().nullable(),
@@ -35,6 +50,7 @@ const toPaymentDto = (p: PaymentRow) => ({
   months: p.months,
   amountCents: p.amountCents,
   currency: p.currency,
+  mode: p.mode,
   error: p.error,
   createdAt: p.createdAt.toISOString(),
   paidAt: p.paidAt?.toISOString() ?? null,
@@ -63,10 +79,16 @@ export function paymentRoutes(deps: Deps, options: Options): FastifyPluginAsyncZ
   return async (app) => {
     app.get(
       '/payments/xpay',
-      { schema: { tags, summary: 'Whether plans are paid online through XPay, and its publishable key', response: { 200: successSchema(z.object({ enabled: z.boolean(), publishableKey: z.string() })) } } },
+      {
+        schema: {
+          tags,
+          summary: 'Whether this account pays online through XPay, and the publishable key',
+          response: { 200: successSchema(z.object({ enabled: z.boolean(), publishableKey: z.string(), mode: z.enum(XPAY_MODES) })) },
+        },
+      },
       async (req) => {
         requirePat(req);
-        return ok(await getXPayPublicConfig(sql, deps.encryptionKey));
+        return ok(await getXPayPublicConfig(sql, deps.encryptionKey, req.auth.isAdmin));
       },
     );
 
@@ -78,7 +100,7 @@ export function paymentRoutes(deps: Deps, options: Options): FastifyPluginAsyncZ
           summary: 'Open an XPay checkout for a plan',
           description:
             'Prices the plan in EGP for `months`, opens an XPay Checkout Session and returns its `clientSecret` for the XPay SDK. ' +
-            'The plan is activated when XPay confirms the payment; poll `GET /api/payments/{id}` (or `POST /api/payments/{id}/check`).',
+            'The plan is activated only when XPay confirms the payment and its amounts check out; poll `POST /api/payments/{id}/check`.',
           body: z.object({ planId: z.enum(REQUESTABLE_PLANS), months: paymentMonthsSchema.default(1), locale: z.enum(['ar', 'en']).default('ar') }),
           response: { 201: successSchema(z.object({ payment: paymentDto, publishableKey: z.string(), clientSecret: z.string() })) },
         },
@@ -86,15 +108,19 @@ export function paymentRoutes(deps: Deps, options: Options): FastifyPluginAsyncZ
       async (req, reply) => {
         requirePat(req);
         if (!req.auth.isAdmin && !req.auth.phoneVerified) throw forbidden('Verify your phone number before paying for a plan', 'phone_unverified');
-        const account = await getXPayAccount(sql, deps.encryptionKey);
-        if (!account) throw unavailable('Online payment is not available right now', 'xpay_off');
+        const account = await getActiveXPayAccount(sql, deps.encryptionKey);
+        // Test mode is for the admins: a customer must never buy a plan with a test card.
+        if (!account || (account.mode === 'test' && !req.auth.isAdmin)) throw unavailable('Online payment is not available right now', 'xpay_off');
         const { planId, months, locale } = req.body;
         const [settings, pricing] = await Promise.all([getPaymentSettings(sql), getPlanPricing(sql)]);
         const egp = planPriceEgp(listedPriceUsd(planId, pricing), months, settings.egpPerUsd);
         if (egp === null || egp <= 0) throw unprocessable('This plan cannot be paid online', { planId: ['Request this plan instead'] });
 
         const amountCents = egp * 100;
-        const [payment] = await db.insert(payments).values({ workspaceId: req.auth.workspaceId, userId: req.auth.userId, planId, months, amountCents, currency: 'EGP' }).returning();
+        const [payment] = await db
+          .insert(payments)
+          .values({ workspaceId: req.auth.workspaceId, userId: req.auth.userId, planId, months, amountCents, currency: 'EGP', mode: account.mode })
+          .returning();
         try {
           const session = await createCheckoutSession(account, {
             amountCents,
@@ -108,15 +134,11 @@ export function paymentRoutes(deps: Deps, options: Options): FastifyPluginAsyncZ
           reply.code(201);
           return ok({ payment: toPaymentDto(saved!), publishableKey: account.publishableKey, clientSecret: session.clientSecret });
         } catch (err) {
-          await db
-            .update(payments)
-            .set({ status: 'failed', error: err instanceof Error ? err.message.slice(0, 300) : 'session_failed' })
-            .where(eq(payments.id, payment!.id));
-          if (err instanceof XPayError) {
-            req.log.warn({ status: err.status, code: err.code, message: err.message }, 'xpay checkout session failed');
-            throw new ApiError(502, 'XPay could not open the payment. Please try again shortly.', undefined, { code: 'xpay_error' });
-          }
-          throw err;
+          if (!(err instanceof XPayError)) throw err;
+          // Only XPay's own wording is kept (never a key); the customer just sees "try again".
+          await db.update(payments).set({ status: 'failed', error: `session_failed:${err.code ?? err.status}` }).where(eq(payments.id, payment!.id));
+          req.log.warn({ status: err.status, code: err.code, mode: account.mode }, 'xpay checkout session failed');
+          throw new ApiError(502, 'XPay could not open the payment. Please try again shortly.', undefined, { code: 'xpay_error' });
         }
       },
     );
@@ -136,7 +158,7 @@ export function paymentRoutes(deps: Deps, options: Options): FastifyPluginAsyncZ
         schema: {
           tags,
           summary: 'Ask XPay for the payment now',
-          description: 'Reads the checkout session from XPay with the secret key and settles the payment, so the plan turns on even before the webhook arrives.',
+          description: 'Reads the checkout session from XPay with the secret key of the mode it was opened in and settles the payment, so the plan turns on even before the webhook arrives.',
           params: z.object({ id: z.uuid() }),
           response: { 200: successSchema(paymentDto) },
         },
@@ -145,15 +167,15 @@ export function paymentRoutes(deps: Deps, options: Options): FastifyPluginAsyncZ
         requirePat(req);
         const payment = await owned(req, req.params.id);
         if (payment.status === 'pending' && payment.sessionId) {
-          const account = await getXPayAccount(sql, deps.encryptionKey);
+          const account = await getXPayModeAccount(sql, deps.encryptionKey, payment.mode);
           if (account) {
             try {
-              const settled = await settlePayment(db, await getCheckoutSession(account, payment.sessionId));
+              const settled = await settlePayment(db, payment.mode, await getCheckoutSession(account, payment.sessionId));
               if (settled?.activated) await auth.revoke({ workspaceIds: [settled.workspaceId] });
             } catch (err) {
               // The webhook still settles it; the dashboard keeps polling.
               if (!(err instanceof XPayError)) throw err;
-              req.log.warn({ status: err.status, code: err.code }, 'xpay session lookup failed');
+              req.log.warn({ status: err.status, code: err.code, mode: payment.mode }, 'xpay session lookup failed');
             }
           }
         }
@@ -163,36 +185,63 @@ export function paymentRoutes(deps: Deps, options: Options): FastifyPluginAsyncZ
   };
 }
 
-/** XPay's webhook: public, trusted only through `XPay-Signature`. Needs the raw body, so it parses JSON itself. */
+/**
+ * XPay's webhooks, one endpoint per mode (`/api/payments/xpay/webhook/test|live`), each verified with that
+ * mode's own signing secret. Public, so trusted only through `XPay-Signature` over the raw body; then
+ * deduplicated by event id, and the session's state is read back from XPay before anything is settled.
+ */
 export function xpayWebhookRoutes(deps: Deps): FastifyPluginAsyncZod {
   const { sql, db, auth } = deps;
   return async (app) => {
+    // The signature covers the exact bytes XPay sent, so this scope keeps the body as a string.
     app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => done(null, body));
-    app.post('/', { schema: { hide: true } }, async (req, reply) => {
-      const account = await getXPayAccount(sql, deps.encryptionKey);
+    app.post('/:mode', { schema: { hide: true, params: z.object({ mode: z.enum(XPAY_MODES) }) } }, async (req, reply) => {
+      const mode: XPayMode = req.params.mode;
+      // Payments already opened in this mode still settle after the admin switches XPay off or to the other mode.
+      const account = await getXPayModeAccount(sql, deps.encryptionKey, mode);
       if (!account) return reply.code(503).send({ received: false });
       const header = req.headers['xpay-signature'];
       const event = verifyWebhook(typeof req.body === 'string' ? req.body : '', typeof header === 'string' ? header : undefined, account.webhookSecret);
       if (!event) {
-        req.log.warn('xpay webhook with a bad signature');
+        req.log.warn({ mode }, 'xpay webhook with a bad signature');
         return reply.code(400).send({ received: false });
       }
-      // Payment links, refunds and the rest share the endpoint; only checkout sessions settle plans.
-      if (!event.type.startsWith('checkout.session.') || typeof event.data.object.id !== 'string') return reply.code(200).send({ received: true });
-      // The signed payload only says which session changed; its state is read back from XPay with the
-      // secret key, so a plan is never activated on the payload's word alone. If XPay can't be reached,
-      // a non-2xx makes it deliver the event again later.
-      let session: XPaySession;
-      try {
-        session = await getCheckoutSession(account, event.data.object.id as string);
-      } catch (err) {
-        if (!(err instanceof XPayError)) throw err;
-        req.log.warn({ status: err.status, code: err.code, eventId: event.id }, 'xpay session lookup failed; asking for a retry');
-        return reply.code(503).send({ received: false });
+      // A live event on the test endpoint (or the reverse) is a misconfiguration, never processed.
+      if (typeof event.livemode === 'boolean' && event.livemode !== (mode === 'live')) {
+        req.log.warn({ mode, eventId: event.id }, 'xpay webhook for the other mode');
+        return reply.code(400).send({ received: false });
       }
-      const settled = await settlePayment(db, session, event.type === 'checkout.session.async_payment_failed');
+      await recordWebhookSeen(sql, mode);
+      if (await eventSeen(sql, event.id)) return reply.code(200).send({ received: true, duplicate: true });
+
+      const object = event.data.object;
+      const objectId = typeof object.id === 'string' ? object.id : null;
+      let settled: Settled | null = null;
+      let outcome = 'ignored';
+      if (event.type.startsWith('checkout.session.') && objectId) {
+        // The signed payload only says which session changed; its state comes from XPay itself, read
+        // with this mode's key. If XPay can't be reached, a 503 makes it deliver the event again.
+        try {
+          const session = await getCheckoutSession(account, objectId);
+          settled = await settlePayment(db, mode, session, event.type === 'checkout.session.async_payment_failed');
+          outcome = settled?.status ?? 'unknown_session';
+        } catch (err) {
+          if (!(err instanceof XPayError)) throw err;
+          if (err.status === 404) {
+            // Not a session of this account and mode: nothing to settle, and retrying won't change that.
+            outcome = 'unknown_session';
+          } else {
+            req.log.warn({ status: err.status, code: err.code, eventId: event.id, mode }, 'xpay session lookup failed; asking for a retry');
+            return reply.code(503).send({ received: false });
+          }
+        }
+      } else if (event.type === 'charge.refunded') {
+        settled = await recordRefund(db, mode, object);
+        outcome = settled ? `refund:${settled.status}` : 'unknown_payment';
+      }
       if (settled?.activated) await auth.revoke({ workspaceIds: [settled.workspaceId] });
-      req.log.info({ event: event.type, eventId: event.id, session: session.id, status: settled?.status ?? 'unknown_session' }, 'xpay webhook');
+      await recordEvent(db, event, mode, objectId, outcome);
+      req.log.info({ event: event.type, eventId: event.id, mode, object: objectId, outcome }, 'xpay webhook');
       return reply.code(200).send({ received: true });
     });
   };

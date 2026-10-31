@@ -4,9 +4,10 @@ import {
   enabledPaymentMethods,
   offerProblem,
   ok,
-  isTestKey,
+  keyMode,
   paymentSettingsSchema,
-  xpayReady,
+  XPAY_MODES,
+  xpayModeComplete,
   xpaySettingsDto,
   xpaySettingsInputSchema,
   planPricingSchema,
@@ -31,7 +32,7 @@ import { OTP_DEFAULT_TEXTS } from '../lib/otp';
 import { getOtpTexts, setOtpTexts } from '../lib/otp-text';
 import { getPaymentSettings, setPaymentSettings } from '../lib/payments';
 import { applyPlan, type Tx } from '../lib/plans';
-import { getXPaySettings, saveXPaySettings } from '../lib/xpay';
+import { getXPayModeAccount, getXPaySettings, recordConnectionTest, saveXPaySettings, testConnection } from '../lib/xpay';
 import { setPlanPricing } from '../lib/plan-pricing';
 import { setSiteSettings } from '../lib/site';
 import { planRequestDto, type PlanRequestRow, planRequestRowDto, toPlanRequestDto, toWorkspaceDto } from './account';
@@ -629,40 +630,97 @@ export function adminRoutes({ sql, db, auth, workers, encryptionKey }: Deps, opt
       },
     );
 
+    // XPay. Admins only (the preHandler above), cookie writes CSRF-guarded like every dashboard write;
+    // secrets are write-only: responses carry masked hints, audit entries only say what changed.
     app.get(
       '/xpay',
-      { schema: { ...schemaBase, summary: 'The XPay account (secrets only as set / not set)', response: { 200: successSchema(xpaySettingsDto) } } },
+      { schema: { ...schemaBase, summary: 'The XPay configuration (secrets as masked hints only)', response: { 200: successSchema(xpaySettingsDto) } } },
       async () => ok(await getXPaySettings(sql, encryptionKey, options.publicUrl)),
     );
 
     app.put(
       '/xpay',
-      { schema: { ...schemaBase, summary: 'Set the XPay account; a blank secret keeps the stored one', body: xpaySettingsInputSchema, response: { 200: successSchema(xpaySettingsDto) } } },
+      {
+        schema: {
+          ...schemaBase,
+          summary: 'Set the XPay configuration; a blank secret keeps the stored one',
+          description: 'Switching live payments on needs `confirmLive: true` and a passing connection test of the live keys in place.',
+          body: xpaySettingsInputSchema,
+          response: { 200: successSchema(xpaySettingsDto) },
+        },
+      },
       async (req) => {
+        // Without the encryption key nothing can be sealed or opened: refuse rather than store secrets in the clear.
         if (!encryptionKey) throw unavailable('This server has no AUTH_ENCRYPTION_KEY, so XPay keys cannot be stored', 'no_encryption_key');
+        const body = req.body;
         const current = await getXPaySettings(sql, encryptionKey, options.publicUrl);
-        const next = { ...req.body, hasSecretKey: !!req.body.secretKey || current.hasSecretKey, hasWebhookSecret: !!req.body.webhookSecret || current.hasWebhookSecret };
-        if (next.enabled && !xpayReady(next)) {
-          throw unprocessable('Fill in every XPay key before switching it on', {
-            ...(next.publishableKey ? {} : { publishableKey: ['Required'] }),
-            ...(next.methods.length ? {} : { methods: ['Pick at least one'] }),
-            ...(next.hasSecretKey ? {} : { secretKey: ['Required'] }),
-            ...(next.hasWebhookSecret ? {} : { webhookSecret: ['Required'] }),
-          });
+        // What the active mode will hold after this save.
+        const m = body.mode;
+        const change = body[m] ?? {};
+        const cleared = change.clear === true;
+        const keysChanged = cleared || Boolean(change.secretKey || (change.publishableKey !== undefined && change.publishableKey !== current[m].publishableKey));
+        const after = {
+          publishableKey: cleared ? '' : (change.publishableKey ?? current[m].publishableKey),
+          secretKeyHint: cleared ? null : change.secretKey ? 'new' : current[m].secretKeyHint,
+          webhookSecretHint: cleared ? null : change.webhookSecret ? 'new' : current[m].webhookSecretHint,
+          unreadable: cleared ? false : current[m].unreadable && !(change.secretKey && change.webhookSecret),
+        };
+        if (body.enabled) {
+          const errors: Record<string, string[]> = {};
+          if (keyMode(after.publishableKey) !== m) errors[`${m}.publishableKey`] = [`Required (pk_${m}_…)`];
+          if (!after.secretKeyHint) errors[`${m}.secretKey`] = [`Required (sk_${m}_…)`];
+          if (!after.webhookSecretHint) errors[`${m}.webhookSecret`] = ['Required (whsec_…)'];
+          if (after.unreadable) errors[`${m}.secretKey`] = ['The stored keys can no longer be read: enter them again'];
+          if (body.methods.length === 0) errors.methods = ['Pick at least one'];
+          if (Object.keys(errors).length > 0 || !xpayModeComplete(after, m)) throw unprocessable(`Fill in every ${m} key before switching XPay on`, errors);
         }
-        const mode = (key: string) => (key.includes('_live_') ? 'live' : 'test');
-        if (req.body.secretKey && req.body.publishableKey && mode(req.body.secretKey) !== mode(req.body.publishableKey)) {
-          throw unprocessable('Both keys must be from the same mode', { secretKey: ['Use the test keys together, or the live keys together'] });
+        const turningLiveOn = body.enabled && m === 'live' && !(current.enabled && current.mode === 'live');
+        if (turningLiveOn) {
+          if (keysChanged || !current.live.validatedAt || current.live.validationError) {
+            throw unprocessable('Save the live keys and pass the connection test before switching live payments on', { 'live.secretKey': ['Test the connection first'] }, { code: 'test_connection_first' });
+          }
+          if (body.confirmLive !== true) throw unprocessable('Confirm that you want to take real payments', { confirmLive: ['Required'] }, { code: 'confirm_live' });
         }
-        await saveXPaySettings(sql, encryptionKey, req.body);
+        await saveXPaySettings(sql, encryptionKey, body);
         const saved = await getXPaySettings(sql, encryptionKey, options.publicUrl);
+        const changes = (mode: 'test' | 'live') => {
+          const c = body[mode];
+          if (!c) return null;
+          return {
+            cleared: c.clear === true,
+            publishableKeyChanged: c.publishableKey !== undefined && c.publishableKey !== current[mode].publishableKey,
+            secretKeyReplaced: Boolean(c.secretKey),
+            webhookSecretReplaced: Boolean(c.webhookSecret),
+          };
+        };
         await audit(sql, req, {
-          action: 'xpay.update',
+          action: turningLiveOn ? 'xpay.live_enabled' : 'xpay.update',
           targetType: 'feature',
           targetId: 'xpay',
-          details: { enabled: saved.enabled, methods: saved.methods, live: !isTestKey(saved.publishableKey), secretKeyChanged: !!req.body.secretKey, webhookSecretChanged: !!req.body.webhookSecret },
+          details: { enabled: saved.enabled, mode: saved.mode, previous: { enabled: current.enabled, mode: current.mode }, methods: saved.methods, test: changes('test'), live: changes('live') },
         });
         return ok(saved);
+      },
+    );
+
+    app.post(
+      '/xpay/test',
+      {
+        schema: {
+          ...schemaBase,
+          summary: "Test one mode's XPay keys with an authenticated read-only request",
+          body: z.object({ mode: z.enum(XPAY_MODES) }),
+          response: { 200: successSchema(z.object({ ok: z.boolean(), error: z.string().nullable(), settings: xpaySettingsDto })) },
+        },
+      },
+      async (req) => {
+        if (!encryptionKey) throw unavailable('This server has no AUTH_ENCRYPTION_KEY, so XPay keys cannot be read', 'no_encryption_key');
+        const { mode } = req.body;
+        const account = await getXPayModeAccount(sql, encryptionKey, mode);
+        const error = account ? await testConnection(account) : 'missing_key';
+        await recordConnectionTest(sql, mode, error);
+        await audit(sql, req, { action: 'xpay.test_connection', targetType: 'feature', targetId: 'xpay', details: { mode, ok: error === null, error } });
+        return ok({ ok: error === null, error, settings: await getXPaySettings(sql, encryptionKey, options.publicUrl) });
       },
     );
 

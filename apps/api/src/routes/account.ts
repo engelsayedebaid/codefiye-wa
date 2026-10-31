@@ -1304,7 +1304,7 @@ export function accountRoutes(deps: Deps): FastifyPluginAsyncZod {
           throw forbidden('Verify your phone number before requesting a plan', 'phone_unverified');
         }
         const { planId, months, payment, note } = req.body;
-        const [settings, pricing, xpay] = await Promise.all([getPaymentSettings(sql), getPlanPricing(sql), getXPayPublicConfig(sql, deps.encryptionKey)]);
+        const [settings, pricing, xpay] = await Promise.all([getPaymentSettings(sql), getPlanPricing(sql), getXPayPublicConfig(sql, deps.encryptionKey, req.auth.isAdmin)]);
         const accepted = enabledPaymentMethods(settings);
         const price = listedPriceUsd(planId, pricing);
         // With XPay on, the manual transfers are switched off: priced plans are paid online (POST /api/payments/xpay).
