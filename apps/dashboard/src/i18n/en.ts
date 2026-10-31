@@ -1,10 +1,11 @@
 import { TRIAL_DAYS } from '@wa/shared/plans';
-import { BRAND } from '../brand';
+import { BRAND, POLICY } from '../brand';
 import type { Dict } from './ar';
 
 const num = (n: number) => n.toLocaleString('en-US');
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 const days = (n: number) => plural(n, 'day', 'days');
+const workDays = (n: number) => plural(n, 'business day', 'business days');
 
 export const en: Dict = {
   meta: {
@@ -330,7 +331,7 @@ export const en: Dict = {
         { title: 'Product', links: ['Platform', 'Product demo', 'Solutions', 'Pricing'] },
         { title: 'Developers', links: ['Integration guide', 'OpenAPI reference', 'Dashboard'] },
         { title: 'Support', links: ['FAQ', 'Contact us', 'Create account', 'Log in'] },
-        { title: 'Legal', links: ['Privacy policy'] },
+        { title: 'Legal', links: ['Privacy policy', 'Terms & conditions', 'Exchange & refunds'] },
       ],
       youtube: 'Our YouTube channel',
       email: 'Email us',
@@ -413,7 +414,7 @@ export const en: Dict = {
         noCard: 'No credit card',
       },
       strength: { label: 'Password strength', weak: 'Weak', fair: 'Fair', strong: 'Strong' },
-      agree: 'By creating an account you agree to use the platform within WhatsApp’s policies.',
+      agree: { lead: 'By creating an account you agree to the', terms: 'terms & conditions', and: ' and the ', privacy: 'privacy policy', tail: ', and to use the platform within WhatsApp’s policies.' },
     },
     verify: {
       title: 'Confirm your phone number',
@@ -2820,6 +2821,255 @@ export const en: Dict = {
     ],
     contactTitle: 'Contact us',
     contactText: 'For any question about this policy or a request about your data, email us at:',
+  },
+  legal: {
+    related: 'Other policies',
+    privacy: 'Privacy policy',
+    terms: 'Terms & conditions',
+    refund: 'Exchange & refund policy',
+    payAgree: { lead: 'By continuing to payment you agree to the', and: ' and the ', tail: '.' },
+  },
+  terms: {
+    eyebrow: 'Terms',
+    title: 'Terms & Conditions',
+    lead: `The agreement between you and ${BRAND.name} when you use the website, the dashboard and the API: what we provide, what we commit to, and what we ask of you.`,
+    updatedLabel: 'Last updated',
+    updated: 'November 1, 2026',
+    highlights: [
+      { title: 'Try before you pay', text: `Every feature free for ${days(TRIAL_DAYS)}, no credit card — then pick a plan.` },
+      { title: 'Responsible use', text: 'Message only people who agreed to hear from you, within WhatsApp’s terms and the law.' },
+      { title: 'Paid in Egyptian pounds', text: 'Prices are shown in EGP (and other currencies on request); payment is always in EGP.' },
+      { title: 'Egyptian law', text: 'These terms are governed by the laws of the Arab Republic of Egypt.' },
+    ],
+    tocTitle: 'On this page',
+    sections: [
+      {
+        id: 'acceptance',
+        title: 'Accepting these terms',
+        body: [
+          `By using the ${BRAND.name} website, dashboard, API or any related service (the "Service"), or by creating an account, you agree to these terms, the privacy policy and the exchange & refund policy. If you don’t agree, don’t use the Service.`,
+          'If you use the Service on behalf of a company or organization, you confirm you are authorized to bind it to these terms.',
+        ],
+      },
+      {
+        id: 'service',
+        title: 'The Service',
+        body: [
+          `${BRAND.name} is a software platform that lets you link your own WhatsApp numbers (through WhatsApp’s linked-devices feature) and send and receive messages from the dashboard or a REST API, with templates, chats, auto-replies and other features depending on your plan.`,
+          'The Service is independent: it is not affiliated with, endorsed by or a partner of Meta or WhatsApp, and it does not use the official WhatsApp Business (Cloud) API. WhatsApp’s behavior and limits may therefore change at any time without notice from us.',
+        ],
+      },
+      {
+        id: 'account',
+        title: 'Your account',
+        body: [
+          [
+            'Age: you must be at least 18 years old.',
+            'Accurate details: you provide a real name, email address and phone number, and keep them up to date.',
+            'Account security: you are responsible for keeping your password, authenticator, recovery codes and API keys secret, and for everything done through your account. Two-factor authentication is required on every dashboard account.',
+            'Linked numbers: you confirm you own every number you link, or are authorized by its owner.',
+          ],
+        ],
+      },
+      {
+        id: 'acceptable-use',
+        title: 'Acceptable use',
+        body: [
+          'When using the Service you agree to the following, and we may suspend any account that breaks it:',
+          [
+            'Consent: message only people who agreed to hear from you, and honor any recipient’s request to stop.',
+            'No spam: no unsolicited or bulk messages to people you have no relationship with, and no bought or scraped number lists.',
+            'Content: nothing illegal, fraudulent or misleading, nothing threatening, harassing or infringing others’ rights, and no malware.',
+            'WhatsApp’s terms: you follow WhatsApp’s Terms of Service and Business Policy alongside these terms.',
+            'Platform integrity: no attempts to break into the Service, get around its limits, or resell it without a written agreement with us.',
+          ],
+        ],
+      },
+      {
+        id: 'whatsapp-risk',
+        title: 'The risk of WhatsApp bans',
+        body: [
+          'Only WhatsApp decides to ban or restrict a number. We provide tools that lower the risk (pacing between messages, checking that a number is on WhatsApp, excluding people who opted out), but no service built on WhatsApp Web can guarantee a number will never be banned.',
+          'We are not liable for a number being banned or restricted because of how it was used or a decision by WhatsApp, and that is not a ground for a refund except in the cases listed in the exchange & refund policy.',
+        ],
+      },
+      {
+        id: 'plans',
+        title: 'Plans, prices and payment',
+        body: [
+          [
+            'Prices: plan prices are listed on the pricing page. They are set in US dollars and shown in Egyptian pounds and other currencies for convenience; the amount due is paid in Egyptian pounds at the exchange rate the platform shows at checkout.',
+            'Payment methods: online through a licensed payment gateway (bank cards and mobile wallets), or by Vodafone Cash, InstaPay or bank transfer where available. We never receive or store your card details; you enter them on the payment gateway’s own page.',
+            'Activation: a plan is activated as soon as an online payment is confirmed, or after we review a manual transfer receipt, usually within one business day.',
+            'Term and renewal: a subscription runs from activation for the period you paid for (1, 3, 6 or 12 months). We never charge you automatically; every renewal is requested and paid by you.',
+            'Price changes: we may change prices in the future; a change never applies to a period you have already paid for.',
+            'When a plan ends: once a trial or subscription ends without renewal, sending stops, and your data is kept until you renew or ask us to delete it.',
+          ],
+        ],
+      },
+      {
+        id: 'refunds',
+        title: 'Cancellation and refunds',
+        body: [
+          'You can stop using the Service at any time, and your subscription won’t renew unless you pay for it. Refunds and plan changes are covered in detail by the exchange & refund policy, which is part of these terms.',
+        ],
+      },
+      {
+        id: 'availability',
+        title: 'Usage limits and availability',
+        body: [
+          'Each plan has limits (numbers, requests per minute, message retention) shown on the pricing page. We make reasonable efforts to keep the Service available, but it may pause for maintenance or for failures outside our control (such as WhatsApp or hosting outages), and we don’t guarantee uninterrupted availability.',
+        ],
+      },
+      {
+        id: 'data',
+        title: 'Your data',
+        body: [
+          'Your messages and your customers’ data remain yours. We process them only to provide the Service, as described in the privacy policy. You are responsible for lawfully collecting and using the data of the people you message.',
+        ],
+      },
+      {
+        id: 'ip',
+        title: 'Intellectual property',
+        body: [
+          `The Service, its software, design and brand belong to ${BRAND.name}. We grant you a non-exclusive, non-transferable right to use it for the length of your subscription; you may not copy, reverse-engineer or resell it.`,
+        ],
+      },
+      {
+        id: 'liability',
+        title: 'Disclaimer and limitation of liability',
+        body: [
+          'The Service is provided "as is". To the extent the law allows, we are not liable for indirect or consequential losses, such as lost profits, customers or data, arising from using or being unable to use the Service.',
+          'In any case, our total liability to you is limited to what you paid us in the three months before the claim.',
+        ],
+      },
+      {
+        id: 'termination',
+        title: 'Suspension and termination',
+        body: [
+          'You may ask us to delete your account at any time. We may suspend or close your account if you break these terms or it is used for spam, fraud or unlawful messages; in that case the remaining period is not refunded.',
+        ],
+      },
+      {
+        id: 'law',
+        title: 'Governing law',
+        body: [
+          'These terms are governed by and interpreted under the laws of the Arab Republic of Egypt. We aim to settle any dispute amicably first by talking to you; failing that, the competent Egyptian courts have jurisdiction.',
+        ],
+      },
+      {
+        id: 'changes',
+        title: 'Changes to these terms',
+        body: [
+          'We may update these terms from time to time and will change the "Last updated" date at the top. For a material change we’ll notify you in the dashboard or by email before it takes effect; continuing to use the Service afterwards means you accept it.',
+        ],
+      },
+    ],
+    contactTitle: 'Contact us',
+    contactText: 'For any question about these terms, email us at:',
+  },
+  refund: {
+    eyebrow: 'Refunds',
+    title: 'Exchange & Refund Policy',
+    lead: `When you can get back what you paid ${BRAND.name}, how to change your plan, and how long it takes.`,
+    updatedLabel: 'Last updated',
+    updated: 'November 1, 2026',
+    highlights: [
+      { title: 'Free trial', text: `${days(TRIAL_DAYS)} to try every feature before you pay anything.` },
+      { title: `${days(POLICY.refundDays)} refund window`, text: 'A full refund if you haven’t used the plan, within that time from payment.' },
+      { title: 'Change plans', text: 'Upgrade or switch plans any time; the unused part of your period counts.' },
+      { title: 'Quick answers', text: `We answer within ${workDays(POLICY.refundReplyWorkDays)} and refund the way you paid.` },
+    ],
+    tocTitle: 'On this page',
+    sections: [
+      {
+        id: 'scope',
+        title: 'What this policy covers',
+        body: [
+          `${BRAND.name} is a digital subscription service (nothing physical is shipped), so an "exchange" here means changing your plan and a "refund" means paying back what you paid. This policy covers every payment, whether made online through the payment gateway or by manual transfer.`,
+        ],
+      },
+      {
+        id: 'trial',
+        title: 'Free trial',
+        body: [
+          `Every new account gets a ${days(TRIAL_DAYS)} free trial with every feature and no credit card, so you can make sure the Service fits before paying. Nothing is charged when the trial ends.`,
+        ],
+      },
+      {
+        id: 'eligible',
+        title: 'When you get a refund',
+        body: [
+          'You get the full amount back when:',
+          [
+            `Within ${days(POLICY.refundDays)} of payment: you ask before they pass and the paid plan hasn’t been used (no messages were sent on it after activation).`,
+            'Duplicate or wrong charge: you paid for the same request twice, or were charged more than the plan’s price.',
+            'Not activated: you paid, your plan wasn’t activated within two business days of the payment being confirmed, and we didn’t fix it after you told us.',
+            'Request declined: we reviewed your plan request and declined it after you had paid.',
+          ],
+          'If the Service is completely down through a fault on our side for more than 72 hours in a row, we add the lost time to your subscription, or refund it pro rata if you prefer.',
+        ],
+      },
+      {
+        id: 'not-eligible',
+        title: 'When there is no refund',
+        body: [
+          [
+            `After ${days(POLICY.refundDays)} from payment, or once the paid plan has been used, the current period isn’t refunded and your subscription runs until it ends.`,
+            'A number banned or restricted by WhatsApp, since that is WhatsApp’s decision alone (see the terms & conditions).',
+            'An account suspended for breaking the terms & conditions, such as sending spam or fraudulent messages.',
+            'Not using the Service, or forgetting to cancel, after the refund window — note that subscriptions never renew automatically.',
+          ],
+        ],
+      },
+      {
+        id: 'exchange',
+        title: 'Exchange: changing your plan',
+        body: [
+          [
+            'Upgrading: available any time from the subscription page. We work out the value of the days left on your current plan and take it off the new plan’s price; the new plan starts as soon as payment is confirmed.',
+            'Moving to a smaller plan: takes effect at your next renewal, or right away if you ask, with the difference added as extra days to your new subscription.',
+            'Changing the length: at renewal you can pick a different period (1, 3, 6 or 12 months).',
+          ],
+          'For a pro-rata plan change, email us from your account’s address and we’ll work out the difference before you pay.',
+        ],
+      },
+      {
+        id: 'how',
+        title: 'How to ask for a refund',
+        body: [
+          'Email us from the address on your account, or through the contact details below, with:',
+          [
+            'Account details: your account email and phone number.',
+            'Payment details: the payment date, amount and transaction number (or the transfer receipt).',
+            'Reason: a short note.',
+          ],
+          `We answer within ${workDays(POLICY.refundReplyWorkDays)}, accepting the request or explaining why not.`,
+        ],
+      },
+      {
+        id: 'timing',
+        title: 'How and when you are paid back',
+        body: [
+          [
+            'The way you paid: the refund is made in Egyptian pounds to the same card, wallet or account you paid from.',
+            `Online payments (card or wallet): we start the refund within ${workDays(POLICY.refundReplyWorkDays)} of accepting the request, and it reaches your account within ${workDays(POLICY.refundBankWorkDays)}, depending on your card’s bank or wallet provider.`,
+            `Manual transfers (Vodafone Cash, InstaPay or bank transfer): we send the money within ${workDays(POLICY.refundReplyWorkDays)} of accepting the request.`,
+            'Amount: we refund the full amount you paid, with no administrative fee.',
+          ],
+          'Once a payment is refunded in full, the paid plan ends and your account returns to how it was before the payment.',
+        ],
+      },
+      {
+        id: 'changes',
+        title: 'Changes to this policy',
+        body: [
+          'We may update this policy from time to time and will change the "Last updated" date at the top. Each payment is covered by the policy in force when it was made.',
+        ],
+      },
+    ],
+    contactTitle: 'Contact us',
+    contactText: 'To ask for a refund or a plan change, or with any question about this policy, email us at:',
   },
   autoReply: {
     title: 'AI agent',

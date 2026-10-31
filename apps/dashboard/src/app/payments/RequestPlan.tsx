@@ -12,6 +12,26 @@ import { useXPayConfig, XPayCheckout } from './XPayCheckout';
 
 type Proof = { mimetype: 'image/jpeg'; data: string; previewUrl: string };
 
+/** Paying means accepting the terms and the refund policy; both open in a new tab so the popup keeps its state. */
+function PayAgreement() {
+  const { t } = useI18n();
+  const l = t.legal;
+  const link = 'text-muted underline underline-offset-2 hover:text-ink';
+  return (
+    <p className="text-xs text-faint">
+      {l.payAgree.lead}{' '}
+      <a href="/terms" target="_blank" rel="noreferrer" className={link}>
+        {l.terms}
+      </a>
+      {l.payAgree.and}
+      <a href="/refund" target="_blank" rel="noreferrer" className={link}>
+        {l.refund}
+      </a>
+      {l.payAgree.tail}
+    </p>
+  );
+}
+
 /** A USD price as the customer pays it: in Egyptian pounds once the admin set a rate, else in dollars. */
 function usePayPrice(egpPerUsd: number) {
   const { t } = useI18n();
@@ -361,6 +381,7 @@ export function RequestPlanModal({ plan, onClose, onSent, onNeedsPhone }: { plan
             )}
 
             {!payable && !online && !loadingMethods && <Field label={s.noteLabel} placeholder={s.notePlaceholder} value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} />}
+            {(online || payable) && <PayAgreement />}
             <ErrorNote>{topError}</ErrorNote>
             <div className="sticky bottom-0 z-10 -mx-6 flex justify-end gap-2 border-t border-line bg-card px-6 py-4">
               <Button variant="outline" onClick={onClose}>

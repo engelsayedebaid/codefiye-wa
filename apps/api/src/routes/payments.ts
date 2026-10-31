@@ -179,7 +179,17 @@ export function xpayWebhookRoutes(deps: Deps): FastifyPluginAsyncZod {
       }
       // Payment links, refunds and the rest share the endpoint; only checkout sessions settle plans.
       if (!event.type.startsWith('checkout.session.') || typeof event.data.object.id !== 'string') return reply.code(200).send({ received: true });
-      const session = event.data.object as unknown as XPaySession;
+      // The signed payload only says which session changed; its state is read back from XPay with the
+      // secret key, so a plan is never activated on the payload's word alone. If XPay can't be reached,
+      // a non-2xx makes it deliver the event again later.
+      let session: XPaySession;
+      try {
+        session = await getCheckoutSession(account, event.data.object.id as string);
+      } catch (err) {
+        if (!(err instanceof XPayError)) throw err;
+        req.log.warn({ status: err.status, code: err.code, eventId: event.id }, 'xpay session lookup failed; asking for a retry');
+        return reply.code(503).send({ received: false });
+      }
       const settled = await settlePayment(db, session, event.type === 'checkout.session.async_payment_failed');
       if (settled?.activated) await auth.revoke({ workspaceIds: [settled.workspaceId] });
       req.log.info({ event: event.type, eventId: event.id, session: session.id, status: settled?.status ?? 'unknown_session' }, 'xpay webhook');

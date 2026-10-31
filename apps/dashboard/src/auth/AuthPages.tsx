@@ -638,7 +638,17 @@ export function RegisterPage({ onAuthed }: { onAuthed: () => void }) {
         <Button type="submit" loading={loading} size="lg" className="mt-1 w-full">
           {r.next}
         </Button>
-        <p className="text-center text-xs text-faint">{r.agree}</p>
+        <p className="text-center text-xs text-faint">
+          {r.agree.lead}{' '}
+          <a href="/terms" target="_blank" rel="noreferrer" className="text-muted underline underline-offset-2 hover:text-ink">
+            {r.agree.terms}
+          </a>
+          {r.agree.and}
+          <a href="/privacy" target="_blank" rel="noreferrer" className="text-muted underline underline-offset-2 hover:text-ink">
+            {r.agree.privacy}
+          </a>
+          {r.agree.tail}
+        </p>
       </form>
     </SplitAuthLayout>
   );

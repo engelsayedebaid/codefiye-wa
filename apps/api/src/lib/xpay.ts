@@ -219,8 +219,20 @@ export async function settlePayment(db: Db, session: XPaySession, failed = false
       return { ...base, status: payment.status, activated: false };
     }
 
-    // The session was opened by our server with our secret key for this exact plan and price, so a
-    // paid session is enough; XPay may add its customer fee on top, so the total isn't compared.
+    // The session was opened by our server with our secret key for this exact plan and price. Still, a
+    // paid session in another currency or for less than the price never activates a plan (the total
+    // may be higher: XPay can add its customer fee on top).
+    const total = session.amountTotal === undefined ? null : Number(session.amountTotal);
+    if ((session.currency && session.currency.toUpperCase() !== payment.currency) || (total !== null && !(total >= payment.amountCents))) {
+      await tx.update(payments).set({ status: 'failed', error: 'amount_mismatch', raw: session }).where(eq(payments.id, payment.id));
+      await tx.insert(auditLogs).values({
+        action: 'payment.mismatch',
+        targetType: 'payment',
+        targetId: payment.id,
+        details: { provider: 'xpay', sessionId: session.id, expectedCents: payment.amountCents, currency: session.currency ?? null, amountTotal: session.amountTotal ?? null },
+      });
+      return { ...base, status: 'failed', activated: false };
+    }
     const details: PaymentDetails = {
       method: 'xpay',
       sessionId: session.id,

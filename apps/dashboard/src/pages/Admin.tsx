@@ -303,7 +303,7 @@ function RequestCard({ req, index, egpPerUsd, onProof, onReject }: { req: AdminR
       <div className={cx('flex flex-wrap items-start gap-4 border-t px-4 py-3', look ? cx('border-line/60 bg-raised/20') : 'border-line/60 bg-raised/10')}>
         {req.payment ? (
           <>
-            <ProofThumb req={req} onOpen={onProof} />
+            {req.payment.method !== 'xpay' && <ProofThumb req={req} onOpen={onProof} />}
             <div className="min-w-0 flex-1 space-y-2">
               <div className="flex flex-wrap items-center gap-2">
                 <MethodGlyph method={req.payment.method} size="sm" />

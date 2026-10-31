@@ -1,11 +1,23 @@
-import { Ban, CalendarDays, Eye, LockKeyhole, Mail, ShieldCheck } from '../icons';
+import { Ban, CalendarDays, Clock, CreditCard, Eye, FileText, Gift, HeartHandshake, Landmark, LockKeyhole, Mail, Repeat, RotateCcw, ShieldCheck, type LucideIcon } from '../icons';
 import { BRAND } from '../brand';
 import { useI18n } from '../i18n';
+import type { Dict } from '../i18n/ar';
+import { Link } from '../router';
 import { delay, Reveal } from '../ui';
-import { ContactDetails, SiteFooter, SiteHeader } from './SiteChrome';
+import { Arrow, ContactDetails, SiteFooter, SiteHeader } from './SiteChrome';
 import { TocAside, TocFold, useActiveSection } from './TocNav';
 
-const HIGHLIGHT_ICONS = [ShieldCheck, Eye, LockKeyhole, Ban];
+/** The three policy pages share one layout; the Central Bank of Egypt's rules for online payments ask for all three on the site. */
+type LegalKey = 'privacy' | 'terms' | 'refund';
+type LegalDoc = Dict['privacy'] | Dict['terms'] | Dict['refund'];
+
+const LEGAL_PATHS: Record<LegalKey, string> = { privacy: '/privacy', terms: '/terms', refund: '/refund' };
+
+const HIGHLIGHT_ICONS: Record<LegalKey, LucideIcon[]> = {
+  privacy: [ShieldCheck, Eye, LockKeyhole, Ban],
+  terms: [Gift, HeartHandshake, CreditCard, Landmark],
+  refund: [Gift, RotateCcw, Repeat, Clock],
+};
 
 /** A list item written as "Label: text" shows its label in bold. */
 function Item({ text }: { text: string }) {
@@ -19,11 +31,13 @@ function Item({ text }: { text: string }) {
   );
 }
 
-export function PrivacyPage() {
+function LegalPage({ page }: { page: LegalKey }) {
   const { t } = useI18n();
-  const p = t.privacy;
+  const p: LegalDoc = t[page];
+  const icons = HIGHLIGHT_ICONS[page];
   const toc = [...p.sections.map((s) => ({ id: s.id, label: s.title })), { id: 'contact', label: p.contactTitle }];
   const active = useActiveSection(toc.map((item) => item.id));
+  const others = (Object.keys(LEGAL_PATHS) as LegalKey[]).filter((key) => key !== page);
 
   return (
     <div className="min-h-svh overflow-x-clip">
@@ -50,7 +64,7 @@ export function PrivacyPage() {
         <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-16 lg:px-8">
           <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {p.highlights.map((h, i) => {
-              const Icon = HIGHLIGHT_ICONS[i] ?? ShieldCheck;
+              const Icon = icons[i] ?? ShieldCheck;
               return (
                 <li key={h.title} className="site-card animate-fade-up rounded-2xl p-5" style={delay(120 + i * 60)}>
                   <span className="flex size-10 items-center justify-center rounded-xl bg-brand/10 text-brand ring-1 ring-brand/20">
@@ -107,6 +121,23 @@ export function PrivacyPage() {
                     <ContactDetails className="mt-4 border-t border-line pt-4" />
                   </section>
                 </Reveal>
+
+                <Reveal>
+                  <nav aria-label={t.legal.related}>
+                    <h2 className="text-sm font-semibold text-muted">{t.legal.related}</h2>
+                    <ul className="mt-3 grid gap-3 sm:grid-cols-2">
+                      {others.map((key) => (
+                        <li key={key}>
+                          <Link href={LEGAL_PATHS[key]} className="site-card group flex items-center gap-3 rounded-xl p-4 font-medium transition-colors hover:text-brand">
+                            <FileText className="size-5 shrink-0 text-brand" />
+                            <span className="flex-1">{t.legal[key]}</span>
+                            <Arrow />
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  </nav>
+                </Reveal>
               </div>
             </article>
           </div>
@@ -116,3 +147,7 @@ export function PrivacyPage() {
     </div>
   );
 }
+
+export const PrivacyPage = () => <LegalPage page="privacy" />;
+export const TermsPage = () => <LegalPage page="terms" />;
+export const RefundPage = () => <LegalPage page="refund" />;

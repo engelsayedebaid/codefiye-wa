@@ -44,10 +44,10 @@ export const SECURITY_BADGES = ['AES-256-GCM', 'TLS', 'TOTP 2FA', 'SHA-256', 'Id
 
 export type PricedPlan = OfferedPlan;
 
-/** `mailto:` is the support address; `#…` as in NAV_HREFS. The terms of service page still needs writing (README §10). */
+/** `mailto:` is the support address; `#…` as in NAV_HREFS. */
 export const FOOTER_HREFS = [
   ['#platform', '#demo', '#solutions', '#pricing'],
   ['/guide', '/docs', '/dashboard'],
   ['#faq', 'mailto:', '/register', '/login'],
-  ['/privacy'],
+  ['/privacy', '/terms', '/refund'],
 ];
