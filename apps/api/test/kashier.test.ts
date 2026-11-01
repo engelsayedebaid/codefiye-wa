@@ -1,14 +1,18 @@
 import { kashierAvailableMethods, kashierLiveForCustomers, type KashierModeView, kashierReady, type KashierSettings } from '@wa/shared';
+import { createHmac } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import {
   allowedMethodsParam,
+  initiateWalletPayment,
   type KashierAccount,
   kashierAmount,
   kashierEventId,
+  kashierOrderHash,
   kashierReviewReasons,
   kashierSignature,
   parseAccountMethods,
   parseKashierAmount,
+  reconcileWalletPayment,
   testKashierConnection,
   verifyKashierWebhook,
 } from '../src/lib/kashier';
@@ -235,5 +239,59 @@ describe("Kashier account methods (GET /v2/merchants/{mid}/paymentMethods)", () 
     expect(result.error).toBeNull();
     expect(result.accountMethods).toEqual(['card', 'wallet', 'bank_installments', 'valu', 'souhoola', 'aman', 'contact']);
     expect(String(fetchImpl.mock.calls[1]![0])).toBe('https://test-api.kashier.io/v2/merchants/MID-1-2/paymentMethods');
+  });
+});
+
+describe('Kashier wallet request-to-pay (Direct API)', () => {
+  const account: KashierAccount = { mode: 'live', merchantId: 'MID-1-1', secretKey: 'sk', apiKey: 'yourApiKey', methods: ['wallet'] };
+  const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+  const input = { amountCents: 50400, reference: 'pay-1', workspaceId: 'ws-1', customerEmail: 'a@b.c', mobile: '01010101010', webhookUrl: 'https://wa.example/hook' };
+
+  it('hashes /?payment=mid.reference.amount.currency with the Payment API Key, the amount as a number', () => {
+    // The published Node sample, with amount 20.00 signing as 20.
+    const expected = createHmac('sha256', 'yourApiKey').update('/?payment=MID-1-1.pay-1.20.EGP').digest('hex');
+    expect(kashierOrderHash('yourApiKey', 'MID-1-1', 'pay-1', Number(kashierAmount(2000)), 'EGP')).toBe(expected);
+    expect(kashierOrderHash('yourApiKey', 'MID-1-1', 'pay-1', 504.5, 'EGP')).toBe(createHmac('sha256', 'yourApiKey').update('/?payment=MID-1-1.pay-1.504.5.EGP').digest('hex'));
+  });
+
+  it('starts the request-to-pay on the Direct API host with the hash, and reads the order back', async () => {
+    const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      expect(String(url)).toBe('https://fep.kashier.io/v3/orders/');
+      const headers = new Headers(init?.headers);
+      expect(headers.get('kashier-hash')).toBe(kashierOrderHash('yourApiKey', 'MID-1-1', 'pay-1', 504, 'EGP'));
+      expect(headers.get('authorization')).toBeNull();
+      const body = JSON.parse(String(init?.body));
+      expect(body).toMatchObject({ apiOperation: 'INITIATE_R2P', paymentMethod: { type: 'wallet' }, order: { reference: 'pay-1', amount: 504, currency: 'EGP' }, customer: { mobilePhone: '01010101010' }, reconciliation: { webhookUrl: 'https://wa.example/hook' }, merchantId: 'MID-1-1' });
+      return json(200, { status: 'SUCCESS', response: { status: 'SUCCESS', order: { systemOrderId: 'SO-9', reference: 'pay-1' }, transactionId: 'TX-1' } });
+    }) as unknown as typeof fetch;
+    await expect(initiateWalletPayment(account, input, fetchImpl)).resolves.toEqual({ systemOrderId: 'SO-9', transactionId: 'TX-1' });
+  });
+
+  it('tells an unregistered number (k_5) apart from Kashier trouble, and rejects an echoed other order', async () => {
+    const k5 = (async () => json(400, { status: 'FAILURE', response: { transactionResponseCode: 'k_5', transactionResponseMessage: { en: 'Mobile number is not registered on any provider' } } })) as unknown as typeof fetch;
+    await expect(initiateWalletPayment(account, input, k5)).rejects.toMatchObject({ refusal: 'unregistered_wallet' });
+    const k5ok = (async () => json(200, { status: 'FAILURE', response: { status: 'FAILURE', transactionResponseCode: 'k_5' } })) as unknown as typeof fetch;
+    await expect(initiateWalletPayment(account, input, k5ok)).rejects.toMatchObject({ refusal: 'unregistered_wallet' });
+    const boom = (async () => json(500, { messages: { en: 'boom' } })) as unknown as typeof fetch;
+    await expect(initiateWalletPayment(account, input, boom)).rejects.toMatchObject({ refusal: null, status: 500 });
+    const other = (async () => json(200, { status: 'SUCCESS', response: { status: 'SUCCESS', order: { systemOrderId: 'SO-9', reference: 'pay-2' } } })) as unknown as typeof fetch;
+    await expect(initiateWalletPayment(account, input, other)).rejects.toMatchObject({ refusal: null, status: 502 });
+  });
+
+  it('reconciles with the Secret Key: SUCCESS with the wallet, PENDING while the customer thinks, FAILURE on a 400', async () => {
+    const ok = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      expect(String(url)).toBe('https://fep.kashier.io/v3/orders/SO-9');
+      expect(init?.method).toBe('PUT');
+      expect(new Headers(init?.headers).get('authorization')).toBe('sk');
+      expect(JSON.parse(String(init?.body))).toEqual({ apiOperation: 'RECONCILE_WALLET', paymentMethod: { type: 'wallet' }, merchantId: 'MID-1-1' });
+      return json(200, { status: 'SUCCESS', response: { status: 'SUCCESS', amount: 504, paymentMethod: { wallet: { paidThrough: 'Vodafone Cash', payerName: 'Test Account' } } } });
+    }) as unknown as typeof fetch;
+    await expect(reconcileWalletPayment(account, 'SO-9', ok)).resolves.toMatchObject({ status: 'SUCCESS', amount: 504, paidThrough: 'Vodafone Cash', payerName: 'Test Account' });
+    const pending = (async () => json(200, { status: 'PENDING', response: { status: 'PENDING' } })) as unknown as typeof fetch;
+    await expect(reconcileWalletPayment(account, 'SO-9', pending)).resolves.toMatchObject({ status: 'PENDING' });
+    const declined = (async () => json(400, { status: 'FAILURE', response: { status: 'FAILURE', transactionResponseMessage: { en: 'Declined' } } })) as unknown as typeof fetch;
+    await expect(reconcileWalletPayment(account, 'SO-9', declined)).resolves.toMatchObject({ status: 'FAILURE' });
+    const down = (async () => json(503, { messages: { en: 'down' } })) as unknown as typeof fetch;
+    await expect(reconcileWalletPayment(account, 'SO-9', down)).rejects.toMatchObject({ status: 503 });
   });
 });

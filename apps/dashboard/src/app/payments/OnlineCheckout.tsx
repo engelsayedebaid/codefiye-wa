@@ -2,12 +2,12 @@ import type { KashierMethod, KashierPublicConfig } from '@wa/shared/kashier';
 import type { OnlinePaymentStatus } from '@wa/shared/payments';
 import { getPlan } from '@wa/shared/plans';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { AlertTriangle, ArrowLeft, CheckCircle2, ExternalLink, Hourglass, Info, Loader2, Lock, ShieldCheck, X } from '../../icons';
+import { AlertTriangle, ArrowLeft, CheckCircle2, ExternalLink, Hourglass, Info, Loader2, Lock, ShieldCheck, Smartphone, X } from '../../icons';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { api, ApiRequestError, errorMessage } from '../../api';
 import { useI18n } from '../../i18n';
 import { qk } from '../../queries';
-import { Button, cx, flip, Modal, usePlanName } from '../../ui';
+import { Button, cx, Field, flip, Modal, usePlanName } from '../../ui';
 import { KASHIER_METHOD_ICON } from './methods';
 import { KashierMark, RateLine, TrustStrip } from './Trust';
 
@@ -32,13 +32,16 @@ export function useKashierConfig(enabled = true) {
 
 const POLL_MS = 2_000;
 const POLL_FOR_MS = 40_000;
+/** A wallet request-to-pay waits for the customer to open their app: longer, and asked less often. */
+const WALLET_POLL_MS = 3_000;
+const WALLET_POLL_FOR_MS = 4 * 60_000;
 
 /**
- * Settles a payment from the dashboard's side: asks the server to check with the provider every 2 s
- * until it is no longer pending, for up to 40 s (the webhook settles it anyway). Resolves to the last state seen.
+ * Settles a payment from the dashboard's side: asks the server to check with the provider every `everyMs`
+ * until it is no longer pending, for up to `forMs` (the webhook settles it anyway). Resolves to the last state seen.
  */
-export async function waitForPayment(id: string, signal: AbortSignal): Promise<OnlinePayment | null> {
-  const until = Date.now() + POLL_FOR_MS;
+export async function waitForPayment(id: string, signal: AbortSignal, forMs = POLL_FOR_MS, everyMs = POLL_MS): Promise<OnlinePayment | null> {
+  const until = Date.now() + forMs;
   let last: OnlinePayment | null = null;
   while (!signal.aborted) {
     try {
@@ -49,7 +52,7 @@ export async function waitForPayment(id: string, signal: AbortSignal): Promise<O
       if (err instanceof ApiRequestError && err.status === 404) return null;
     }
     if (Date.now() >= until) return last;
-    await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+    await new Promise((resolve) => setTimeout(resolve, everyMs));
   }
   return last;
 }
@@ -231,7 +234,25 @@ function Receipt({ payment }: { payment: OnlinePayment }) {
  * A payment's outcome, confirmed by the server (which asks Kashier); a redirect or a message from the
  * checkout proves nothing on its own.
  */
-function PaymentResult({ id, onDone }: { id: string; onDone: () => void }) {
+function PaymentResult({
+  id,
+  onDone,
+  wait,
+  waiting,
+  failedText,
+  onRetry,
+}: {
+  id: string;
+  onDone: () => void;
+  /** How long and how often to ask before giving up on an answer (the webhook still settles it). */
+  wait?: { forMs: number; everyMs: number };
+  /** What to show while the answer is awaited (default: "confirming…"). */
+  waiting?: ReactNode;
+  /** The failure line for this kind of payment (default: a declined card). */
+  failedText?: string;
+  /** Offered on failure: start this payment over. */
+  onRetry?: () => void;
+}) {
   const { t } = useI18n();
   const o = t.subscription.payment.online;
   const planName = usePlanName();
@@ -239,14 +260,14 @@ function PaymentResult({ id, onDone }: { id: string; onDone: () => void }) {
 
   useEffect(() => {
     const ctl = new AbortController();
-    void waitForPayment(id, ctl.signal).then((final) => !ctl.signal.aborted && setResult(final));
+    void waitForPayment(id, ctl.signal, wait?.forMs, wait?.everyMs).then((final) => !ctl.signal.aborted && setResult(final));
     return () => ctl.abort();
-  }, [id]);
+  }, [id, wait?.forMs, wait?.everyMs]);
 
   return (
     <div className="pb-4">
       {result === undefined ? (
-        <OutcomeView tone="wait" icon={<Loader2 className="animate-spin" />} title={o.confirming} text={o.confirmingText} />
+        (waiting ?? <OutcomeView tone="wait" icon={<Loader2 className="animate-spin" />} title={o.confirming} text={o.confirmingText} />)
       ) : result?.status === 'paid' && result.mode === 'test' ? (
         // A verified sandbox payment: the flow works, but test payments never activate a plan.
         <OutcomeView tone="good" icon={<CheckCircle2 />} title={o.testPaidTitle} text={o.testPaidText}>
@@ -270,7 +291,12 @@ function PaymentResult({ id, onDone }: { id: string; onDone: () => void }) {
           </Button>
         </OutcomeView>
       ) : result === null || result.status === 'failed' || result.status === 'refunded' ? (
-        <OutcomeView tone="bad" icon={<AlertTriangle />} title={o.failedTitle} text={result?.error === 'expired' ? o.expired : o.declined}>
+        <OutcomeView tone="bad" icon={<AlertTriangle />} title={o.failedTitle} text={result?.error === 'expired' ? o.expired : (failedText ?? o.declined)}>
+          {onRetry && (
+            <Button variant="brand" onClick={onRetry}>
+              {o.wallet.tryAgain}
+            </Button>
+          )}
           <Button variant="outline" onClick={onDone}>
             {o.done}
           </Button>
@@ -286,6 +312,171 @@ function PaymentResult({ id, onDone }: { id: string; onDone: () => void }) {
         <KashierMark />
       </div>
     </div>
+  );
+}
+
+/** Test mode knows two wallet numbers (https://developers.kashier.io/docs/get-started/testing): Vodafone Cash, and any other wallet. */
+const TEST_WALLET_NUMBER = '01010101010';
+const MOBILE = /^01[0125]\d{8}$/;
+
+/**
+ * Mobile-wallet payment on our own page (no card data involved): the customer gives their wallet number,
+ * Kashier sends a request-to-pay to the wallet app, and this screen waits for the approval, confirming the
+ * outcome with the server (`PaymentResult`) rather than taking anything on the browser's word.
+ */
+export function WalletCheckout({
+  planId,
+  months,
+  amountLabel,
+  usdLabel,
+  test,
+  onBack,
+  onNeedsPhone,
+  onDone,
+}: {
+  planId: string;
+  months: number;
+  amountLabel: string;
+  usdLabel?: string;
+  test: boolean;
+  onBack: () => void;
+  onNeedsPhone: () => void;
+  onDone: () => void;
+}) {
+  const { t } = useI18n();
+  const p = t.subscription.payment;
+  const o = p.online;
+  const w = o.wallet;
+  const planName = usePlanName();
+  const [mobile, setMobile] = useState(test ? TEST_WALLET_NUMBER : '');
+  const [payment, setPayment] = useState<OnlinePayment | null>(null);
+  const [fieldError, setFieldError] = useState<string | null>(null);
+  const digits = mobile.replace(/\D/g, '');
+  const valid = MOBILE.test(digits);
+
+  const send = useMutation({
+    mutationFn: () => api<{ payment: OnlinePayment }>('/api/payments/kashier/wallet', { method: 'POST', body: { planId, months, mobile: digits }, timeoutMs: 30_000 }),
+    onSuccess: ({ payment }) => setPayment(payment),
+    onError: (err) => {
+      if (err instanceof ApiRequestError && err.code === 'phone_unverified') onNeedsPhone();
+      if (err instanceof ApiRequestError && err.code === 'unregistered_wallet') setFieldError(w.unregistered);
+    },
+  });
+
+  if (payment) {
+    const masked = `${digits.slice(0, 3)}•••••${digits.slice(-3)}`;
+    return (
+      <PaymentResult
+        id={payment.id}
+        onDone={onDone}
+        wait={{ forMs: WALLET_POLL_FOR_MS, everyMs: WALLET_POLL_MS }}
+        failedText={w.declined}
+        onRetry={() => {
+          setPayment(null);
+          send.reset();
+        }}
+        waiting={
+          <div className="animate-fade-up flex flex-col items-center gap-4 py-4 text-center">
+            <span className="relative flex size-16 items-center justify-center rounded-full bg-brand/15 text-brand">
+              <Smartphone className="size-8" />
+              <span className="absolute -end-1 -top-1 flex size-5 items-center justify-center rounded-full bg-card">
+                <Loader2 className="size-4 animate-spin text-brand" />
+              </span>
+            </span>
+            <div>
+              <p className="text-lg font-semibold">{w.waitTitle}</p>
+              <p className="mx-auto mt-1 max-w-sm text-sm text-muted">{w.waitText(masked)}</p>
+            </div>
+            <ol className="w-full max-w-sm space-y-2 text-start text-sm text-ink-2">
+              {w.waitSteps.map((step, i) => (
+                <li key={step} className="flex items-start gap-2.5">
+                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-brand/15 text-[11px] font-semibold text-brand tabular-nums">{i + 1}</span>
+                  {step}
+                </li>
+              ))}
+            </ol>
+            <p className="ltr text-2xl font-bold tabular-nums">{amountLabel}</p>
+            <p className="max-w-sm text-xs text-muted">{w.stillWaiting}</p>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setPayment(null);
+                send.reset();
+              }}
+            >
+              {w.tryAgain}
+            </Button>
+          </div>
+        }
+      />
+    );
+  }
+
+  return (
+    <form
+      className="space-y-4"
+      onSubmit={(e) => {
+        e.preventDefault();
+        setFieldError(valid ? null : w.invalid);
+        if (valid && !send.isPending) send.mutate();
+      }}
+    >
+      <section className="overflow-hidden rounded-2xl border border-line">
+        <header className="flex items-center justify-between gap-3 border-b border-line/60 bg-raised/30 px-4 py-2.5">
+          <span className="flex items-center gap-2 text-sm font-semibold">
+            <Smartphone className="size-4 text-brand" /> {w.title}
+          </span>
+          <KashierMark />
+        </header>
+        <div className="space-y-3 p-4">
+          <SummaryRows rows={[[o.plan, planName(getPlan(planId))], [o.period, p.months(months)]]} />
+          <div className="flex items-end justify-between gap-3 border-t border-dashed border-line pt-3">
+            <span className="text-sm font-medium">{o.due}</span>
+            <span className="text-end">
+              <span className="ltr block text-2xl font-bold tabular-nums">{amountLabel}</span>
+              {usdLabel && <span className="ltr block text-xs text-muted tabular-nums">{usdLabel}</span>}
+            </span>
+          </div>
+          <RateLine />
+        </div>
+      </section>
+
+      <Field
+        label={w.mobile}
+        value={mobile}
+        onChange={(e) => {
+          setMobile(e.target.value);
+          setFieldError(null);
+        }}
+        inputMode="tel"
+        autoComplete="tel-national"
+        dir="ltr"
+        placeholder="01xxxxxxxxx"
+        maxLength={14}
+        autoFocus
+        required
+        hint={test ? w.testHint(TEST_WALLET_NUMBER) : w.mobileHint}
+        error={fieldError ? [fieldError] : undefined}
+      />
+
+      <TrustStrip marks={false} />
+
+      {send.isError && !fieldError && (
+        <p className="flex items-start gap-2 rounded-lg bg-destructive-ink/10 px-3 py-2 text-sm text-destructive-ink">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" /> {errorMessage(send.error)}
+        </p>
+      )}
+
+      <div className="sticky bottom-0 z-10 -mx-6 flex items-center justify-between gap-2 border-t border-line bg-card px-6 py-4">
+        <Button variant="ghost" icon={<ArrowLeft className={cx('size-4', flip)} />} onClick={onBack} disabled={send.isPending}>
+          {p.back}
+        </Button>
+        <Button type="submit" variant="brand" size="lg" loading={send.isPending} disabled={!valid} icon={send.isPending ? undefined : <Smartphone className="size-4" />}>
+          {send.isPending ? w.sending : w.send(amountLabel)}
+        </Button>
+      </div>
+    </form>
   );
 }
 

@@ -6,7 +6,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { buildApp } from '../src/app';
 import { createAuth } from '../src/lib/auth';
 import { EventBus } from '../src/lib/events';
-import { kashierSignature, saveKashierSettings } from '../src/lib/kashier';
+import { kashierOrderHash, kashierSignature, saveKashierSettings } from '../src/lib/kashier';
 import { generateKey } from '../src/lib/keys';
 import { otpKey } from '../src/lib/otp';
 import { getEgpQuote } from '../src/lib/currency';
@@ -20,6 +20,10 @@ const CREDS = {
   live: { merchantId: 'MID-LIVE-1', secretKey: 'secret-live-flow-key', apiKey: 'api-live-flow-key' },
 } as const;
 const HOSTS = { test: 'https://test-api.kashier.io', live: 'https://api.kashier.io' } as const;
+/** The Direct API (wallet request-to-pay) lives on its own hosts. */
+const FEP_HOSTS = { test: 'https://test-fep.kashier.io', live: 'https://fep.kashier.io' } as const;
+/** Kashier's sandbox wallet number for Vodafone Cash; the fake treats every other number as unregistered (k_5). */
+const TEST_WALLET = '01010101010';
 const hook = (mode: KashierMode) => `/api/payments/kashier/webhook/${mode}`;
 
 type FakeSession = { id: string; mode: KashierMode; merchantId: string; order: string; amount: string; currency: string; status: string; method: string | null };
@@ -41,6 +45,10 @@ describe.skipIf(!url)('kashier payments (integration)', () => {
   // --- the fake Kashier ------------------------------------------------------------------------
   const sessions = new Map<string, FakeSession>();
   const created: { mode: KashierMode; body: Record<string, unknown>; headers: Headers }[] = [];
+  /** Wallet orders the fake Direct API holds: `status` is flipped by the test as the customer "answers" in the app. */
+  type FakeOrder = { id: string; mode: KashierMode; reference: string; amount: number; status: 'PENDING' | 'SUCCESS' | 'FAILURE' };
+  const orders = new Map<string, FakeOrder>();
+  const walletRequests: { mode: KashierMode; body: Record<string, unknown>; hashOk: boolean; order: FakeOrder }[] = [];
   // `GET /v2/merchants/{mid}/paymentMethods` as Kashier really answers it (its test API, 2026-11-01), not the docs' `{ card: true }` example.
   const accountShape = (methods: string[], bnpl: string[] = []) => ({ acceptedPaymentMethods: methods, acceptedBNPLMethods: bnpl, acceptedCardProviders: ['mpgs'], acceptedWalletProviders: ['upg', 'vodafoneCash'], acceptedCardWalletProviders: [], operations: {} });
   const LIVE_FULL = () => accountShape(['card', 'wallet', 'installments', 'instapay', 'basata'], ['valu', 'octo', 'souhoola', 'aman', 'contact', 'tru']);
@@ -49,13 +57,36 @@ describe.skipIf(!url)('kashier payments (integration)', () => {
   const realFetch = globalThis.fetch;
   const fakeFetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const href = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-    const mode = (Object.keys(HOSTS) as KashierMode[]).find((m) => href.startsWith(`${HOSTS[m]}/`));
+    const fepMode = (Object.keys(FEP_HOSTS) as KashierMode[]).find((m) => href.startsWith(`${FEP_HOSTS[m]}/`));
+    const mode = fepMode ?? (Object.keys(HOSTS) as KashierMode[]).find((m) => href.startsWith(`${HOSTS[m]}/`));
     if (!mode) return realFetch(input, init);
     if (outage === 'network') throw new TypeError('fetch failed');
     const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
     if (outage === 'http500') return json(500, { status: 'FAILURE', messages: { en: 'boom' } });
     const headers = new Headers(init?.headers);
     const path = new URL(href).pathname;
+    if (fepMode) {
+      // The Direct API: a hashed INITIATE_R2P opens an order; RECONCILE_WALLET (Secret Key) reads it back; a declined one answers 400.
+      if (init?.method === 'POST' && path === '/v3/orders/') {
+        const body = JSON.parse(String(init.body)) as { order: { reference: string; amount: number; currency: string }; customer: { mobilePhone: string } };
+        const hashOk = headers.get('kashier-hash') === kashierOrderHash(CREDS[mode].apiKey, CREDS[mode].merchantId, body.order.reference, body.order.amount, body.order.currency);
+        if (!hashOk) return json(401, { status: 'FAILURE', messages: { en: 'Invalid hash' } });
+        if (body.customer.mobilePhone !== TEST_WALLET) return json(400, { status: 'FAILURE', response: { transactionResponseCode: 'k_5', transactionResponseMessage: { en: 'Mobile number is not registered on any provider' } } });
+        const order: FakeOrder = { id: `SO-${randomBytes(6).toString('hex')}`, mode, reference: body.order.reference, amount: body.order.amount, status: 'PENDING' };
+        orders.set(order.id, order);
+        walletRequests.push({ mode, body: body as unknown as Record<string, unknown>, hashOk, order });
+        return json(200, { status: 'SUCCESS', response: { apiOperation: 'INITIATE_R2P', status: 'SUCCESS', order: { systemOrderId: order.id, reference: order.reference }, transactionId: `TX-${randomInt(1e9)}`, transactionResponseMessage: { en: 'Request to pay message send successfully.' } } });
+      }
+      const reconcile = /^\/v3\/orders\/([^/]+)$/.exec(path);
+      if (init?.method === 'PUT' && reconcile) {
+        if (headers.get('authorization') !== CREDS[mode].secretKey) return json(401, { status: 'FAILURE', messages: { en: 'Unauthorized' } });
+        const order = orders.get(decodeURIComponent(reconcile[1]!));
+        if (!order || order.mode !== mode) return json(404, { status: 'FAILURE', messages: { en: 'Order not found' } });
+        if (order.status === 'FAILURE') return json(400, { status: 'FAILURE', response: { status: 'FAILURE', transactionResponseMessage: { en: 'Declined by customer' } } });
+        return json(200, { status: order.status, response: { apiOperation: 'RECONCILE_WALLET', status: order.status, amount: order.amount, paymentMethod: { wallet: { paidThrough: 'Vodafone Cash', payerName: 'Test Account' } } } });
+      }
+      return json(404, { status: 'FAILURE', messages: { en: path } });
+    }
     const methodsMatch = /^\/v2\/merchants\/([^/]+)\/paymentMethods$/.exec(path);
     if (methodsMatch) return decodeURIComponent(methodsMatch[1]!) === CREDS[mode].merchantId ? json(200, accountMethods[mode]) : json(400, { message: 'Merchant not found' });
     // Everything else needs this host's own Secret Key (a test key on the live host is refused).
@@ -223,6 +254,74 @@ describe.skipIf(!url)('kashier payments (integration)', () => {
     expect(res.statusCode).toBe(422);
     expect(res.json().errors).toEqual({ method: ['Choose one of the offered methods'] });
     expect(created.length).toBe(before);
+  });
+
+  // --- wallet request-to-pay (Direct API, on our page) ------------------------------------------
+
+  it('pays from a wallet on our page: a hashed request-to-pay, then the plan once Kashier reports it paid', async () => {
+    await resetPlan(customer);
+    const res = await call(customer, 'POST', '/api/payments/kashier/wallet', { planId: 'basic', months: 1, mobile: TEST_WALLET });
+    expect(res.statusCode, res.body).toBe(201);
+    const payment = res.json().data.payment as { id: string; status: string; mode: string; amountCents: number };
+    expect(payment).toMatchObject({ status: 'pending', mode: 'live', provider: 'kashier' });
+    const sent = walletRequests.at(-1)!;
+    expect(sent.mode).toBe('live');
+    expect(sent.hashOk).toBe(true);
+    expect(sent.body).toMatchObject({
+      apiOperation: 'INITIATE_R2P',
+      paymentMethod: { type: 'wallet' },
+      order: { reference: payment.id, amount: payment.amountCents / 100, currency: 'EGP' },
+      customer: { mobilePhone: TEST_WALLET, reference: customer.id },
+      reconciliation: { webhookUrl: 'https://wa.codefiye.com/api/payments/kashier/webhook/live' },
+      merchantId: CREDS.live.merchantId,
+    });
+    expect((await paymentRow(payment.id)).session_id).toBeNull();
+    // The customer hasn't answered in the app yet: still pending, nothing activated.
+    expect((await call(customer, 'POST', `/api/payments/${payment.id}/check`)).json().data.status).toBe('pending');
+    expect((await planOf(customer)).plan_id).toBe(BASE);
+    // Approved: the webhook names our order, the order is read back from Kashier, and the plan turns on once.
+    sent.order.status = 'SUCCESS';
+    expect((await deliver('live', { order: payment.id, status: 'SUCCESS', amount: payment.amountCents / 100 })).statusCode).toBe(200);
+    expect(await paymentRow(payment.id)).toMatchObject({ status: 'paid', provider: 'kashier' });
+    expect((await planOf(customer)).plan_id).toBe('basic');
+    expect(await approvedKashier(customer)).toBe(1);
+    // A later check or repeat is a no-op.
+    expect((await call(customer, 'POST', `/api/payments/${payment.id}/check`)).json().data.status).toBe('paid');
+    expect(await approvedKashier(customer)).toBe(1);
+  });
+
+  it('wallet: refuses a number no wallet knows, validates the shape, and reports a declined request as failed', async () => {
+    const unknown = await call(customer, 'POST', '/api/payments/kashier/wallet', { planId: 'basic', mobile: '01234567890' });
+    expect(unknown.statusCode, unknown.body).toBe(422);
+    expect(unknown.json().code).toBe('unregistered_wallet');
+    expect(unknown.json().errors).toEqual({ mobile: ['Enter the number of an active wallet'] });
+    expect((await call(customer, 'POST', '/api/payments/kashier/wallet', { planId: 'basic', mobile: '0123' })).statusCode).toBe(422);
+    expect((await call(customer, 'POST', '/api/payments/kashier/wallet', { planId: 'basic', mobile: '+201010101010' })).statusCode).toBe(422);
+
+    await resetPlan(customer);
+    const res = await call(customer, 'POST', '/api/payments/kashier/wallet', { planId: 'basic', mobile: TEST_WALLET });
+    expect(res.statusCode, res.body).toBe(201);
+    const payment = res.json().data.payment as { id: string };
+    walletRequests.at(-1)!.order.status = 'FAILURE';
+    expect((await call(customer, 'POST', `/api/payments/${payment.id}/check`)).json().data).toMatchObject({ status: 'failed', error: 'wallet_declined' });
+    expect((await planOf(customer)).plan_id).toBe(BASE);
+  });
+
+  it('wallet: not offered when the admin did not pick it, and never for a customer in test mode', async () => {
+    await configure({ methods: ['card'] });
+    expect((await call(customer, 'POST', '/api/payments/kashier/wallet', { planId: 'basic', mobile: TEST_WALLET })).statusCode).toBe(422);
+    await configure({ mode: 'test' });
+    expect((await call(customer, 'POST', '/api/payments/kashier/wallet', { planId: 'basic', mobile: TEST_WALLET })).statusCode).toBe(503);
+    // An admin pays in the sandbox: verified and recorded, no plan.
+    await resetPlan(admin);
+    const res = await call(admin, 'POST', '/api/payments/kashier/wallet', { planId: 'basic', mobile: TEST_WALLET });
+    expect(res.statusCode, res.body).toBe(201);
+    const payment = res.json().data.payment as { id: string; mode: string };
+    expect(payment.mode).toBe('test');
+    expect(walletRequests.at(-1)!.mode).toBe('test');
+    walletRequests.at(-1)!.order.status = 'SUCCESS';
+    expect((await call(admin, 'POST', `/api/payments/${payment.id}/check`)).json().data).toMatchObject({ status: 'paid', mode: 'test' });
+    expect((await planOf(admin)).plan_id).toBe(BASE);
   });
 
   it('refuses manual transfers for priced plans while Kashier is live for the account', async () => {

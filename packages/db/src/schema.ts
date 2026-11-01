@@ -320,6 +320,8 @@ export const payments = pgTable(
     mode: text().$type<XPayMode>().notNull().default('test'),
     /** The provider's checkout session; webhooks are matched on it. */
     sessionId: text(),
+    /** Kashier's order (`systemOrderId`) for a payment made through its Direct API (wallet request-to-pay) instead of a session. */
+    kashierOrderId: text(),
     /** The provider's payment (XPay PaymentIntent) once the customer paid. */
     providerPaymentId: text(),
     /** Why it failed or needs review (`expired`, `payment_failed`, `amount_mismatch`, …). */

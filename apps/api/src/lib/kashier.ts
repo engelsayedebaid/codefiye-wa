@@ -17,6 +17,7 @@ import {
   type PaymentDetails,
 } from '@wa/shared';
 import { activatePaidPayment, holdPaymentForReview } from './online-payments';
+import type { Tx } from './plans';
 
 /**
  * Kashier (Egypt) online payments: Payment Sessions with Kashier's hosted checkout. The server opens a
@@ -26,6 +27,8 @@ import { activatePaidPayment, holdPaymentForReview } from './online-payments';
  * https://developers.kashier.io/docs
  */
 export const KASHIER_API: Record<KashierMode, string> = { test: 'https://test-api.kashier.io', live: 'https://api.kashier.io' };
+/** Kashier's Direct API (orders): wallet request-to-pay, hashed with the Payment API Key instead of a session. */
+export const KASHIER_FEP: Record<KashierMode, string> = { test: 'https://test-fep.kashier.io', live: 'https://fep.kashier.io' };
 const TIMEOUT_MS = 20_000;
 
 // --- stored settings -----------------------------------------------------------------------------
@@ -229,20 +232,28 @@ export class KashierError extends Error {
     message: string,
     /** 0 = no answer (timeout, network). */
     readonly status: number,
+    /** Kashier's answer as parsed (null when there was none): the Direct API puts its codes inside `response`. */
+    readonly body: unknown = null,
   ) {
     super(message);
   }
 }
 
-async function call<T>(mode: KashierMode, path: string, init: { method?: string; body?: unknown; secretKey?: string; apiKey?: string } = {}, fetchImpl: typeof fetch = fetch): Promise<T> {
+async function call<T>(
+  mode: KashierMode,
+  path: string,
+  init: { method?: string; body?: unknown; secretKey?: string; apiKey?: string; hash?: string; host?: Record<KashierMode, string> } = {},
+  fetchImpl: typeof fetch = fetch,
+): Promise<T> {
   let res: Response;
   try {
-    res = await fetchImpl(`${KASHIER_API[mode]}${path}`, {
+    res = await fetchImpl(`${(init.host ?? KASHIER_API)[mode]}${path}`, {
       method: init.method ?? 'GET',
       headers: {
-        // Kashier takes the raw Secret Key (no "Bearer") and the Payment API Key in `api-key`.
+        // Kashier takes the raw Secret Key (no "Bearer") and the Payment API Key in `api-key`; Direct API orders carry an order hash instead.
         ...(init.secretKey ? { authorization: init.secretKey } : {}),
         ...(init.apiKey ? { 'api-key': init.apiKey } : {}),
+        ...(init.hash ? { 'kashier-hash': init.hash } : {}),
         ...(init.body ? { 'content-type': 'application/json' } : {}),
         accept: 'application/json',
       },
@@ -255,8 +266,9 @@ async function call<T>(mode: KashierMode, path: string, init: { method?: string;
   }
   const body = (await res.json().catch(() => null)) as T | null;
   if (!res.ok || body === null) {
-    const b = body as { messages?: { en?: string }; message?: string; error?: { cause?: string } } | null;
-    throw new KashierError(String(b?.messages?.en ?? b?.message ?? b?.error?.cause ?? `Kashier answered ${res.status}`).slice(0, 300), res.status);
+    const b = body as { messages?: { en?: string }; message?: string; error?: { cause?: string }; response?: { transactionResponseMessage?: { en?: string } | string } } | null;
+    const direct = b?.response?.transactionResponseMessage;
+    throw new KashierError(String(b?.messages?.en ?? b?.message ?? b?.error?.cause ?? (typeof direct === 'object' ? direct?.en : direct) ?? `Kashier answered ${res.status}`).slice(0, 300), res.status, body);
   }
   return body;
 }
@@ -337,7 +349,7 @@ export async function createPaymentSession(account: KashierAccount, input: Sessi
     },
     fetchImpl,
   );
-  if (typeof session._id !== 'string' || typeof session.sessionUrl !== 'string' || !/^https:\/\//.test(session.sessionUrl)) {
+  if (typeof session._id !== 'string' || typeof session.sessionUrl !== 'string' || !session.sessionUrl.startsWith('https://')) {
     throw new KashierError('Kashier returned no payment session', 502);
   }
   // Kashier echoes what it will charge: it must be our order, at our price.
@@ -365,6 +377,144 @@ export async function getSessionPayment(account: KashierAccount, sessionId: stri
   const res = await call<{ data?: KashierSessionPayment }>(account.mode, `/v3/payment/sessions/${encodeURIComponent(sessionId)}/payment`, { secretKey: account.secretKey }, fetchImpl);
   if (!res.data || typeof res.data !== 'object') throw new KashierError('Kashier returned no session result', 502);
   return res.data;
+}
+
+// --- Direct API: wallet request-to-pay ------------------------------------------------------------
+
+/**
+ * The order hash of a Direct API request (https://developers.kashier.io/docs/direct-api/hashing):
+ * HMAC-SHA256 of `/?payment={mid}.{reference}.{amount}.{currency}` with the Payment API Key, hex.
+ * `amount` is the number as Kashier reads it ("504", "504.5"), not the two-decimal session string.
+ */
+export function kashierOrderHash(apiKey: string, merchantId: string, reference: string, amount: number, currency: string): string {
+  return createHmac('sha256', apiKey).update(`/?payment=${merchantId}.${reference}.${amount}.${currency}`).digest('hex');
+}
+
+/** A wallet number as Egyptian wallets take it: `01` + operator digit + 8 digits (Vodafone/Etisalat/Orange/WE). */
+export const EGYPTIAN_MOBILE = /^01[0125]\d{8}$/;
+
+/** Why Kashier refused to start a wallet payment, when it said so plainly. */
+export type KashierWalletRefusal = 'unregistered_wallet';
+
+export class KashierWalletError extends KashierError {
+  constructor(
+    message: string,
+    status: number,
+    readonly refusal: KashierWalletRefusal | null,
+    body: unknown = null,
+  ) {
+    super(message, status, body);
+  }
+}
+
+export type WalletInput = {
+  amountCents: number;
+  /** Our payment id: Kashier's `order.reference` (`merchantOrderId` in its webhooks). */
+  reference: string;
+  workspaceId: string;
+  customerEmail: string;
+  /** The customer's wallet number (`EGYPTIAN_MOBILE`). */
+  mobile: string;
+  /** This mode's webhook endpoint. */
+  webhookUrl: string;
+};
+
+export type KashierWalletOrder = { systemOrderId: string; transactionId: string | null };
+
+type DirectResponse = {
+  status?: string;
+  response?: {
+    status?: string;
+    order?: { systemOrderId?: string; reference?: string };
+    transactionId?: string;
+    transactionResponseCode?: string;
+    transactionResponseMessage?: { en?: string; ar?: string } | string;
+    amount?: number | string;
+    currency?: string;
+    paymentMethod?: { wallet?: { paidThrough?: string; payerName?: string } };
+  };
+  messages?: { en?: string };
+  message?: string;
+  code?: string;
+};
+
+const directMessage = (b: DirectResponse | null) => {
+  const m = b?.response?.transactionResponseMessage;
+  return String((typeof m === 'object' ? m?.en : m) ?? b?.messages?.en ?? b?.message ?? '').slice(0, 300);
+};
+/** `k_5`: the number isn't registered with any wallet provider — terminal, the customer must give another number. */
+const isUnregistered = (b: DirectResponse | null) => [b?.response?.transactionResponseCode, b?.code].some((c) => String(c ?? '').toLowerCase() === 'k_5') || /not registered/i.test(directMessage(b));
+
+/**
+ * Starts a wallet payment (`INITIATE_R2P`, https://developers.kashier.io/docs/direct-api/wallet-payments):
+ * Kashier sends a request-to-pay to the customer's wallet app; the outcome comes by webhook and by
+ * `reconcileWalletPayment`. The amount is ours; the request is hashed with the Payment API Key.
+ */
+export async function initiateWalletPayment(account: KashierAccount, input: WalletInput, fetchImpl?: typeof fetch): Promise<KashierWalletOrder> {
+  const amount = Number(kashierAmount(input.amountCents));
+  let body: DirectResponse;
+  try {
+    body = await call<DirectResponse>(
+      account.mode,
+      '/v3/orders/',
+      {
+        method: 'POST',
+        host: KASHIER_FEP,
+        hash: kashierOrderHash(account.apiKey, account.merchantId, input.reference, amount, 'EGP'),
+        body: {
+          apiOperation: 'INITIATE_R2P',
+          paymentMethod: { type: 'wallet' },
+          order: { reference: input.reference, amount, currency: 'EGP' },
+          customer: { reference: input.workspaceId, email: input.customerEmail, mobilePhone: input.mobile },
+          interactionSource: 'ECOMMERCE',
+          reconciliation: { webhookUrl: input.webhookUrl },
+          merchantId: account.merchantId,
+        },
+      },
+      fetchImpl,
+    );
+  } catch (err) {
+    if (!(err instanceof KashierError)) throw err;
+    // A refused number comes back as 400 with k_5; everything else is Kashier's problem, not the customer's.
+    throw new KashierWalletError(err.message, err.status, isUnregistered(err.body as DirectResponse | null) ? 'unregistered_wallet' : null, err.body);
+  }
+  const r = body.response;
+  const status = String(r?.status ?? body.status ?? '').toUpperCase();
+  if (status !== 'SUCCESS' || typeof r?.order?.systemOrderId !== 'string') {
+    throw new KashierWalletError(directMessage(body) || 'Kashier did not start the wallet payment', 502, isUnregistered(body) ? 'unregistered_wallet' : null);
+  }
+  if (r.order.reference !== undefined && r.order.reference !== input.reference) throw new KashierWalletError('Kashier echoed a different order', 502, null);
+  return { systemOrderId: r.order.systemOrderId, transactionId: typeof r.transactionId === 'string' ? r.transactionId : null };
+}
+
+/** A wallet order's state as Kashier reports it (`RECONCILE_WALLET`): `SUCCESS`, `PENDING` (customer hasn't answered) or `FAILURE` (declined, timed out). */
+export type KashierWalletResult = { status: 'SUCCESS' | 'PENDING' | 'FAILURE'; amount?: number | string; currency?: string; paidThrough?: string; payerName?: string; raw: unknown };
+
+export async function reconcileWalletPayment(account: KashierAccount, systemOrderId: string, fetchImpl?: typeof fetch): Promise<KashierWalletResult> {
+  let body: DirectResponse;
+  try {
+    body = await call<DirectResponse>(
+      account.mode,
+      `/v3/orders/${encodeURIComponent(systemOrderId)}`,
+      { method: 'PUT', host: KASHIER_FEP, secretKey: account.secretKey, apiKey: account.apiKey, body: { apiOperation: 'RECONCILE_WALLET', paymentMethod: { type: 'wallet' }, merchantId: account.merchantId } },
+      fetchImpl,
+    );
+  } catch (err) {
+    if (!(err instanceof KashierError)) throw err;
+    // Kashier answers a declined or expired request-to-pay with 400 ("FAILURE"): the payment is over.
+    if (err.status === 400) return { status: 'FAILURE', raw: { message: err.message } };
+    throw err;
+  }
+  const r = body.response;
+  const status = String(r?.status ?? body.status ?? '').toUpperCase();
+  return {
+    status: status === 'SUCCESS' ? 'SUCCESS' : status === 'PENDING' || status === '' ? 'PENDING' : 'FAILURE',
+    amount: r?.amount,
+    currency: r?.currency,
+    paidThrough: r?.paymentMethod?.wallet?.paidThrough,
+    payerName: r?.paymentMethod?.wallet?.payerName,
+    raw: body,
+  };
 }
 
 /**
@@ -569,30 +719,80 @@ export async function settleKashierPayment(db: Db, account: KashierAccount, sess
     if (status === 'PAID') {
       const reasons = kashierReviewReasons(result, payment, account.merchantId);
       const extra = { providerPaymentId, raw: result, audit: { sessionId, kashierStatus: status, method: result.method ?? null, amount: result.amount ?? null } };
-      if (payment.mode === 'test') {
-        // A sandbox payment proves the flow end to end but buys nothing: it is verified and recorded,
-        // never turned into a plan or a plan request (so no admin approval can activate one either).
-        await tx
-          .update(payments)
-          .set({ status: reasons.length > 0 ? 'review' : 'paid', providerPaymentId, error: reasons.length > 0 ? reasons.join(',') : null, raw: result as never, paidAt: reasons.length > 0 ? null : new Date() })
-          .where(eq(payments.id, payment.id));
-        await tx.insert(auditLogs).values({
-          action: 'payment.test_paid',
-          targetType: 'payment',
-          targetId: payment.id,
-          details: { provider: 'kashier', mode: 'test', planId: payment.planId, months: payment.months, amountCents: payment.amountCents, activated: false, reasons, ...extra.audit },
-        });
-        return { ...base, status: reasons.length > 0 ? 'review' : 'paid', activated: false };
-      }
-      if (reasons.length > 0) {
-        await holdPaymentForReview(tx, payment, details, reasons, extra);
-        return { ...base, status: 'review', activated: false };
-      }
-      await activatePaidPayment(tx, payment, details, extra);
-      return { ...base, status: 'paid', activated: true };
+      return { ...base, ...(await settlePaid(tx, payment, details, reasons, extra)) };
     }
     if (FAILED.has(status) && payment.status === 'pending') {
       await tx.update(payments).set({ status: 'failed', error: status.toLowerCase(), raw: result as never }).where(and(eq(payments.id, payment.id), eq(payments.status, 'pending')));
+      return { ...base, status: 'failed', activated: false };
+    }
+    return { ...base, status: payment.status, activated: false };
+  });
+}
+
+type SettleExtra = { providerPaymentId: string | null; raw: unknown; audit: Record<string, unknown> };
+
+/**
+ * A payment Kashier reports as paid, inside the caller's row lock: every check passed → the plan is
+ * activated once; a check failed → `review` (no plan). A sandbox payment proves the flow end to end but
+ * buys nothing: it is verified and recorded, never turned into a plan or a plan request (so no admin
+ * approval can activate one either).
+ */
+async function settlePaid(tx: Tx, payment: typeof payments.$inferSelect, details: PaymentDetails, reasons: string[], extra: SettleExtra): Promise<{ status: string; activated: boolean }> {
+  if (payment.mode === 'test') {
+    await tx
+      .update(payments)
+      .set({ status: reasons.length > 0 ? 'review' : 'paid', providerPaymentId: extra.providerPaymentId, error: reasons.length > 0 ? reasons.join(',') : null, raw: extra.raw as never, paidAt: reasons.length > 0 ? null : new Date() })
+      .where(eq(payments.id, payment.id));
+    await tx.insert(auditLogs).values({
+      action: 'payment.test_paid',
+      targetType: 'payment',
+      targetId: payment.id,
+      details: { provider: 'kashier', mode: 'test', planId: payment.planId, months: payment.months, amountCents: payment.amountCents, activated: false, reasons, ...extra.audit },
+    });
+    return { status: reasons.length > 0 ? 'review' : 'paid', activated: false };
+  }
+  if (reasons.length > 0) {
+    await holdPaymentForReview(tx, payment, details, reasons, extra);
+    return { status: 'review', activated: false };
+  }
+  await activatePaidPayment(tx, payment, details, extra);
+  return { status: 'paid', activated: true };
+}
+
+/**
+ * Records a wallet order's state (`reconcileWalletPayment`, read with the payment's own mode keys)
+ * against its payment, under the same row lock as sessions: SUCCESS (amount and currency as ours) →
+ * the plan is activated once; a mismatch → `review`; FAILURE → `failed`; PENDING → unchanged.
+ * The order is addressed by the `systemOrderId` Kashier answered our own hashed request with, so the
+ * merchant and order checks of sessions don't apply. Null when the order isn't one of ours in this mode.
+ */
+export async function settleKashierWalletPayment(db: Db, account: KashierAccount, kashierOrderId: string, result: KashierWalletResult): Promise<KashierSettled | null> {
+  return db.transaction(async (tx) => {
+    const [payment] = await tx
+      .select()
+      .from(payments)
+      .where(and(eq(payments.kashierOrderId, kashierOrderId), eq(payments.provider, 'kashier')))
+      .for('update');
+    if (!payment || payment.mode !== account.mode) return null;
+    const base = { paymentId: payment.id, workspaceId: payment.workspaceId };
+    if (payment.status !== 'pending' && payment.status !== 'failed') return { ...base, status: payment.status, activated: false };
+    if (result.status === 'SUCCESS') {
+      const reasons: string[] = [];
+      if (result.amount !== undefined && parseKashierAmount(result.amount) !== payment.amountCents) reasons.push('amount_mismatch');
+      if (result.currency !== undefined && String(result.currency).toUpperCase() !== payment.currency) reasons.push('currency_mismatch');
+      const details: PaymentDetails = {
+        method: 'kashier',
+        sessionId: kashierOrderId,
+        orderId: kashierOrderId,
+        paymentMethod: result.paidThrough ? `wallet (${result.paidThrough})` : 'wallet',
+        amount: payment.amountCents / 100,
+        ...(payment.mode === 'test' ? { test: true } : {}),
+      };
+      const extra: SettleExtra = { providerPaymentId: kashierOrderId, raw: result.raw, audit: { kashierOrderId, kashierStatus: result.status, method: 'wallet', paidThrough: result.paidThrough ?? null, amount: result.amount ?? null } };
+      return { ...base, ...(await settlePaid(tx, payment, details, reasons, extra)) };
+    }
+    if (result.status === 'FAILURE' && payment.status === 'pending') {
+      await tx.update(payments).set({ status: 'failed', error: 'wallet_declined', raw: result.raw as never }).where(and(eq(payments.id, payment.id), eq(payments.status, 'pending')));
       return { ...base, status: 'failed', activated: false };
     }
     return { ...base, status: payment.status, activated: false };

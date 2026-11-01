@@ -10,7 +10,7 @@ import { useI18n } from '../../i18n';
 import type { PricedPlan } from '../../site/content';
 import { Button, cx, ErrorNote, Field, flip, Modal, usePlanName } from '../../ui';
 import { CopyLine, KASHIER_METHOD_ICON, METHOD_LOOK, MethodGlyph, shrinkImage, usePaymentSettings } from './methods';
-import { CheckoutFrame, KashierCheckout, type OpenedCheckout, useKashierConfig } from './OnlineCheckout';
+import { CheckoutFrame, KashierCheckout, type OpenedCheckout, useKashierConfig, WalletCheckout } from './OnlineCheckout';
 import { RateLine, TrustStrip } from './Trust';
 
 type Proof = { mimetype: 'image/jpeg'; data: string; previewUrl: string };
@@ -432,7 +432,19 @@ export function RequestPlanModal({
           </ol>
         )}
 
-        {step === 'pay' && totalEgp !== null ? (
+        {step === 'pay' && totalEgp !== null && onlineMethod === 'wallet' ? (
+          // Wallets need no card data, so the whole payment happens on our page: a request-to-pay to the wallet app.
+          <WalletCheckout
+            planId={plan.id}
+            months={months}
+            amountLabel={p.egp(totalEgp)}
+            usdLabel={p.usd(totalUsd)}
+            test={kashier.data?.mode === 'test'}
+            onBack={() => setStep('plan')}
+            onNeedsPhone={onNeedsPhone}
+            onDone={onPaid}
+          />
+        ) : step === 'pay' && totalEgp !== null ? (
           <KashierCheckout
             planId={plan.id}
             months={months}

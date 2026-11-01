@@ -1,0 +1,1 @@
+ALTER TABLE "payments" ADD COLUMN "kashier_order_id" text;
