@@ -492,6 +492,37 @@ describe.skipIf(!url)('kashier payments (integration)', () => {
     expect(liveOn.statusCode).toBe(422);
   });
 
+  // Production on 2026-11-01 00:40Z: test mode, keys saved and tested, account methods read, the customer
+  // on the test list, but the switch never saved on. Every condition held except `enabled`.
+  it('the production state: everything set except the switch, so the listed customer still gets the manual request', async () => {
+    await configure({ enabled: false, mode: 'test', methods: ['card', 'wallet'] });
+    expect((await call(admin, 'POST', '/api/admin/kashier/test', { mode: 'test' })).json().data.ok).toBe(true);
+    const [row] = await sql<{ email: string }[]>`select email from users where id = ${customer.userId}`;
+    const saved = await call(admin, 'PUT', '/api/admin/kashier', { enabled: false, mode: 'test', methods: ['card', 'wallet'], testers: [row!.email] });
+    expect(saved.statusCode, saved.body).toBe(200);
+    const settings = saved.json().data;
+    expect(settings).toMatchObject({ enabled: false, mode: 'test', methods: ['card', 'wallet'], testers: [row!.email.toLowerCase()] });
+    expect(settings.test.accountMethods).toEqual(expect.arrayContaining(['card', 'wallet']));
+    // With the switch off, the listed customer is told online payment isn't available…
+    expect((await call(customer, 'GET', '/api/payments/kashier')).json().data).toEqual({ enabled: false, mode: 'test' });
+    expect((await call(customer, 'POST', '/api/payments/kashier', { planId: 'pro' })).statusCode).toBe(503);
+    // …and the switch alone turns it on, for that customer only (another customer stays on the manual request).
+    expect((await call(admin, 'PUT', '/api/admin/kashier', { enabled: true, mode: 'test', methods: ['card', 'wallet'] })).statusCode).toBe(200);
+    expect((await call(customer, 'GET', '/api/payments/kashier')).json().data).toEqual({ enabled: true, mode: 'test' });
+    await resetPlan(customer);
+    const t = await openCheckout(customer, 'pro');
+    expect(t.payment).toMatchObject({ mode: 'test', status: 'pending' });
+    expect(created.at(-1)!.mode).toBe('test');
+    const other = await makeAccount('other', 'user');
+    try {
+      expect((await call(other, 'GET', '/api/payments/kashier')).json().data.enabled).toBe(false);
+    } finally {
+      await sql`delete from workspaces where id = ${other.id}`;
+      await sql`delete from users where id = ${other.userId}`;
+    }
+    expect((await call(admin, 'PUT', '/api/admin/kashier', { enabled: true, mode: 'test', methods: ['card', 'wallet'], testers: [] })).statusCode).toBe(200);
+  });
+
   it('switches live payments on only after a passing connection test and an explicit confirmation', async () => {
     await configure({ enabled: false, mode: 'test' });
     const untested = await call(admin, 'PUT', '/api/admin/kashier', { enabled: true, mode: 'live', methods: ['card'], confirmLive: true });
