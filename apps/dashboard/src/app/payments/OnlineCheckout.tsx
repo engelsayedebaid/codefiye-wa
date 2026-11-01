@@ -416,6 +416,7 @@ export function WalletPanel({
       className="space-y-4"
       onSubmit={(e) => {
         e.preventDefault();
+        e.stopPropagation();
         setFieldError(valid ? null : w.invalid);
         if (valid && !send.isPending) send.mutate();
       }}

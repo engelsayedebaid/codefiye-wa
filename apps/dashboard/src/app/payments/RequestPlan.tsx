@@ -1,8 +1,8 @@
 import { discountPercent } from '@wa/shared/plan-pricing';
 import { enabledPaymentMethods, PAYMENT_MONTHS, type PaymentDetails, type PaymentMethod, type PaymentMonths, type PaymentSettings, planPriceEgp } from '@wa/shared/payments';
 import { useMutation } from '@tanstack/react-query';
-import { ArrowLeft, Check, ImagePlus, Info, Loader2, Receipt } from '../../icons';
-import { type DragEvent, type FormEvent, useRef, useState } from 'react';
+import { ArrowLeft, Check, ImagePlus, Info, Loader2, Receipt, ShieldCheck, X } from '../../icons';
+import { type DragEvent, type FormEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import { api, ApiRequestError, errorMessage } from '../../api';
 import { useCurrencyRates } from '../../currency';
 import { useI18n } from '../../i18n';
@@ -224,6 +224,45 @@ function ScreenshotPicker({ proof, onChange, error }: { proof: Proof | null; onC
   );
 }
 
+/** The full-screen shell of the online checkout: a header with the plan, the amount and a close button over a scrolling page. */
+function OnlinePayScreen({ title, amountLabel, test, onClose, children }: { title: string; amountLabel: string; test: boolean; onClose: () => void; children: ReactNode }) {
+  const { t } = useI18n();
+  const o = t.subscription.payment.online;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return (
+    <div role="dialog" aria-modal aria-label={title} className="animate-fade-in fixed inset-0 z-50 flex flex-col bg-bg">
+      <header className="shrink-0 border-b border-line bg-card">
+        <div className="mx-auto flex w-full max-w-6xl items-center gap-3 px-4 py-3 sm:px-6">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-brand/12 text-brand">
+            <ShieldCheck className="size-4.5" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center gap-2 text-sm font-semibold">
+              {title}
+              {test && <span className="rounded-full bg-warning/15 px-2 py-0.5 text-[10px] font-bold text-warning">{o.testBadge}</span>}
+            </span>
+            <span className="block truncate text-xs text-muted">{o.secureHint}</span>
+          </span>
+          <span className="shrink-0 text-end">
+            <span className="block text-[10px] text-muted uppercase">{o.due}</span>
+            <span className="ltr block text-base font-bold tabular-nums">{amountLabel}</span>
+          </span>
+          <button type="button" onClick={onClose} aria-label={t.common.close} className="ms-1 flex size-9 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-raised hover:text-ink">
+            <X className="size-4" />
+          </button>
+        </div>
+      </header>
+      <main className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:py-8">{children}</div>
+      </main>
+    </div>
+  );
+}
+
 /** The plan, its discount and the total as it will be charged, over the exchange rate behind it. */
 function OrderSummary({ plan, months, egpPerUsd }: { plan: PricedPlan; months: PaymentMonths; egpPerUsd: number }) {
   const { t } = useI18n();
@@ -365,8 +404,49 @@ export function RequestPlanModal({
     );
   }
 
+  if (online && totalEgp !== null) {
+    // Online payment takes the whole screen, as a shop's checkout: the order on one side, the payment
+    // methods (each opening into its own form) on the other, with room for all of them. Not a <form>:
+    // each method's panel is its own form, and the page itself never submits anything.
+    return (
+      <OnlinePayScreen title={s.modalTitle(planName(plan))} amountLabel={p.egp(totalEgp)} test={kashier.data?.mode === 'test'} onClose={onClose}>
+        <div className="grid gap-6 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] md:gap-8 lg:gap-10">
+          <aside className="space-y-4 md:sticky md:top-4 md:self-start">
+            <OrderSummary plan={plan} months={months} egpPerUsd={egpPerUsd} />
+            <div className="space-y-2">
+              <p className="text-sm font-medium">{p.duration}</p>
+              <MonthsPicker plan={plan} egpPerUsd={egpPerUsd} value={months} onChange={setMonths} />
+            </div>
+            <TrustStrip />
+            <PayAgreement />
+          </aside>
+          <section className="min-w-0">
+            {loadingMethods ? (
+              <div className="flex justify-center py-10">
+                <Loader2 className="size-5 animate-spin text-brand" />
+              </div>
+            ) : (
+              <OnlinePaymentPanel
+                // The chosen length changes the amount, so a payment under way is never silently repriced: the panel starts over.
+                key={months}
+                methods={kashierMethods}
+                planId={plan.id}
+                months={months}
+                amountLabel={p.egp(totalEgp)}
+                test={kashier.data?.mode === 'test'}
+                onNeedsPhone={onNeedsPhone}
+                onDone={onPaid}
+                onOpened={setCheckout}
+              />
+            )}
+          </section>
+        </div>
+      </OnlinePayScreen>
+    );
+  }
+
   return (
-    <Modal title={s.modalTitle(planName(plan))} description={step === 'details' ? p.steps.details : undefined} onClose={onClose} size={online ? 'xl' : 'lg'} tall={!online}>
+    <Modal title={s.modalTitle(planName(plan))} description={step === 'details' ? p.steps.details : undefined} onClose={onClose} size="lg" tall>
       <form onSubmit={submit} className="space-y-5">
         {/* step indicator (manual transfers only: online payment is one screen) */}
         {payable && (
@@ -387,40 +467,7 @@ export function RequestPlanModal({
           </ol>
         )}
 
-        {online && totalEgp !== null ? (
-          // One screen, as a shop's checkout: the order on one side, the payment methods (each opening into its own form) on the other.
-          <div className="grid gap-6 pb-6 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] md:gap-8">
-            <aside className="space-y-4 md:sticky md:top-0 md:self-start">
-              <OrderSummary plan={plan} months={months} egpPerUsd={egpPerUsd} />
-              <div className="space-y-2">
-                <p className="text-sm font-medium">{p.duration}</p>
-                <MonthsPicker plan={plan} egpPerUsd={egpPerUsd} value={months} onChange={setMonths} />
-              </div>
-              <TrustStrip />
-              <PayAgreement />
-            </aside>
-            <section className="min-w-0">
-              {loadingMethods ? (
-                <div className="flex justify-center py-10">
-                  <Loader2 className="size-5 animate-spin text-brand" />
-                </div>
-              ) : (
-                <OnlinePaymentPanel
-                  // The chosen length changes the amount, so a payment under way is never silently repriced: the panel starts over.
-                  key={months}
-                  methods={kashierMethods}
-                  planId={plan.id}
-                  months={months}
-                  amountLabel={p.egp(totalEgp)}
-                  test={kashier.data?.mode === 'test'}
-                  onNeedsPhone={onNeedsPhone}
-                  onDone={onPaid}
-                  onOpened={setCheckout}
-                />
-              )}
-            </section>
-          </div>
-        ) : step === 'plan' ? (
+        {step === 'plan' ? (
           <>
             <OrderSummary plan={plan} months={months} egpPerUsd={egpPerUsd} />
 

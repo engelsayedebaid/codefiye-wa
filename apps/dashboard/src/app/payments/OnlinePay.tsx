@@ -180,6 +180,7 @@ export function CardPanel({ planId, months, amountLabel, test, onNeedsPhone, onD
 
   const pay = async (e: FormEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     const exp = validate();
     if (!exp || busy) return;
     setBusy(true);
