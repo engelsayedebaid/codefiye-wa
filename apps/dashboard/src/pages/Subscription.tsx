@@ -214,6 +214,10 @@ export function SubscriptionPage() {
             setSent(true);
             changed();
           }}
+          onPaid={() => {
+            setRequesting(null);
+            changed();
+          }}
           onNeedsPhone={() => {
             setRequesting(null);
             setVerifying(true);

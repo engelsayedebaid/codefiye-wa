@@ -293,7 +293,12 @@ export type SessionInput = {
   webhookUrl: string;
   locale: 'ar' | 'en';
   allowedMethods?: string;
+  /** The method the customer picked on our page: Kashier's checkout opens on it. */
+  defaultMethod?: KashierMethod;
 };
+
+/** Our brand teal (the dashboard's light-theme `--color-brand`): Kashier paints its buttons and selections with it. */
+const KASHIER_BRAND_COLOR = '#367a6b';
 
 export type KashierCreatedSession = { _id: string; sessionUrl: string; status?: string; merchantId?: string; paymentParams?: { amount?: string; currency?: string; order?: string } };
 
@@ -320,6 +325,9 @@ export async function createPaymentSession(account: KashierAccount, input: Sessi
         display: input.locale,
         type: 'one-time',
         ...(input.allowedMethods ? { allowedMethods: input.allowedMethods } : {}),
+        // BNPL providers aren't a method of their own on Kashier's page; they open under their `bnpl` tab.
+        ...(input.defaultMethod ? { defaultMethod: KASHIER_BNPL.includes(input.defaultMethod) ? 'bnpl' : input.defaultMethod } : {}),
+        brandColor: KASHIER_BRAND_COLOR,
         failureRedirect: false,
         manualCapture: false,
         description: input.description.slice(0, 119),

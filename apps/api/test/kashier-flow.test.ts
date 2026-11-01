@@ -214,9 +214,9 @@ describe.skipIf(!url)('kashier payments (integration)', () => {
 
   it('opens the checkout on the method the customer picked, and only on an offered one', async () => {
     const { payment } = await openCheckout(customer, 'basic', 1, { method: 'wallet' });
-    expect(created.at(-1)!.body).toMatchObject({ order: payment.id, allowedMethods: 'wallet' });
+    expect(created.at(-1)!.body).toMatchObject({ order: payment.id, allowedMethods: 'wallet', defaultMethod: 'wallet', brandColor: '#367a6b' });
     const bnpl = await openCheckout(customer, 'basic', 1, { method: 'valu' });
-    expect(created.at(-1)!.body).toMatchObject({ order: bnpl.payment.id, allowedMethods: 'bnpl[valu]' });
+    expect(created.at(-1)!.body).toMatchObject({ order: bnpl.payment.id, allowedMethods: 'bnpl[valu]', defaultMethod: 'bnpl' });
     // Souhoola is on the live account but not offered by the admin: refused before any session is opened.
     const before = created.length;
     const res = await call(customer, 'POST', '/api/payments/kashier', { planId: 'basic', method: 'souhoola' });

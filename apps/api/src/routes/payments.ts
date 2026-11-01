@@ -178,6 +178,7 @@ export function paymentRoutes(deps: Deps, options: Options): FastifyPluginAsyncZ
             webhookUrl: view[account.mode].webhookUrl,
             locale,
             allowedMethods: allowedMethodsParam(method ? [method] : account.methods, view[account.mode].accountMethods),
+            ...(method ? { defaultMethod: method } : {}),
           });
           const [saved] = await db.update(payments).set({ sessionId: session._id }).where(eq(payments.id, payment!.id)).returning();
           reply.code(201);

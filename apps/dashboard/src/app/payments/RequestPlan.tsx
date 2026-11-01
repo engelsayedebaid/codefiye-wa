@@ -10,7 +10,7 @@ import { useI18n } from '../../i18n';
 import type { PricedPlan } from '../../site/content';
 import { Button, cx, ErrorNote, Field, flip, Modal, usePlanName } from '../../ui';
 import { CopyLine, KASHIER_METHOD_ICON, METHOD_LOOK, MethodGlyph, shrinkImage, usePaymentSettings } from './methods';
-import { KashierCheckout, useKashierConfig } from './OnlineCheckout';
+import { CheckoutFrame, KashierCheckout, type OpenedCheckout, useKashierConfig } from './OnlineCheckout';
 import { RateLine, TrustStrip } from './Trust';
 
 type Proof = { mimetype: 'image/jpeg'; data: string; previewUrl: string };
@@ -302,7 +302,20 @@ function OrderSummary({ plan, months, egpPerUsd }: { plan: PricedPlan; months: P
   );
 }
 
-export function RequestPlanModal({ plan, onClose, onSent, onNeedsPhone }: { plan: PricedPlan; onClose: () => void; onSent: () => void; onNeedsPhone: () => void }) {
+export function RequestPlanModal({
+  plan,
+  onClose,
+  onSent,
+  onPaid,
+  onNeedsPhone,
+}: {
+  plan: PricedPlan;
+  onClose: () => void;
+  onSent: () => void;
+  /** An online payment reached its outcome (shown to the customer) and they closed it. */
+  onPaid: () => void;
+  onNeedsPhone: () => void;
+}) {
   const { t } = useI18n();
   const s = t.subscription;
   const p = s.payment;
@@ -335,6 +348,8 @@ export function RequestPlanModal({ plan, onClose, onSent, onNeedsPhone }: { plan
   const [picked, setPicked] = useState<KashierMethod | null>(null);
   // A single offered method needs no choice.
   const onlineMethod = picked ?? (kashierMethods.length === 1 ? kashierMethods[0]! : null);
+  // Kashier's checkout, once opened, takes over from the dialog (on our page, in its own frame).
+  const [checkout, setCheckout] = useState<OpenedCheckout | null>(null);
 
   const request = useMutation({
     mutationFn: (body: Record<string, unknown>) => api('/api/plan-requests', { method: 'POST', body, timeoutMs: 60_000 }),
@@ -382,6 +397,19 @@ export function RequestPlanModal({ plan, onClose, onSent, onNeedsPhone }: { plan
     ((method === 'vodafone_cash' && fields.senderPhone.trim().length >= 11) || (method === 'instapay' && fields.sender.trim().length >= 3) || (method === 'bank_transfer' && fields.senderName.trim().length >= 2));
   const totalLabel = totalEgp !== null && egpPerUsd > 0 ? p.egp(totalEgp) : p.usd(totalUsd);
 
+  if (checkout) {
+    return (
+      <CheckoutFrame
+        checkout={checkout}
+        planLabel={`${planName(plan)} · ${p.months(checkout.payment.months)}`}
+        amountLabel={p.egp(checkout.payment.amountCents / 100)}
+        test={checkout.payment.mode === 'test'}
+        onBack={() => setCheckout(null)}
+        onDone={onPaid}
+      />
+    );
+  }
+
   return (
     <Modal title={s.modalTitle(planName(plan))} description={step === 'details' ? p.steps.details : undefined} onClose={onClose} size="lg" tall>
       <form onSubmit={submit} className="space-y-5">
@@ -414,6 +442,7 @@ export function RequestPlanModal({ plan, onClose, onSent, onNeedsPhone }: { plan
             test={kashier.data?.mode === 'test'}
             onBack={() => setStep('plan')}
             onNeedsPhone={onNeedsPhone}
+            onOpened={setCheckout}
           />
         ) : step === 'plan' ? (
           <>
