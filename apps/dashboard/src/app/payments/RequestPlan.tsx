@@ -8,7 +8,7 @@ import { useI18n } from '../../i18n';
 import type { PricedPlan } from '../../site/content';
 import { Button, cx, ErrorNote, Field, flip, Modal, usePlanName } from '../../ui';
 import { CopyLine, METHOD_LOOK, MethodGlyph, shrinkImage, usePaymentSettings } from './methods';
-import { useXPayConfig, XPayCheckout } from './XPayCheckout';
+import { KashierCheckout, useKashierConfig } from './OnlineCheckout';
 
 type Proof = { mimetype: 'image/jpeg'; data: string; previewUrl: string };
 
@@ -245,11 +245,11 @@ export function RequestPlanModal({ plan, onClose, onSent, onNeedsPhone }: { plan
   const compare = off !== null ? plan.compareAtUsd : null;
   // No transfer when nothing is configured, or the plan is free after a 100% discount.
   const free = plan.priceUsd === 0;
-  const xpay = useXPayConfig();
-  // With XPay on, priced plans are paid online right here and the manual transfers are hidden.
-  const online = Boolean(xpay.data?.enabled) && !free && totalEgp !== null && totalEgp > 0;
+  const kashier = useKashierConfig();
+  // With Kashier taking payments for this account, priced plans are paid online and the manual transfers are hidden.
+  const online = Boolean(kashier.data?.enabled) && !free && totalEgp !== null && totalEgp > 0;
   const payable = !online && methods.length > 0 && !free;
-  const loadingMethods = settings.isPending || xpay.isPending;
+  const loadingMethods = settings.isPending || kashier.isPending;
   const o = p.online;
 
   const request = useMutation({
@@ -320,13 +320,12 @@ export function RequestPlanModal({ plan, onClose, onSent, onNeedsPhone }: { plan
         )}
 
         {step === 'pay' && totalEgp !== null ? (
-          <XPayCheckout
+          <KashierCheckout
             planId={plan.id}
-            planLabel={planName(plan)}
             months={months}
             amountLabel={p.egp(totalEgp)}
+            test={kashier.data?.mode === 'test'}
             onBack={() => setStep('plan')}
-            onPaid={onSent}
             onNeedsPhone={onNeedsPhone}
           />
         ) : step === 'plan' ? (
@@ -361,7 +360,7 @@ export function RequestPlanModal({ plan, onClose, onSent, onNeedsPhone }: { plan
               </div>
             ) : online ? (
               <div className="flex items-start gap-3 rounded-xl border border-brand/30 bg-brand/[0.06] p-3.5">
-                <MethodGlyph method="xpay" />
+                <MethodGlyph method="kashier" />
                 <span className="min-w-0 text-sm">
                   <span className="block font-semibold">{o.secure}</span>
                   <span className="block text-xs text-muted">{o.secureHint}</span>

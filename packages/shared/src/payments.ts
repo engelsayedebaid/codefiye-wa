@@ -20,7 +20,9 @@ export type PaymentDetails =
    * Paid online through XPay (recorded by the platform, never sent by customers). `test`: paid with test
    * keys. `review`: why the payment didn't pass the amount/order checks and waits for an admin.
    */
-  | { method: 'xpay'; sessionId: string; paymentId?: string; amount?: number; test?: boolean; review?: string[] };
+  | { method: 'xpay'; sessionId: string; paymentId?: string; amount?: number; test?: boolean; review?: string[] }
+  /** Paid online through Kashier: its session, order and transaction, the method used (`card`, `wallet`, …), and the same flags. */
+  | { method: 'kashier'; sessionId: string; orderId?: string; transactionId?: string; paymentMethod?: string; amount?: number; test?: boolean; review?: string[] };
 
 /** Every way a plan can be paid: the manual transfers above, plus XPay. */
 export type PaidMethod = PaymentDetails['method'];
@@ -61,6 +63,9 @@ export type XPayMethod = (typeof XPAY_METHODS)[number];
  * admin picks the active mode; there is never a fallback from one to the other.
  */
 export const XPAY_MODES = ['test', 'live'] as const;
+
+/** At most this many test-mode accounts besides the admins. */
+export const XPAY_MAX_TESTERS = 50;
 export type XPayMode = (typeof XPAY_MODES)[number];
 
 /** What the dashboard needs to open XPay's checkout (`GET /api/payments/xpay`). */
@@ -125,6 +130,11 @@ export type XPaySettings = {
   live: XPayModeView;
   /** AUTH_ENCRYPTION_KEY is set: without it no secret can be stored or read, and XPay stays off. */
   encryptionReady: boolean;
+  /**
+   * Accounts (by email) allowed to pay in test mode besides the admins, to try the sandbox checkout. Nobody
+   * else ever sees a test checkout, so no real customer can get a plan from a test payment.
+   */
+  testers: string[];
 };
 
 /** One mode's keys to save; blank or missing secrets keep the stored ones. */
@@ -139,6 +149,8 @@ export type XPaySettingsInput = {
   live?: XPayModeInput;
   /** Required to switch live payments on (the dashboard asks for confirmation first). */
   confirmLive?: boolean;
+  /** Replaces the test-mode allow list when given. */
+  testers?: string[];
 };
 
 export const XPAY_CONNECTION_ERRORS = ['invalid_key', 'forbidden', 'wrong_mode', 'unreachable', 'unexpected', 'missing_key', 'live_not_enabled', 'egp_unsupported'] as const;

@@ -1,5 +1,18 @@
 import { and, eq, payments } from '@wa/db';
-import { listedPriceUsd, ok, ONLINE_PAYMENT_STATUSES, paymentMonthsSchema, planPriceEgp, PLANS, REQUESTABLE_PLANS, successSchema, XPAY_MODES, type XPayMode } from '@wa/shared';
+import {
+  KASHIER_MODES,
+  type KashierMode,
+  listedPriceUsd,
+  ok,
+  ONLINE_PAYMENT_STATUSES,
+  paymentMonthsSchema,
+  planPriceEgp,
+  PLANS,
+  REQUESTABLE_PLANS,
+  successSchema,
+  XPAY_MODES,
+  type XPayMode,
+} from '@wa/shared';
 import type { FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -8,13 +21,28 @@ import { requirePat } from '../lib/auth';
 import { ApiError, forbidden, notFound, unavailable, unprocessable } from '../lib/errors';
 import { getPaymentSettings } from '../lib/payments';
 import { getPlanPricing } from '../lib/plan-pricing';
+import { publicBaseUrl } from '../lib/public-url';
 import {
-  createCheckoutSession,
+  allowedMethodsParam,
+  createPaymentSession,
+  getKashierAccountFor,
+  getKashierModeAccount,
+  getKashierPublicConfig,
+  getKashierSettings,
+  getSessionPayment,
+  KashierError,
+  kashierEventId,
+  kashierEventSeen,
+  type KashierSettled,
+  recordKashierEvent,
+  recordKashierWebhookSeen,
+  settleKashierPayment,
+  verifyKashierWebhook,
+} from '../lib/kashier';
+import {
   eventSeen,
-  getActiveXPayAccount,
   getCheckoutSession,
   getXPayModeAccount,
-  getXPayPublicConfig,
   recordEvent,
   recordRefund,
   recordWebhookSeen,
@@ -35,6 +63,8 @@ const paymentDto = z.object({
   months: z.number(),
   amountCents: z.number(),
   currency: z.string(),
+  /** `kashier`, or `xpay` for payments made before the switch. */
+  provider: z.string(),
   mode: z.enum(XPAY_MODES),
   /** Why it failed or is held: `expired`, `payment_failed`, or the review reasons. */
   error: z.string().nullable(),
@@ -50,22 +80,24 @@ const toPaymentDto = (p: PaymentRow) => ({
   months: p.months,
   amountCents: p.amountCents,
   currency: p.currency,
+  provider: p.provider,
   mode: p.mode,
   error: p.error,
   createdAt: p.createdAt.toISOString(),
   paidAt: p.paidAt?.toISOString() ?? null,
 });
 
-/** Customer endpoints for XPay checkouts (`/api/payments/…`). */
+/** Customer endpoints for online payments (`/api/payments/…`): Kashier checkouts, and settling any payment. */
 export function paymentRoutes(deps: Deps, options: Options): FastifyPluginAsyncZod {
   const { sql, db, auth } = deps;
-  const publicOrigin = new URL(options.publicUrl).origin;
-  const allowedOrigins = new Set([publicOrigin, ...options.corsOrigins.map((o) => o.replace(/\/+$/, ''))]);
-  /** Where a full-page bank check sends the customer back: the dashboard they paid from, when it's one of ours. */
+  const corsOrigins = options.corsOrigins.map((o) => o.replace(/\/+$/, ''));
+  /** Where the customer comes back after paying: the dashboard they paid from, when it's one of ours. */
   const returnOrigin = (req: FastifyRequest) => {
+    const publicOrigin = new URL(publicBaseUrl(options.publicUrl, req)).origin;
     const origin = req.headers.origin;
-    return typeof origin === 'string' && allowedOrigins.has(origin) ? origin : publicOrigin;
+    return typeof origin === 'string' && (origin === publicOrigin || corsOrigins.includes(origin)) ? origin : publicOrigin;
   };
+  const caller = (req: FastifyRequest) => ({ isAdmin: req.auth.isAdmin, userId: req.auth.userId });
 
   const owned = async (req: FastifyRequest, id: string) => {
     const [row] = await db
@@ -78,67 +110,75 @@ export function paymentRoutes(deps: Deps, options: Options): FastifyPluginAsyncZ
 
   return async (app) => {
     app.get(
-      '/payments/xpay',
+      '/payments/kashier',
       {
         schema: {
           tags,
-          summary: 'Whether this account pays online through XPay, and the publishable key',
-          response: { 200: successSchema(z.object({ enabled: z.boolean(), publishableKey: z.string(), mode: z.enum(XPAY_MODES) })) },
+          summary: 'Whether this account pays online through Kashier',
+          description: 'Live mode: everyone. Test mode: admins and the test accounts the admin listed; everyone else requests plans manually.',
+          response: { 200: successSchema(z.object({ enabled: z.boolean(), mode: z.enum(KASHIER_MODES) })) },
         },
       },
       async (req) => {
         requirePat(req);
-        return ok(await getXPayPublicConfig(sql, deps.encryptionKey, req.auth.isAdmin));
+        return ok(await getKashierPublicConfig(sql, deps.encryptionKey, caller(req)));
       },
     );
 
     app.post(
-      '/payments/xpay',
+      '/payments/kashier',
       {
         schema: {
           tags,
-          summary: 'Open an XPay checkout for a plan',
+          summary: 'Open a Kashier checkout for a plan',
           description:
-            'Prices the plan in EGP for `months`, opens an XPay Checkout Session and returns its `clientSecret` for the XPay SDK. ' +
-            'The plan is activated only when XPay confirms the payment and its amounts check out; poll `POST /api/payments/{id}/check`.',
+            'Prices the plan in EGP for `months` on the server (any price the client has in mind is ignored), opens a Kashier payment session and ' +
+            "returns its `sessionUrl`: send the customer there to pay on Kashier's page. They come back to `/subscription?payment={id}`; the plan is " +
+            'activated only once Kashier confirms the payment and its order, merchant, currency and amount check out. Poll `POST /api/payments/{id}/check`.',
           body: z.object({ planId: z.enum(REQUESTABLE_PLANS), months: paymentMonthsSchema.default(1), locale: z.enum(['ar', 'en']).default('ar') }),
-          response: { 201: successSchema(z.object({ payment: paymentDto, publishableKey: z.string(), clientSecret: z.string() })) },
+          response: { 201: successSchema(z.object({ payment: paymentDto, sessionUrl: z.string() })) },
         },
       },
       async (req, reply) => {
         requirePat(req);
         if (!req.auth.isAdmin && !req.auth.phoneVerified) throw forbidden('Verify your phone number before paying for a plan', 'phone_unverified');
-        const account = await getActiveXPayAccount(sql, deps.encryptionKey);
-        // Test mode is for the admins: a customer must never buy a plan with a test card.
-        if (!account || (account.mode === 'test' && !req.auth.isAdmin)) throw unavailable('Online payment is not available right now', 'xpay_off');
+        // Test mode serves only admins and the listed test accounts: a customer never pays in the sandbox.
+        const account = await getKashierAccountFor(sql, deps.encryptionKey, caller(req));
+        if (!account) throw unavailable('Online payment is not available right now', 'kashier_off');
         const { planId, months, locale } = req.body;
-        const [settings, pricing] = await Promise.all([getPaymentSettings(sql), getPlanPricing(sql)]);
+        const [settings, pricing, view] = await Promise.all([getPaymentSettings(sql), getPlanPricing(sql), getKashierSettings(sql, deps.encryptionKey, publicBaseUrl(options.publicUrl, req))]);
         const egp = planPriceEgp(listedPriceUsd(planId, pricing), months, settings.egpPerUsd);
         if (egp === null || egp <= 0) throw unprocessable('This plan cannot be paid online', { planId: ['Request this plan instead'] });
+        const [customer] = await sql<{ email: string }[]>`
+          select email from users where id = coalesce(${req.auth.userId}::uuid, (select owner_id from workspaces where id = ${req.auth.workspaceId}))`;
+        if (!customer) throw forbidden('This workspace has no owner to bill', 'no_owner');
 
         const amountCents = egp * 100;
         const [payment] = await db
           .insert(payments)
-          .values({ workspaceId: req.auth.workspaceId, userId: req.auth.userId, planId, months, amountCents, currency: 'EGP', mode: account.mode })
+          .values({ workspaceId: req.auth.workspaceId, userId: req.auth.userId, provider: 'kashier', planId, months, amountCents, currency: 'EGP', mode: account.mode })
           .returning();
         try {
-          const session = await createCheckoutSession(account, {
+          const session = await createPaymentSession(account, {
             amountCents,
-            itemName: `${PLANS[planId].name} plan × ${months} ${months === 1 ? 'month' : 'months'}`,
             reference: payment!.id,
             workspaceId: req.auth.workspaceId,
+            customerEmail: customer.email,
+            description: `${PLANS[planId].name} plan × ${months} ${months === 1 ? 'month' : 'months'}`,
             redirectUrl: `${returnOrigin(req)}/subscription?payment=${payment!.id}`,
+            webhookUrl: view[account.mode].webhookUrl,
             locale,
+            allowedMethods: allowedMethodsParam(account.methods, view[account.mode].accountMethods),
           });
-          const [saved] = await db.update(payments).set({ sessionId: session.id }).where(eq(payments.id, payment!.id)).returning();
+          const [saved] = await db.update(payments).set({ sessionId: session._id }).where(eq(payments.id, payment!.id)).returning();
           reply.code(201);
-          return ok({ payment: toPaymentDto(saved!), publishableKey: account.publishableKey, clientSecret: session.clientSecret });
+          return ok({ payment: toPaymentDto(saved!), sessionUrl: session.sessionUrl });
         } catch (err) {
-          if (!(err instanceof XPayError)) throw err;
-          // Only XPay's own wording is kept (never a key); the customer just sees "try again".
-          await db.update(payments).set({ status: 'failed', error: `session_failed:${err.code ?? err.status}` }).where(eq(payments.id, payment!.id));
-          req.log.warn({ status: err.status, code: err.code, mode: account.mode }, 'xpay checkout session failed');
-          throw new ApiError(502, 'XPay could not open the payment. Please try again shortly.', undefined, { code: 'xpay_error' });
+          if (!(err instanceof KashierError)) throw err;
+          // Only a status is kept (never a key); the customer just sees "try again".
+          await db.update(payments).set({ status: 'failed', error: `session_failed:${err.status}` }).where(eq(payments.id, payment!.id));
+          req.log.warn({ status: err.status, message: err.message, mode: account.mode }, 'kashier payment session failed');
+          throw new ApiError(502, 'Kashier could not open the payment. Please try again shortly.', undefined, { code: 'kashier_error' });
         }
       },
     );
@@ -157,8 +197,10 @@ export function paymentRoutes(deps: Deps, options: Options): FastifyPluginAsyncZ
       {
         schema: {
           tags,
-          summary: 'Ask XPay for the payment now',
-          description: 'Reads the checkout session from XPay with the secret key of the mode it was opened in and settles the payment, so the plan turns on even before the webhook arrives.',
+          summary: 'Ask the payment provider for the payment now',
+          description:
+            'Reads the session from Kashier (or XPay, for payments made before Kashier) with the secret key of the mode it was opened in and settles the payment, ' +
+            'so the plan turns on even before the webhook arrives. A redirect back from the checkout is never trusted on its own.',
           params: z.object({ id: z.uuid() }),
           response: { 200: successSchema(paymentDto) },
         },
@@ -166,18 +208,22 @@ export function paymentRoutes(deps: Deps, options: Options): FastifyPluginAsyncZ
       async (req) => {
         requirePat(req);
         const payment = await owned(req, req.params.id);
-        if (payment.status === 'pending' && payment.sessionId) {
-          const account = await getXPayModeAccount(sql, deps.encryptionKey, payment.mode);
-          if (account) {
-            try {
-              const settled = await settlePayment(db, payment.mode, await getCheckoutSession(account, payment.sessionId));
-              if (settled?.activated) await auth.revoke({ workspaceIds: [settled.workspaceId] });
-            } catch (err) {
-              // The webhook still settles it; the dashboard keeps polling.
-              if (!(err instanceof XPayError)) throw err;
-              req.log.warn({ status: err.status, code: err.code, mode: payment.mode }, 'xpay session lookup failed');
+        if ((payment.status === 'pending' || payment.status === 'paid') && payment.sessionId) {
+          let settled: { activated: boolean; workspaceId: string } | null = null;
+          try {
+            if (payment.provider === 'kashier') {
+              const account = await getKashierModeAccount(sql, deps.encryptionKey, payment.mode);
+              if (account) settled = await settleKashierPayment(db, account, payment.sessionId, await getSessionPayment(account, payment.sessionId));
+            } else if (payment.status === 'pending') {
+              const account = await getXPayModeAccount(sql, deps.encryptionKey, payment.mode);
+              if (account) settled = await settlePayment(db, payment.mode, await getCheckoutSession(account, payment.sessionId));
             }
+          } catch (err) {
+            // The webhook still settles it; the dashboard keeps polling.
+            if (!(err instanceof KashierError) && !(err instanceof XPayError)) throw err;
+            req.log.warn({ status: err.status, provider: payment.provider, mode: payment.mode }, 'payment session lookup failed');
           }
+          if (settled?.activated) await auth.revoke({ workspaceIds: [settled.workspaceId] });
         }
         return ok(toPaymentDto(await owned(req, req.params.id)));
       },
@@ -243,6 +289,65 @@ export function xpayWebhookRoutes(deps: Deps): FastifyPluginAsyncZod {
       await recordEvent(db, event, mode, objectId, outcome);
       req.log.info({ event: event.type, eventId: event.id, mode, object: objectId, outcome }, 'xpay webhook');
       return reply.code(200).send({ received: true });
+    });
+  };
+}
+
+/**
+ * Kashier's webhooks, one endpoint per mode (`/api/payments/kashier/webhook/test|live`; sent with every
+ * payment as `serverWebhook`), each verified with that mode's own Payment API Key. Public, so trusted
+ * only through `x-kashier-signature`; then de-duplicated by `transactionId` + `status` (Kashier's own
+ * key; a repeat gets 409, which Kashier counts as delivered), and the session's state is read back from
+ * Kashier with the Secret Key before anything is settled.
+ */
+export function kashierWebhookRoutes(deps: Deps): FastifyPluginAsyncZod {
+  const { sql, db, auth } = deps;
+  return async (app) => {
+    app.post('/:mode', { schema: { hide: true, params: z.object({ mode: z.enum(KASHIER_MODES) }) } }, async (req, reply) => {
+      const mode: KashierMode = req.params.mode;
+      // Payments already opened in this mode still settle after the admin switches Kashier off or to the other mode.
+      const account = await getKashierModeAccount(sql, deps.encryptionKey, mode);
+      if (!account) return reply.code(503).send();
+      const body = (req.body ?? {}) as { event?: unknown; data?: unknown };
+      const event = typeof body.event === 'string' ? body.event : '';
+      const header = req.headers['x-kashier-signature'];
+      if (!event || !verifyKashierWebhook(body.data, typeof header === 'string' ? header : undefined, account.apiKey)) {
+        req.log.warn({ mode }, 'kashier webhook with a bad signature');
+        return reply.code(400).send();
+      }
+      const data = body.data as Record<string, unknown>;
+      await recordKashierWebhookSeen(sql, mode);
+      const eventId = kashierEventId(event, data);
+      if (await kashierEventSeen(sql, eventId)) return reply.code(409).send();
+
+      const orderId = typeof data.merchantOrderId === 'string' ? data.merchantOrderId : null;
+      const [payment] = orderId && /^[0-9a-f-]{36}$/i.test(orderId)
+        ? await db
+            .select()
+            .from(payments)
+            .where(and(eq(payments.id, orderId), eq(payments.provider, 'kashier'), eq(payments.mode, mode)))
+        : [];
+      let settled: KashierSettled | null = null;
+      let outcome = 'unknown_order';
+      if (payment?.sessionId) {
+        // The signed payload only says which order changed; its state comes from Kashier itself, read with
+        // this mode's Secret Key. If Kashier can't be reached, a non-2xx makes it deliver the event again.
+        try {
+          settled = await settleKashierPayment(db, account, payment.sessionId, await getSessionPayment(account, payment.sessionId));
+          outcome = settled?.status ?? 'unknown_session';
+        } catch (err) {
+          if (!(err instanceof KashierError)) throw err;
+          if (err.status === 404) outcome = 'unknown_session';
+          else {
+            req.log.warn({ status: err.status, eventId, mode }, 'kashier session lookup failed; asking for a retry');
+            return reply.code(503).send();
+          }
+        }
+      }
+      if (settled?.activated) await auth.revoke({ workspaceIds: [settled.workspaceId] });
+      await recordKashierEvent(db, eventId, mode, event, orderId, outcome);
+      req.log.info({ event, eventId, mode, order: orderId, status: data.status, outcome }, 'kashier webhook');
+      return reply.code(200).send();
     });
   };
 }

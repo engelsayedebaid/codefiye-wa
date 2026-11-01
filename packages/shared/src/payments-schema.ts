@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { PAYMENT_MONTHS, type PaymentDetails, type PaymentSettings, type TransferDetails, XPAY_CONNECTION_ERRORS, XPAY_METHODS, XPAY_MODES, type XPayMode, type XPayModeInput, type XPayModeView, type XPaySettings, type XPaySettingsInput } from './payments';
+import { PAYMENT_MONTHS, type PaymentDetails, type PaymentSettings, type TransferDetails, XPAY_CONNECTION_ERRORS, XPAY_MAX_TESTERS, XPAY_METHODS, XPAY_MODES, type XPayMode, type XPayModeInput, type XPayModeView, type XPaySettings, type XPaySettingsInput } from './payments';
 
 const egyptianMobile = z
   .string()
@@ -54,6 +54,16 @@ export const paymentDetailsDto: z.ZodType<PaymentDetails> = z.discriminatedUnion
     test: z.boolean().optional(),
     review: z.array(z.string()).optional(),
   }),
+  z.object({
+    method: z.literal('kashier'),
+    sessionId: z.string(),
+    orderId: z.string().optional(),
+    transactionId: z.string().optional(),
+    paymentMethod: z.string().optional(),
+    amount: z.number().optional(),
+    test: z.boolean().optional(),
+    review: z.array(z.string()).optional(),
+  }),
 ]);
 
 export const paymentSettingsSchema: z.ZodType<PaymentSettings> = z.object({
@@ -95,6 +105,7 @@ export const xpaySettingsDto: z.ZodType<XPaySettings> = z.object({
   test: modeView,
   live: modeView,
   encryptionReady: z.boolean(),
+  testers: z.array(z.string()),
 });
 
 const blankOr = (re: RegExp, message: string) => z.string().trim().max(300).refine((s) => s === '' || re.test(s), message).optional();
@@ -115,4 +126,5 @@ export const xpaySettingsInputSchema: z.ZodType<XPaySettingsInput> = z.object({
   test: modeInput('test').optional(),
   live: modeInput('live').optional(),
   confirmLive: z.boolean().optional(),
+  testers: z.array(z.string().trim().toLowerCase().max(254).pipe(z.email())).max(XPAY_MAX_TESTERS).optional(),
 });

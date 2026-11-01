@@ -1,6 +1,8 @@
 import { createHmac } from 'node:crypto';
 import { keyMode, type XPayCapabilities, xpayAvailableMethods, type XPayModeView, xpayLiveForCustomers, xpayReady, type XPaySettings } from '@wa/shared';
 import { describe, expect, it, vi } from 'vitest';
+import type { FastifyRequest } from 'fastify';
+import { isLoopbackUrl, publicBaseUrl } from '../src/lib/public-url';
 import { reviewReasons, testConnection, verifyWebhook, type XPayAccount, type XPaySession } from '../src/lib/xpay';
 
 const SECRET = 'whsec_test_secret';
@@ -61,6 +63,7 @@ const settings = (over: Partial<XPaySettings> = {}): XPaySettings => ({
   mode: 'live',
   methods: ['card'],
   encryptionReady: true,
+  testers: [],
   test: view({ publishableKey: 'pk_test_x', secretKeyHint: 'sk_test_••••abcd', webhookSecretHint: 'whsec_••••abcd' }),
   live: view({ publishableKey: 'pk_live_x', secretKeyHint: 'sk_live_••••abcd', webhookSecretHint: 'whsec_••••abcd' }),
   ...over,
@@ -208,5 +211,21 @@ describe('XPay connection test (GET /account)', () => {
   it('only knows the methods XPay documents: no mobile wallets appear even if listed', async () => {
     const body = accountBody({ supportedCurrencies: [{ code: 'EGP', decimals: 2, paymentMethodTypes: ['card', 'vodafone_cash', 'wallet'] }] });
     expect((await testConnection(account('live'), answer(200, body) as never)).capabilities?.methods).toEqual(['card']);
+  });
+});
+
+describe('public base URL for webhook and return links', () => {
+  const req = (host: string, protocol = 'https') => ({ host, hostname: host.replace(/:\d+$/, ''), protocol }) as unknown as FastifyRequest;
+  it('uses PUBLIC_URL when it names a real host', () => {
+    expect(publicBaseUrl('https://wa.codefiye.com/', req('evil.example'))).toBe('https://wa.codefiye.com');
+  });
+  it('falls back to the request origin when PUBLIC_URL is still the localhost default on a deployment', () => {
+    expect(publicBaseUrl('http://localhost:4000', req('wa.codefiye.com'))).toBe('https://wa.codefiye.com');
+    expect(publicBaseUrl('http://127.0.0.1:4000', req('codefiye-wa-production.up.railway.app'))).toBe('https://codefiye-wa-production.up.railway.app');
+  });
+  it('keeps localhost in development', () => {
+    expect(publicBaseUrl('http://localhost:4000', req('localhost:5173', 'http'))).toBe('http://localhost:4000');
+    expect(isLoopbackUrl('http://localhost:4000')).toBe(true);
+    expect(isLoopbackUrl('https://wa.codefiye.com')).toBe(false);
   });
 });

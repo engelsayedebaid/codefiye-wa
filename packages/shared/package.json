@@ -14,6 +14,7 @@
     "./currency": "./src/currency.ts",
     "./name-suggestions": "./src/name-suggestions.ts",
     "./payments": "./src/payments.ts",
+    "./kashier": "./src/kashier.ts",
     "./phone": "./src/phone.ts",
     "./site": "./src/site.ts",
     "./template-text": "./src/template-text.ts",

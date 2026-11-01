@@ -1,18 +1,17 @@
 import {
-  keyMode,
-  XPAY_METHODS,
-  XPAY_MODES,
-  type XPayConnectionError,
-  type XPayMethod,
-  type XPayMode,
-  xpayModeComplete,
-  xpayAvailableMethods,
-  xpayLiveForCustomers,
-  type XPayModeView,
-  xpayReady,
-  type XPaySettings,
-  type XPaySettingsInput,
-} from '@wa/shared/payments';
+  KASHIER_METHODS,
+  KASHIER_MODES,
+  kashierAvailableMethods,
+  type KashierConnectionError,
+  kashierLiveForCustomers,
+  type KashierMethod,
+  type KashierMode,
+  kashierModeComplete,
+  type KashierModeView,
+  kashierReady,
+  type KashierSettings,
+  type KashierSettingsInput,
+} from '@wa/shared/kashier';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Check, CheckCircle2, FlaskConical, Info, Loader2, RefreshCw, ShieldCheck, Trash2, Zap } from '../icons';
 import { type FormEvent, type ReactNode, useState } from 'react';
@@ -20,28 +19,32 @@ import { api, ApiRequestError, errorMessage } from '../api';
 import { CopyLine, MethodGlyph } from '../app/payments/methods';
 import { useI18n } from '../i18n';
 import { qk } from '../queries';
-import { Badge, Button, cx, ErrorNote, Field, Loading, LoadError, Modal, SuccessNote } from '../ui';
+import { Badge, Button, cx, ErrorNote, Field, Loading, LoadError, Modal, SuccessNote, TextArea } from '../ui';
 
-type ModeDraft = { publishableKey: string; secretKey: string; webhookSecret: string; clear: boolean };
-type Draft = { enabled: boolean; mode: XPayMode; methods: XPayMethod[]; test: ModeDraft; live: ModeDraft };
+type ModeDraft = { merchantId: string; secretKey: string; apiKey: string; clear: boolean };
+/** `testers`: the test-mode allow list as typed (one email per line or comma-separated). */
+type Draft = { enabled: boolean; mode: KashierMode; methods: KashierMethod[]; test: ModeDraft; live: ModeDraft; testers: string };
 
-const modeDraft = (v: XPayModeView): ModeDraft => ({ publishableKey: v.publishableKey, secretKey: '', webhookSecret: '', clear: false });
-const fromSettings = (s: XPaySettings): Draft => ({ enabled: s.enabled, mode: s.mode, methods: s.methods, test: modeDraft(s.test), live: modeDraft(s.live) });
+const modeDraft = (v: KashierModeView): ModeDraft => ({ merchantId: v.merchantId, secretKey: '', apiKey: '', clear: false });
+const fromSettings = (s: KashierSettings): Draft => ({ enabled: s.enabled, mode: s.mode, methods: s.methods, test: modeDraft(s.test), live: modeDraft(s.live), testers: s.testers.join('\n') });
+const parseTesters = (text: string) => [...new Set(text.split(/[\s,،;]+/).map((e) => e.trim().toLowerCase()).filter(Boolean))];
 
 const MODE_ICONS = { test: FlaskConical, live: Zap } as const;
 
-/** Only what changed is sent: untouched secrets stay blank, so the stored ones are kept. */
-function toInput(d: Draft, s: XPaySettings, confirmLive: boolean): XPaySettingsInput {
-  const mode = (m: XPayMode) => {
+/** Only what changed is sent: untouched keys stay blank, so the stored ones are kept. */
+function toInput(d: Draft, s: KashierSettings, confirmLive: boolean): KashierSettingsInput {
+  const mode = (m: KashierMode) => {
     const v = d[m];
     if (v.clear) return { clear: true };
-    const out: { publishableKey?: string; secretKey?: string; webhookSecret?: string } = {};
-    if (v.publishableKey !== s[m].publishableKey) out.publishableKey = v.publishableKey.trim();
+    const out: { merchantId?: string; secretKey?: string; apiKey?: string } = {};
+    if (v.merchantId !== s[m].merchantId) out.merchantId = v.merchantId.trim();
     if (v.secretKey.trim()) out.secretKey = v.secretKey.trim();
-    if (v.webhookSecret.trim()) out.webhookSecret = v.webhookSecret.trim();
+    if (v.apiKey.trim()) out.apiKey = v.apiKey.trim();
     return Object.keys(out).length ? out : undefined;
   };
-  return { enabled: d.enabled, mode: d.mode, methods: d.methods, test: mode('test'), live: mode('live'), ...(confirmLive ? { confirmLive: true } : {}) };
+  const testers = parseTesters(d.testers);
+  const testersChanged = testers.join(',') !== s.testers.join(',');
+  return { enabled: d.enabled, mode: d.mode, methods: d.methods, test: mode('test'), live: mode('live'), ...(testersChanged ? { testers } : {}), ...(confirmLive ? { confirmLive: true } : {}) };
 }
 
 /** On/off switch in the look of the payment method cards. */
@@ -73,21 +76,22 @@ function Section({ step, title, hint, children }: { step: number; title: string;
   );
 }
 
-/** What is left before customers can pay: keys, a passing connection test, a signed webhook, live mode on. */
-function Checklist({ data, mode }: { data: XPaySettings; mode: XPayMode }) {
+/** What is left before customers can pay: credentials, a passing connection test, a signed webhook, switched on, live. */
+function Checklist({ data, mode }: { data: KashierSettings; mode: KashierMode }) {
   const { t } = useI18n();
-  const x = t.admin.payments.xpay;
+  const x = t.admin.payments.kashier;
   const view = data[mode];
   const steps = [
-    { label: x.checklist.keys, done: xpayModeComplete(view, mode) },
+    { label: x.checklist.keys, done: kashierModeComplete(view) },
     { label: x.checklist.connection, done: Boolean(view.validatedAt && !view.validationError) },
     { label: x.checklist.webhook, done: Boolean(view.lastWebhookAt) },
-    { label: x.checklist.live, done: xpayLiveForCustomers(data) },
+    { label: x.checklist.enabled, done: data.enabled && kashierReady(data) },
+    { label: x.checklist.live, done: kashierLiveForCustomers(data) },
   ];
   return (
     <div className="border-b border-line/60 bg-raised/20 px-5 py-3">
       <p className="text-[11px] font-medium text-muted">{x.checklistTitle(x.modes[mode])}</p>
-      <ol className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      <ol className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
         {steps.map((s, i) => (
           <li key={s.label} className={cx('flex items-center gap-2 text-xs font-medium', s.done ? 'text-ink' : 'text-muted')}>
             <span
@@ -106,10 +110,10 @@ function Checklist({ data, mode }: { data: XPaySettings; mode: XPayMode }) {
   );
 }
 
-/** Last connection test and last signed webhook of one mode. */
-function ConnectionStatus({ view }: { view: XPayModeView }) {
+/** Last connection test, the Payment API Key's state, and the last signed webhook of one mode. */
+function ConnectionStatus({ view }: { view: KashierModeView }) {
   const { t, fmt, lang } = useI18n();
-  const x = t.admin.payments.xpay;
+  const x = t.admin.payments.kashier;
   return (
     <div className="grid gap-1.5 text-xs">
       {view.validationError ? (
@@ -125,20 +129,25 @@ function ConnectionStatus({ view }: { view: XPayModeView }) {
           <Info className="size-3.5 shrink-0" /> {x.notValidated}
         </p>
       )}
+      {view.validatedAt && !view.validationError && view.apiKeyUnconfirmed && !view.lastWebhookAt && (
+        <p className="flex items-start gap-1.5 text-warning">
+          <Info className="mt-px size-3.5 shrink-0" /> {x.apiKeyUnconfirmed}
+        </p>
+      )}
       <p className={cx('flex items-center gap-1.5', view.lastWebhookAt ? 'text-ink-2' : 'text-muted')}>
         <ShieldCheck className="size-3.5 shrink-0" /> {view.lastWebhookAt ? x.webhookSeen(fmt.timeAgo(view.lastWebhookAt)) : x.webhookNotSeen}
       </p>
-      {view.capabilities && (
+      {view.accountMethods && (
         <p className="flex flex-wrap items-center gap-1.5 text-ink-2">
           <Info className="size-3.5 shrink-0 text-muted" />
-          {x.accountSummary(view.capabilities.accountName ?? 'XPay', view.capabilities.methods.map((m) => x.methodNames[m]).join(lang === 'ar' ? '، ' : ', '))}
+          {x.accountSummary(view.accountMethods.map((m) => x.methodNames[m]).join(lang === 'ar' ? '، ' : ', '))}
         </p>
       )}
     </div>
   );
 }
 
-/** One mode's keys: publishable key, the two write-only secrets, connection test, webhook URL. */
+/** One mode's credentials: Merchant ID, the two write-only keys, connection test, webhook URL. */
 function ModeKeys({
   mode,
   view,
@@ -148,23 +157,23 @@ function ModeKeys({
   disabled,
   onTested,
 }: {
-  mode: XPayMode;
-  view: XPayModeView;
+  mode: KashierMode;
+  view: KashierModeView;
   draft: ModeDraft;
   onChange: (v: Partial<ModeDraft>) => void;
   errors: Record<string, string[]>;
   disabled: boolean;
-  onTested: (s: XPaySettings) => void;
+  onTested: (s: KashierSettings) => void;
 }) {
   const { t } = useI18n();
-  const x = t.admin.payments.xpay;
+  const x = t.admin.payments.kashier;
   const [confirmClear, setConfirmClear] = useState(false);
   const test = useMutation({
-    mutationFn: () => api<{ ok: boolean; error: XPayConnectionError | null; settings: XPaySettings }>('/api/admin/xpay/test', { method: 'POST', body: { mode } }),
+    mutationFn: () => api<{ ok: boolean; error: KashierConnectionError | null; settings: KashierSettings }>('/api/admin/kashier/test', { method: 'POST', body: { mode } }),
     onSuccess: (r) => onTested(r.settings),
   });
   const err = (field: string) => errors[`${mode}.${field}`];
-  const unsaved = draft.publishableKey !== view.publishableKey || draft.secretKey !== '' || draft.webhookSecret !== '' || draft.clear;
+  const unsaved = draft.merchantId !== view.merchantId || draft.secretKey !== '' || draft.apiKey !== '' || draft.clear;
   const savedHint = (h: string | null) => (h ? x.secretSet(h) : x.secretMissing);
 
   if (draft.clear) {
@@ -188,16 +197,16 @@ function ModeKeys({
         </p>
       )}
       <Field
-        label={x.publishableKey}
-        value={draft.publishableKey}
-        onChange={(e) => onChange({ publishableKey: e.target.value.trim() })}
+        label={x.merchantId}
+        value={draft.merchantId}
+        onChange={(e) => onChange({ merchantId: e.target.value.trim() })}
         dir="ltr"
-        placeholder={`pk_${mode}_…`}
+        placeholder="MID-XXXX-XXX"
         autoComplete="off"
         spellCheck={false}
         disabled={disabled}
         className="font-mono text-[13px]"
-        error={err('publishableKey') ?? (draft.publishableKey && keyMode(draft.publishableKey) !== mode ? [x.wrongMode(mode)] : undefined)}
+        error={err('merchantId')}
       />
       <div className="grid gap-5 md:grid-cols-2">
         <Field
@@ -206,27 +215,27 @@ function ModeKeys({
           value={draft.secretKey}
           onChange={(e) => onChange({ secretKey: e.target.value.trim() })}
           dir="ltr"
-          placeholder={view.secretKeyHint ?? `sk_${mode}_…`}
+          placeholder={view.secretKeyHint ?? '••••••••'}
           autoComplete="new-password"
           spellCheck={false}
           disabled={disabled}
           className="font-mono text-[13px]"
           hint={<span className="text-xs">{savedHint(view.secretKeyHint)}</span>}
-          error={err('secretKey') ?? (draft.secretKey && keyMode(draft.secretKey) !== mode ? [x.wrongMode(mode)] : undefined)}
+          error={err('secretKey')}
         />
         <Field
-          label={x.webhookSecret}
+          label={x.apiKey}
           type="password"
-          value={draft.webhookSecret}
-          onChange={(e) => onChange({ webhookSecret: e.target.value.trim() })}
+          value={draft.apiKey}
+          onChange={(e) => onChange({ apiKey: e.target.value.trim() })}
           dir="ltr"
-          placeholder={view.webhookSecretHint ?? 'whsec_…'}
+          placeholder={view.apiKeyHint ?? '••••••••'}
           autoComplete="new-password"
           spellCheck={false}
           disabled={disabled}
           className="font-mono text-[13px]"
-          hint={<span className="text-xs">{savedHint(view.webhookSecretHint)}</span>}
-          error={err('webhookSecret')}
+          hint={<span className="text-xs">{savedHint(view.apiKeyHint)}</span>}
+          error={err('apiKey')}
         />
       </div>
 
@@ -255,7 +264,7 @@ function ModeKeys({
         <span className="text-xs leading-relaxed text-muted">{x.webhookHint(x.modes[mode])}</span>
       </div>
 
-      {(view.publishableKey || view.secretKeyHint || view.webhookSecretHint) && (
+      {(view.merchantId || view.secretKeyHint || view.apiKeyHint) && (
         <div className="flex justify-end border-t border-line/60 pt-4">
           <Button size="sm" variant="ghost" icon={<Trash2 className="size-3.5" />} className="text-critical hover:text-critical" disabled={disabled} onClick={() => setConfirmClear(true)}>
             {x.clear(x.modes[mode])}
@@ -271,7 +280,7 @@ function ModeKeys({
             <Button
               variant="danger"
               onClick={() => {
-                onChange({ clear: true, secretKey: '', webhookSecret: '' });
+                onChange({ clear: true, secretKey: '', apiKey: '' });
                 setConfirmClear(false);
               }}
             >
@@ -285,26 +294,26 @@ function ModeKeys({
 }
 
 /**
- * XPay: Test and Live keys kept apart (secrets write-only, sealed on the server, shown masked), the active
- * mode, payment methods, connection tests and each mode's webhook. Live payments go on only after a
- * passing live connection test and an explicit confirmation (the server enforces both).
+ * Kashier: Test and Live credentials kept apart (keys write-only, sealed on the server, shown masked), the
+ * active mode, payment methods, connection tests and each mode's webhook. Live payments go on only after
+ * a passing live connection test and an explicit confirmation (the server enforces both).
  */
-export function XPaySettingsCard() {
+export function KashierSettingsCard() {
   const { t } = useI18n();
-  const x = t.admin.payments.xpay;
+  const x = t.admin.payments.kashier;
   const queryClient = useQueryClient();
-  const settings = useQuery({ queryKey: qk.admin.xpay, queryFn: ({ signal }) => api<XPaySettings>('/api/admin/xpay', { signal }) });
+  const settings = useQuery({ queryKey: qk.admin.kashier, queryFn: ({ signal }) => api<KashierSettings>('/api/admin/kashier', { signal }) });
   const [draft, setDraft] = useState<Draft | null>(null);
-  const [tab, setTab] = useState<XPayMode | null>(null);
+  const [tab, setTab] = useState<KashierMode | null>(null);
   const [confirmingLive, setConfirmingLive] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  const store = (next: XPaySettings) => {
-    queryClient.setQueryData(qk.admin.xpay, next);
-    void queryClient.invalidateQueries({ queryKey: qk.xpay });
+  const store = (next: KashierSettings) => {
+    queryClient.setQueryData(qk.admin.kashier, next);
+    void queryClient.invalidateQueries({ queryKey: qk.kashier });
   };
   const save = useMutation({
-    mutationFn: ({ body }: { body: XPaySettingsInput }) => api<XPaySettings>('/api/admin/xpay', { method: 'PUT', body }),
+    mutationFn: ({ body }: { body: KashierSettingsInput }) => api<KashierSettings>('/api/admin/kashier', { method: 'PUT', body }),
     onSuccess: (next) => {
       store(next);
       setDraft(null);
@@ -319,17 +328,20 @@ export function XPaySettingsCard() {
   const data = settings.data;
   const current = draft ?? fromSettings(data);
   const shownTab = tab ?? current.mode;
-  const caps = data[current.mode].capabilities;
+  const accountMethods = data[current.mode].accountMethods;
   const dirty = draft !== null && JSON.stringify(draft) !== JSON.stringify(fromSettings(data));
   const fieldErrors = save.error instanceof ApiRequestError ? (save.error.errors ?? {}) : {};
   const locked = !data.encryptionReady;
   const patch = (value: Partial<Draft>) => setDraft({ ...current, ...value });
-  const patchMode = (mode: XPayMode, value: Partial<ModeDraft>) => setDraft({ ...current, [mode]: { ...current[mode], ...value } });
-  const toggleMethod = (m: XPayMethod) => patch({ methods: current.methods.includes(m) ? current.methods.filter((v) => v !== m) : XPAY_METHODS.filter((v) => v === m || current.methods.includes(v)) });
+  const patchMode = (mode: KashierMode, value: Partial<ModeDraft>) => setDraft({ ...current, [mode]: { ...current[mode], ...value } });
+  const toggleMethod = (m: KashierMethod) =>
+    patch({ methods: current.methods.includes(m) ? current.methods.filter((v) => v !== m) : KASHIER_METHODS.filter((v) => v === m || current.methods.includes(v)) });
   const turningLiveOn = current.enabled && current.mode === 'live' && !(data.enabled && data.mode === 'live');
   const submit = (confirmLive: boolean) => save.mutate({ body: toInput(current, data, confirmLive) });
-  const liveForCustomers = xpayLiveForCustomers(data);
-  const ready = xpayReady(data);
+  const liveForCustomers = kashierLiveForCustomers(data);
+  const ready = kashierReady(data);
+  const testersError = Object.entries(fieldErrors).find(([k]) => k.startsWith('testers'))?.[1]?.[0] ? x.testersInvalid : null;
+  const connectedButOff = !data.enabled && kashierModeComplete(data[data.mode]) && Boolean(data[data.mode].validatedAt && !data[data.mode].validationError);
   const status = !data.enabled ? { tone: 'neutral' as const, label: x.status.off } : !ready ? { tone: 'warning' as const, label: x.status.incomplete } : data.mode === 'live' ? { tone: 'good' as const, label: x.status.live } : { tone: 'warning' as const, label: x.status.test };
   const saveError = save.isError ? (save.error instanceof ApiRequestError && save.error.code === 'test_connection_first' ? x.testFirst : errorMessage(save.error)) : null;
 
@@ -345,7 +357,7 @@ export function XPaySettingsCard() {
     >
       {/* header */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3 px-5 py-4">
-        <MethodGlyph method="xpay" />
+        <MethodGlyph method="kashier" />
         <div className="min-w-48 flex-1">
           <p className="flex flex-wrap items-center gap-2 text-base font-semibold">
             {x.title}
@@ -356,11 +368,16 @@ export function XPaySettingsCard() {
         <Toggle label={x.enabled} checked={current.enabled} disabled={locked} onChange={(v) => patch({ enabled: v })} />
       </div>
 
-      {(locked || (data.enabled && ready)) && (
+      {(locked || (data.enabled && ready) || connectedButOff) && (
         <div className="px-5 pb-4">
           {locked ? (
             <p className="flex items-start gap-2 rounded-lg bg-destructive-ink/10 px-3 py-2 text-sm text-destructive-ink">
               <AlertTriangle className="mt-0.5 size-4 shrink-0" /> {x.noKey}
+            </p>
+          ) : connectedButOff ? (
+            // A passing connection test doesn't take payments: until Kashier is switched on and saved, customers see the manual request.
+            <p className="flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-sm text-warning">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" /> {x.offNote}
             </p>
           ) : (
             <p className={cx('flex items-start gap-2 rounded-lg px-3 py-2 text-xs', liveForCustomers ? 'bg-brand/10 text-brand' : 'bg-warning/10 text-warning')}>
@@ -377,9 +394,9 @@ export function XPaySettingsCard() {
       <div className="divide-y divide-line/60">
         <Section step={1} title={x.activeMode} hint={x.modeHint}>
           <div role="radiogroup" aria-label={x.activeMode} className="grid gap-3 sm:grid-cols-2">
-            {XPAY_MODES.map((m) => {
+            {KASHIER_MODES.map((m) => {
               const on = current.mode === m;
-              const complete = xpayModeComplete(data[m], m);
+              const complete = kashierModeComplete(data[m]);
               const Icon = MODE_ICONS[m];
               const tone = m === 'live' ? 'brand' : 'warning';
               return (
@@ -424,13 +441,19 @@ export function XPaySettingsCard() {
               );
             })}
           </div>
+          {current.mode === 'test' && (
+            <div className="mt-4 grid gap-1.5">
+              <TextArea label={x.testers} value={current.testers} onChange={(e) => patch({ testers: e.target.value })} dir="ltr" rows={3} placeholder="tester@example.com" disabled={locked} />
+              {testersError ? <p className="text-xs text-destructive-ink">{testersError}</p> : <p className="text-xs text-muted">{x.testersHint}</p>}
+            </div>
+          )}
         </Section>
 
         <Section step={2} title={x.keysTitle} hint={x.keysHint(x.modes[shownTab])}>
           <div className="grid gap-5">
             <div role="tablist" aria-label={x.keysTitle} className="flex w-full gap-1 rounded-lg border border-line bg-raised/20 p-1 sm:w-fit">
-              {XPAY_MODES.map((m) => {
-                const complete = xpayModeComplete(data[m], m);
+              {KASHIER_MODES.map((m) => {
+                const complete = kashierModeComplete(data[m]);
                 return (
                   <button
                     key={m}
@@ -455,20 +478,20 @@ export function XPaySettingsCard() {
 
         <Section step={3} title={x.methods} hint={x.methodsHint}>
           <div className="flex flex-wrap gap-2">
-            {XPAY_METHODS.map((m) => {
+            {KASHIER_METHODS.map((m) => {
               const on = current.methods.includes(m);
-              // What the active mode's XPay account reported at its last connection test (unknown before one).
-              const offered = xpayAvailableMethods([m], caps).length > 0;
+              // What the active mode's Kashier account reported at its last connection test (unknown before one).
+              const offered = kashierAvailableMethods([m], accountMethods).length > 0;
               return (
                 <button
                   key={m}
                   type="button"
                   role="checkbox"
                   aria-checked={on}
-                  // A method the account can't offer may be switched off, never on.
+                  // A method the account doesn't have may be switched off, never on.
                   disabled={locked || (!offered && !on)}
                   onClick={() => toggleMethod(m)}
-                  title={offered ? undefined : x.methodUnavailable}
+                  title={offered ? x.methodHints[m] : x.methodUnavailable}
                   className={cx(
                     'flex h-9 items-center gap-2 rounded-lg border px-3.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60',
                     on && offered ? 'border-brand/60 bg-brand/10 text-brand' : on ? 'border-warning/50 bg-warning/10 text-warning' : 'border-line text-muted hover:border-line-strong hover:text-ink',
@@ -484,9 +507,10 @@ export function XPaySettingsCard() {
             })}
           </div>
           {fieldErrors.methods && <p className="mt-2 text-xs text-destructive-ink">{fieldErrors.methods.join(' ')}</p>}
-          <p className="mt-3 text-xs text-muted">{caps ? x.methodsFromAccount(x.modes[current.mode], caps.accountName ?? 'XPay') : x.methodsUnknown(x.modes[current.mode])}</p>
-          <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-raised/40 px-3 py-2 text-xs text-ink-2">
-            <Info className="mt-px size-3.5 shrink-0 text-muted" /> {x.walletsNote}
+          <p className="mt-3 text-xs text-muted">{accountMethods ? x.methodsFromAccount(x.modes[current.mode]) : x.methodsUnknown(x.modes[current.mode])}</p>
+          {current.mode === 'test' && <p className="mt-1 text-xs text-warning">{x.testMethodsNote}</p>}
+          <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-raised/40 px-3 py-2 text-xs leading-relaxed text-ink-2">
+            <Info className="mt-px size-3.5 shrink-0 text-muted" /> {x.methodsNote}
           </p>
         </Section>
       </div>
@@ -536,8 +560,8 @@ export function XPaySettingsCard() {
   );
 }
 
-/** Whether customers currently pay through XPay (live mode, ready): then the manual transfers below are hidden from them. */
-export function useXPayEnabled() {
-  const settings = useQuery({ queryKey: qk.admin.xpay, queryFn: ({ signal }) => api<XPaySettings>('/api/admin/xpay', { signal }) });
-  return Boolean(settings.data && xpayLiveForCustomers(settings.data));
+/** Whether customers currently pay through Kashier (live mode, ready): then the manual transfers below are hidden from them. */
+export function useKashierLive() {
+  const settings = useQuery({ queryKey: qk.admin.kashier, queryFn: ({ signal }) => api<KashierSettings>('/api/admin/kashier', { signal }) });
+  return Boolean(settings.data && kashierLiveForCustomers(settings.data));
 }

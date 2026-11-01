@@ -6,7 +6,7 @@ import { api, errorMessage } from '../api';
 import { isUnlimitedPlan, type PlanRequest, planState, useAccount } from '../app/account';
 import { MethodChip, PaymentDetailsRows } from '../app/payments/methods';
 import { RequestPlanModal } from '../app/payments/RequestPlan';
-import { PaymentReturnModal } from '../app/payments/XPayCheckout';
+import { PaymentReturnModal } from '../app/payments/OnlineCheckout';
 import { PhoneVerifyModal } from '../auth/Otp';
 import { BRAND } from '../brand';
 import { useI18n } from '../i18n';

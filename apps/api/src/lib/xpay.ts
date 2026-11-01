@@ -43,7 +43,7 @@ type StoredMode = {
 };
 
 /** Stored in `settings` under `xpay`. */
-type StoredXPay = { enabled: boolean; mode: XPayMode; methods: XPayMethod[]; test: StoredMode; live: StoredMode };
+type StoredXPay = { enabled: boolean; mode: XPayMode; methods: XPayMethod[]; test: StoredMode; live: StoredMode; testers: string[] };
 
 const EMPTY_MODE: StoredMode = { publishableKey: '', secretKey: null, webhookSecret: null, validatedAt: null, validationError: null, lastWebhookAt: null, capabilities: null };
 const SALT = 'wa-xpay';
@@ -81,6 +81,7 @@ async function readStored(sql: Sql): Promise<StoredXPay> {
     methods,
     test: { ...EMPTY_MODE, ...(v.test as Partial<StoredMode> | undefined) },
     live: { ...EMPTY_MODE, ...(v.live as Partial<StoredMode> | undefined) },
+    testers: Array.isArray(v.testers) ? (v.testers as unknown[]).filter((e): e is string => typeof e === 'string') : [],
   };
   // A first version kept one flat set of keys: file it under the mode its publishable key belongs to.
   // (Its secrets were sealed without the mode, so they read as unreadable and must be entered again.)
@@ -133,6 +134,7 @@ export async function getXPaySettings(sql: Sql, master: Buffer | null, publicUrl
     test: modeView(master, 'test', s.test, publicUrl),
     live: modeView(master, 'live', s.live, publicUrl),
     encryptionReady: master !== null,
+    testers: s.testers,
   };
 }
 
@@ -143,7 +145,14 @@ export async function getXPaySettings(sql: Sql, master: Buffer | null, publicUrl
  */
 export async function saveXPaySettings(sql: Sql, master: Buffer, input: XPaySettingsInput) {
   const s = await readStored(sql);
-  const next: StoredXPay = { enabled: input.enabled, mode: input.mode, methods: [...new Set(input.methods)], test: s.test, live: s.live };
+  const next: StoredXPay = {
+    enabled: input.enabled,
+    mode: input.mode,
+    methods: [...new Set(input.methods)],
+    test: s.test,
+    live: s.live,
+    testers: input.testers ? [...new Set(input.testers.map((e) => e.trim().toLowerCase()))] : s.testers,
+  };
   for (const mode of XPAY_MODES) {
     const change = input[mode];
     if (!change) continue;
@@ -182,18 +191,30 @@ export async function getXPayModeAccount(sql: Sql, master: Buffer | null, mode: 
   return { mode, publishableKey: m.publishableKey, secretKey, webhookSecret, methods: xpayAvailableMethods(s.methods, m.capabilities ?? null) };
 }
 
-/** The account new checkouts are opened with: the active mode, when XPay is on and ready. */
-export async function getActiveXPayAccount(sql: Sql, master: Buffer | null): Promise<XPayAccount | null> {
+/** Who is asking: admins and the listed test accounts may use test mode. `userId` = the signed-in user, or the workspace owner for a token. */
+export type XPayCaller = { isAdmin: boolean; userId: string | null };
+
+/**
+ * The account a caller's new checkouts are opened with: the active mode, when XPay is on and ready.
+ * Live mode serves everyone; test mode only admins and the accounts on the test list, so no real
+ * customer ever sees a test checkout (or gets a plan from a test payment). Null = pay manually.
+ */
+export async function getXPayAccountFor(sql: Sql, master: Buffer | null, caller: XPayCaller): Promise<XPayAccount | null> {
   const settings = await getXPaySettings(sql, master, '');
   if (!xpayReady(settings)) return null;
+  if (settings.mode === 'test' && !caller.isAdmin && !(await isTester(sql, settings.testers, caller.userId))) return null;
   return getXPayModeAccount(sql, master, settings.mode);
 }
 
-/** What one caller may use: live mode for everyone; test mode for admins only, so test cards can't buy real plans. */
-export async function getXPayPublicConfig(sql: Sql, master: Buffer | null, isAdmin: boolean): Promise<XPayPublicConfig> {
-  const account = await getActiveXPayAccount(sql, master);
-  if (!account || (account.mode === 'test' && !isAdmin)) return { enabled: false, publishableKey: '', mode: account?.mode ?? 'test' };
-  return { enabled: true, publishableKey: account.publishableKey, mode: account.mode };
+async function isTester(sql: Sql, testers: string[], userId: string | null): Promise<boolean> {
+  if (!userId || testers.length === 0) return false;
+  const [row] = await sql<{ email: string }[]>`select lower(email) as email from users where id = ${userId}`;
+  return Boolean(row && testers.includes(row.email));
+}
+
+export async function getXPayPublicConfig(sql: Sql, master: Buffer | null, caller: XPayCaller): Promise<XPayPublicConfig> {
+  const account = await getXPayAccountFor(sql, master, caller);
+  return account ? { enabled: true, publishableKey: account.publishableKey, mode: account.mode } : { enabled: false, publishableKey: '', mode: 'test' };
 }
 
 export const recordWebhookSeen = (sql: Sql, mode: XPayMode) => patchMode(sql, mode, { lastWebhookAt: new Date().toISOString() });

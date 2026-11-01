@@ -273,9 +273,6 @@ importers:
       '@wa/shared':
         specifier: workspace:*
         version: link:../../packages/shared
-      '@xpayeg/sdk':
-        specifier: 3.1.1
-        version: 3.1.1
       emojibase-data:
         specifier: 17.0.0
         version: 17.0.0(emojibase@17.0.0)
@@ -1709,10 +1706,6 @@ packages:
         optional: true
       link-preview-js:
         optional: true
-
-  '@xpayeg/sdk@3.1.1':
-    resolution: {integrity: sha512-qekcT8mdq9ojvqmPStJYzvoK3UdavSqvxQq9Foy/vaYq+s5V8XSKbEHeoxgM8IUio7HuHjCm7Gq/Jh5RCcibtw==}
-    engines: {node: '>=18'}
 
   abstract-logging@2.0.1:
     resolution: {integrity: sha512-2BjRTZxTPvheOvGbBslFSYOUkr+SjPtOnrLP33f+VIWLzezQpZcqVg7ja3L4dBXmzzgwT+a029jRx5PCi3JuiA==}
@@ -3767,8 +3760,6 @@ snapshots:
       - bufferutil
       - supports-color
       - utf-8-validate
-
-  '@xpayeg/sdk@3.1.1': {}
 
   abstract-logging@2.0.1: {}
 

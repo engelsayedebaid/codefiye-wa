@@ -8,6 +8,7 @@ import { createAuth } from './lib/auth';
 import { EventBus } from './lib/events';
 import { scrubUrl } from './lib/log';
 import { otpKey, type OtpSender, twilioSender, whatsappSender } from './lib/otp';
+import { isLoopbackUrl } from './lib/public-url';
 import { createThrottle } from './lib/throttle';
 import { WorkerClient } from './lib/workers';
 
@@ -81,6 +82,11 @@ const app = await buildApp(
   },
 );
 await app.listen({ host: config.API_HOST, port: config.port });
+// Links handed out (XPay webhook URLs, the return link after a bank check) are built from PUBLIC_URL.
+// Left at its localhost default they fall back to each request's own origin; say so, so it gets set.
+if (config.NODE_ENV === 'production' && isLoopbackUrl(config.PUBLIC_URL)) {
+  logger.warn({ publicUrl: config.PUBLIC_URL }, 'PUBLIC_URL is not set to the public domain (e.g. https://wa.codefiye.com); falling back to the host of each request');
+}
 
 // Expired throttle windows and verifications are dead weight; sweep them now and then.
 const sweep = setInterval(() => {

@@ -4,16 +4,15 @@ import {
   enabledPaymentMethods,
   offerProblem,
   ok,
-  keyMode,
+  KASHIER_MODES,
+  kashierAvailableMethods,
+  type KashierMode,
+  kashierModeComplete,
+  kashierSettingsDto,
+  kashierSettingsInputSchema,
   paymentSettingsSchema,
   ONLINE_PAYMENT_STATUSES,
   type OnlinePaymentStatus,
-  XPAY_MODES,
-  xpayAvailableMethods,
-  type XPayMode,
-  xpayModeComplete,
-  xpaySettingsDto,
-  xpaySettingsInputSchema,
   planPricingSchema,
   PLANS,
   preparePlanPricing,
@@ -36,7 +35,8 @@ import { OTP_DEFAULT_TEXTS } from '../lib/otp';
 import { getOtpTexts, setOtpTexts } from '../lib/otp-text';
 import { getPaymentSettings, setPaymentSettings } from '../lib/payments';
 import { applyPlan, type Tx } from '../lib/plans';
-import { getXPayModeAccount, getXPaySettings, recordConnectionTest, saveXPaySettings, testConnection } from '../lib/xpay';
+import { publicBaseUrl } from '../lib/public-url';
+import { getKashierModeAccount, getKashierSettings, recordKashierConnectionTest, saveKashierSettings, testKashierConnection } from '../lib/kashier';
 import { setPlanPricing } from '../lib/plan-pricing';
 import { setSiteSettings } from '../lib/site';
 import { planRequestDto, type PlanRequestRow, planRequestRowDto, toPlanRequestDto, toWorkspaceDto } from './account';
@@ -634,122 +634,131 @@ export function adminRoutes({ sql, db, auth, workers, encryptionKey }: Deps, opt
       },
     );
 
-    // XPay. Admins only (the preHandler above), cookie writes CSRF-guarded like every dashboard write;
-    // secrets are write-only: responses carry masked hints, audit entries only say what changed.
+    // Kashier. Admins only (the preHandler above), cookie writes CSRF-guarded like every dashboard write;
+    // keys are write-only: responses carry masked hints, audit entries only say what changed.
     app.get(
-      '/xpay',
-      { schema: { ...schemaBase, summary: 'The XPay configuration (secrets as masked hints only)', response: { 200: successSchema(xpaySettingsDto) } } },
-      async () => ok(await getXPaySettings(sql, encryptionKey, options.publicUrl)),
+      '/kashier',
+      { schema: { ...schemaBase, summary: 'The Kashier configuration (keys as masked hints only)', response: { 200: successSchema(kashierSettingsDto) } } },
+      async (req) => ok(await getKashierSettings(sql, encryptionKey, publicBaseUrl(options.publicUrl, req))),
     );
 
     app.put(
-      '/xpay',
+      '/kashier',
       {
         schema: {
           ...schemaBase,
-          summary: 'Set the XPay configuration; a blank secret keeps the stored one',
-          description: 'Switching live payments on needs `confirmLive: true` and a passing connection test of the live keys in place.',
-          body: xpaySettingsInputSchema,
-          response: { 200: successSchema(xpaySettingsDto) },
+          summary: 'Set the Kashier configuration; a blank key keeps the stored one',
+          description: 'Switching live payments on needs `confirmLive: true` and a passing connection test of the live credentials in place.',
+          body: kashierSettingsInputSchema,
+          response: { 200: successSchema(kashierSettingsDto) },
         },
       },
       async (req) => {
-        // Without the encryption key nothing can be sealed or opened: refuse rather than store secrets in the clear.
-        if (!encryptionKey) throw unavailable('This server has no AUTH_ENCRYPTION_KEY, so XPay keys cannot be stored', 'no_encryption_key');
+        // Without the encryption key nothing can be sealed or opened: refuse rather than store keys in the clear.
+        if (!encryptionKey) throw unavailable('This server has no AUTH_ENCRYPTION_KEY, so Kashier keys cannot be stored', 'no_encryption_key');
         const body = req.body;
-        const current = await getXPaySettings(sql, encryptionKey, options.publicUrl);
+        const current = await getKashierSettings(sql, encryptionKey, publicBaseUrl(options.publicUrl, req));
         // What the active mode will hold after this save.
         const m = body.mode;
         const change = body[m] ?? {};
         const cleared = change.clear === true;
-        const keysChanged = cleared || Boolean(change.secretKey || (change.publishableKey !== undefined && change.publishableKey !== current[m].publishableKey));
+        const credsChanged = cleared || Boolean(change.secretKey || change.apiKey || (change.merchantId !== undefined && change.merchantId !== current[m].merchantId));
         const after = {
-          publishableKey: cleared ? '' : (change.publishableKey ?? current[m].publishableKey),
+          merchantId: cleared ? '' : (change.merchantId ?? current[m].merchantId),
           secretKeyHint: cleared ? null : change.secretKey ? 'new' : current[m].secretKeyHint,
-          webhookSecretHint: cleared ? null : change.webhookSecret ? 'new' : current[m].webhookSecretHint,
-          unreadable: cleared ? false : current[m].unreadable && !(change.secretKey && change.webhookSecret),
+          apiKeyHint: cleared ? null : change.apiKey ? 'new' : current[m].apiKeyHint,
+          unreadable: cleared ? false : current[m].unreadable && !(change.secretKey && change.apiKey),
         };
         if (body.enabled) {
           const errors: Record<string, string[]> = {};
-          if (keyMode(after.publishableKey) !== m) errors[`${m}.publishableKey`] = [`Required (pk_${m}_…)`];
-          if (!after.secretKeyHint) errors[`${m}.secretKey`] = [`Required (sk_${m}_…)`];
-          if (!after.webhookSecretHint) errors[`${m}.webhookSecret`] = ['Required (whsec_…)'];
+          if (!/^MID-[\w-]+$/i.test(after.merchantId)) errors[`${m}.merchantId`] = ['Required (MID-…)'];
+          if (!after.secretKeyHint) errors[`${m}.secretKey`] = ['Required'];
+          if (!after.apiKeyHint) errors[`${m}.apiKey`] = ['Required'];
           if (after.unreadable) errors[`${m}.secretKey`] = ['The stored keys can no longer be read: enter them again'];
           if (body.methods.length === 0) errors.methods = ['Pick at least one'];
-          // What the account reported at the last connection test (forgotten when its keys change).
-          else if (!keysChanged && xpayAvailableMethods(body.methods, current[m].capabilities).length === 0) {
-            errors.methods = [`None of these methods is enabled on the ${m} XPay account`];
+          // What the account reported at the last connection test (forgotten when its credentials change).
+          else if (!credsChanged && kashierAvailableMethods(body.methods, current[m].accountMethods).length === 0) {
+            errors.methods = [`None of these methods is enabled on the ${m} Kashier account`];
           }
-          if (Object.keys(errors).length > 0 || !xpayModeComplete(after, m)) throw unprocessable(`Fill in every ${m} key before switching XPay on`, errors);
+          if (Object.keys(errors).length > 0 || !kashierModeComplete(after)) throw unprocessable(`Fill in every ${m} credential before switching Kashier on`, errors);
         }
         const turningLiveOn = body.enabled && m === 'live' && !(current.enabled && current.mode === 'live');
         if (turningLiveOn) {
-          if (keysChanged || !current.live.validatedAt || current.live.validationError) {
-            throw unprocessable('Save the live keys and pass the connection test before switching live payments on', { 'live.secretKey': ['Test the connection first'] }, { code: 'test_connection_first' });
+          if (credsChanged || !current.live.validatedAt || current.live.validationError) {
+            throw unprocessable('Save the live credentials and pass the connection test before switching live payments on', { 'live.secretKey': ['Test the connection first'] }, { code: 'test_connection_first' });
           }
           if (body.confirmLive !== true) throw unprocessable('Confirm that you want to take real payments', { confirmLive: ['Required'] }, { code: 'confirm_live' });
         }
-        await saveXPaySettings(sql, encryptionKey, body);
-        const saved = await getXPaySettings(sql, encryptionKey, options.publicUrl);
+        await saveKashierSettings(sql, encryptionKey, body);
+        const saved = await getKashierSettings(sql, encryptionKey, publicBaseUrl(options.publicUrl, req));
         const changes = (mode: 'test' | 'live') => {
           const c = body[mode];
           if (!c) return null;
           return {
             cleared: c.clear === true,
-            publishableKeyChanged: c.publishableKey !== undefined && c.publishableKey !== current[mode].publishableKey,
+            merchantIdChanged: c.merchantId !== undefined && c.merchantId !== current[mode].merchantId,
             secretKeyReplaced: Boolean(c.secretKey),
-            webhookSecretReplaced: Boolean(c.webhookSecret),
+            apiKeyReplaced: Boolean(c.apiKey),
           };
         };
         await audit(sql, req, {
-          action: turningLiveOn ? 'xpay.live_enabled' : 'xpay.update',
+          action: turningLiveOn ? 'kashier.live_enabled' : 'kashier.update',
           targetType: 'feature',
-          targetId: 'xpay',
-          details: { enabled: saved.enabled, mode: saved.mode, previous: { enabled: current.enabled, mode: current.mode }, methods: saved.methods, test: changes('test'), live: changes('live') },
+          targetId: 'kashier',
+          details: {
+            enabled: saved.enabled,
+            mode: saved.mode,
+            previous: { enabled: current.enabled, mode: current.mode },
+            methods: saved.methods,
+            test: changes('test'),
+            live: changes('live'),
+            testers: body.testers ? { count: saved.testers.length } : null,
+          },
         });
         return ok(saved);
       },
     );
 
     app.post(
-      '/xpay/test',
+      '/kashier/test',
       {
         schema: {
           ...schemaBase,
-          summary: "Test one mode's XPay keys with an authenticated read-only request",
-          body: z.object({ mode: z.enum(XPAY_MODES) }),
-          response: { 200: successSchema(z.object({ ok: z.boolean(), error: z.string().nullable(), settings: xpaySettingsDto })) },
+          summary: "Test one mode's Kashier credentials without moving money",
+          body: z.object({ mode: z.enum(KASHIER_MODES) }),
+          response: { 200: successSchema(z.object({ ok: z.boolean(), error: z.string().nullable(), settings: kashierSettingsDto })) },
         },
       },
       async (req) => {
-        if (!encryptionKey) throw unavailable('This server has no AUTH_ENCRYPTION_KEY, so XPay keys cannot be read', 'no_encryption_key');
+        if (!encryptionKey) throw unavailable('This server has no AUTH_ENCRYPTION_KEY, so Kashier keys cannot be read', 'no_encryption_key');
         const { mode } = req.body;
-        const account = await getXPayModeAccount(sql, encryptionKey, mode);
-        const result = account ? await testConnection(account) : { error: 'missing_key' as const, capabilities: null };
-        await recordConnectionTest(sql, mode, result);
+        const account = await getKashierModeAccount(sql, encryptionKey, mode);
+        const result = account ? await testKashierConnection(account) : { error: 'missing_key' as const, apiKeyUnconfirmed: false, accountMethods: null };
+        await recordKashierConnectionTest(sql, mode, result);
         await audit(sql, req, {
-          action: 'xpay.test_connection',
+          action: 'kashier.test_connection',
           targetType: 'feature',
-          targetId: 'xpay',
-          details: { mode, ok: result.error === null, error: result.error, methods: result.capabilities?.methods ?? null },
+          targetId: 'kashier',
+          details: { mode, ok: result.error === null, error: result.error, apiKeyUnconfirmed: result.apiKeyUnconfirmed, methods: result.accountMethods },
         });
-        return ok({ ok: result.error === null, error: result.error, settings: await getXPaySettings(sql, encryptionKey, options.publicUrl) });
+        return ok({ ok: result.error === null, error: result.error, settings: await getKashierSettings(sql, encryptionKey, publicBaseUrl(options.publicUrl, req)) });
       },
     );
 
     app.get(
-      '/xpay/payments',
+      '/payments',
       {
         schema: {
           ...schemaBase,
-          summary: 'Recent XPay payments of one mode (Test and Live are listed separately)',
-          querystring: z.object({ mode: z.enum(XPAY_MODES), limit: z.coerce.number().int().min(1).max(100).default(25) }),
+          summary: 'Recent online payments of one mode (Test and Live are listed separately), Kashier and earlier XPay ones',
+          querystring: z.object({ mode: z.enum(KASHIER_MODES), limit: z.coerce.number().int().min(1).max(100).default(25) }),
           response: {
             200: successSchema(
               z.array(
                 z.object({
                   id: z.uuid(),
-                  mode: z.enum(XPAY_MODES),
+                  provider: z.string(),
+                  mode: z.enum(KASHIER_MODES),
                   status: z.enum(ONLINE_PAYMENT_STATUSES),
                   workspace: z.object({ id: z.uuid(), name: z.string() }),
                   planId: z.string(),
@@ -768,15 +777,31 @@ export function adminRoutes({ sql, db, auth, workers, encryptionKey }: Deps, opt
       },
       async (req) => {
         const rows = await sql<
-          { id: string; mode: XPayMode; status: OnlinePaymentStatus; workspace_id: string; workspace_name: string; plan_id: string; months: number; amount_cents: number; refunded_cents: number; currency: string; error: string | null; created_at: Date; paid_at: Date | null }[]
+          {
+            id: string;
+            provider: string;
+            mode: KashierMode;
+            status: OnlinePaymentStatus;
+            workspace_id: string;
+            workspace_name: string;
+            plan_id: string;
+            months: number;
+            amount_cents: number;
+            refunded_cents: number;
+            currency: string;
+            error: string | null;
+            created_at: Date;
+            paid_at: Date | null;
+          }[]
         >`
-          select p.id, p.mode, p.status, p.workspace_id, w.name as workspace_name, p.plan_id, p.months, p.amount_cents, p.refunded_cents, p.currency, p.error, p.created_at, p.paid_at
+          select p.id, p.provider, p.mode, p.status, p.workspace_id, w.name as workspace_name, p.plan_id, p.months, p.amount_cents, p.refunded_cents, p.currency, p.error, p.created_at, p.paid_at
           from payments p join workspaces w on w.id = p.workspace_id
-          where p.provider = 'xpay' and p.mode = ${req.query.mode}
+          where p.mode = ${req.query.mode}
           order by p.created_at desc limit ${req.query.limit}`;
         return ok(
           rows.map((r) => ({
             id: r.id,
+            provider: r.provider,
             mode: r.mode,
             status: r.status,
             workspace: { id: r.workspace_id, name: r.workspace_name },

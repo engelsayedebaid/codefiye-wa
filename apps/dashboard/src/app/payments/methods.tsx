@@ -12,7 +12,8 @@ export const METHOD_LOOK: Record<PaidMethod, { icon: typeof Smartphone; tint: st
   vodafone_cash: { icon: Smartphone, tint: 'bg-[#e60000] text-white', ring: 'border-[#e60000]/50', soft: 'bg-[#e60000]/10 text-[#e60000] light:text-[#c00000]' },
   instapay: { icon: Zap, tint: 'bg-[#6f3fa3] text-white', ring: 'border-[#6f3fa3]/50', soft: 'bg-[#6f3fa3]/10 text-[#9b6ad6] light:text-[#6f3fa3]' },
   bank_transfer: { icon: Landmark, tint: 'bg-sky-600 text-white', ring: 'border-sky-500/50', soft: 'bg-sky-500/10 text-sky-400 light:text-sky-700' },
-  xpay: { icon: CreditCard, tint: 'bg-brand text-on-brand', ring: 'border-brand/50', soft: 'bg-brand/10 text-brand' },
+  xpay: { icon: CreditCard, tint: 'bg-raised text-ink-2', ring: 'border-line-strong', soft: 'bg-raised text-ink-2' },
+  kashier: { icon: CreditCard, tint: 'bg-brand text-on-brand', ring: 'border-brand/50', soft: 'bg-brand/10 text-brand' },
 };
 
 export function MethodGlyph({ method, size = 'md' }: { method: PaidMethod; size?: 'sm' | 'md' | 'lg' }) {
@@ -84,8 +85,13 @@ export function PaymentDetailsRows({ payment, className }: { payment: PaymentDet
     if (payment.reference) rows.push([r.reference, <span className="ltr font-mono">{payment.reference}</span>]);
   }
   if (payment.method === 'xpay') rows.push([r.reference, <span className="ltr font-mono text-xs">{payment.paymentId ?? payment.sessionId}</span>]);
+  if (payment.method === 'kashier') {
+    rows.push([r.reference, <span className="ltr font-mono text-xs">{payment.orderId ?? payment.sessionId}</span>]);
+    if (payment.paymentMethod) rows.push([r.paidWith, <span className="ltr">{payment.paymentMethod}</span>]);
+  }
   if (payment.amount) rows.push([r.amount, p.egp(payment.amount)]);
-  const flags = payment.method === 'xpay' && (payment.review?.length || payment.test);
+  const online = payment.method === 'xpay' || payment.method === 'kashier' ? payment : null;
+  const flags = online && (online.review?.length || online.test);
   return (
     <div className={cx('grid gap-2', className)}>
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
@@ -96,10 +102,10 @@ export function PaymentDetailsRows({ payment, className }: { payment: PaymentDet
           </div>
         ))}
       </dl>
-      {flags && payment.method === 'xpay' && (
+      {flags && online && (
         <div className="flex flex-wrap gap-1.5 text-xs">
-          {payment.test && <span className="rounded-full bg-warning/15 px-2 py-0.5 font-medium text-warning">{r.xpayTest}</span>}
-          {payment.review?.length ? <span className="rounded-md bg-destructive-ink/10 px-2 py-1 text-destructive-ink">{r.xpayReview(payment.review.join(', '))}</span> : null}
+          {online.test && <span className="rounded-full bg-warning/15 px-2 py-0.5 font-medium text-warning">{r.onlineTest}</span>}
+          {online.review?.length ? <span className="rounded-md bg-destructive-ink/10 px-2 py-1 text-destructive-ink">{r.onlineReview(online.review.join(', '))}</span> : null}
         </div>
       )}
     </div>

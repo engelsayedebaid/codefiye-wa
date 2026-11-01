@@ -12,6 +12,8 @@ export * from './messages';
 export * from './name-suggestions';
 export * from './payments';
 export * from './payments-schema';
+export * from './kashier';
+export * from './kashier-schema';
 export * from './phone';
 export * from './plans';
 export * from './plan-pricing';

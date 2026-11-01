@@ -35,7 +35,7 @@ import { chatRoutes } from './routes/chats';
 import { eventRoutes } from './routes/events';
 import { keyRoutes } from './routes/keys';
 import { messageRoutes } from './routes/messages';
-import { paymentRoutes, xpayWebhookRoutes } from './routes/payments';
+import { kashierWebhookRoutes, paymentRoutes, xpayWebhookRoutes } from './routes/payments';
 import { planPricingRoutes } from './routes/plan-pricing';
 import { sessionRoutes } from './routes/sessions';
 import { siteRoutes } from './routes/site';
@@ -69,19 +69,18 @@ function dashboardCsp(indexHtml: string) {
   );
   return [
     "default-src 'self'",
-    // XPay's SDK runtime is loaded from its checkout domain when the payment popup opens.
-    `script-src 'self' ${inline.join(' ')} https://checkout.xpay.app`,
+    `script-src 'self' ${inline.join(' ')}`.trim(),
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
     // Template previews show customer image URLs; QR codes are data: URLs; attachments preview from blob: URLs.
     "img-src 'self' data: blob: https:",
     // Ad-library videos play from the networks' CDNs; files about to be sent preview from blob: URLs.
     "media-src 'self' blob: https:",
-    // XPay's SDK reads and confirms the checkout session from the browser.
-    "connect-src 'self' https://api.xpay.app https://checkout.xpay.app",
-    // The landing page's explainer video (loaded only when the visitor presses play), and XPay's
-    // payment fields and 3-D Secure overlay, which live in frames on its checkout domain.
-    'frame-src https://www.youtube-nocookie.com https://checkout.xpay.app',
+    // Online payment leaves the page for Kashier's hosted checkout (a top-level navigation), so no
+    // payment provider needs a script, connect or frame source here.
+    "connect-src 'self'",
+    // The landing page's explainer video (loaded only when the visitor presses play).
+    'frame-src https://www.youtube-nocookie.com',
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -244,7 +243,9 @@ export async function buildApp(deps: Deps, options: AppOptions) {
     { prefix: '/api/auth' },
   );
 
-  // XPay posts payment events here, unauthenticated; each one is checked against the webhook signing secret.
+  // Kashier posts payment events here, unauthenticated; each one is checked against the mode's Payment API Key.
+  await app.register(kashierWebhookRoutes(deps), { prefix: '/api/payments/kashier/webhook' });
+  // XPay (retired) may still report on payments made before Kashier; kept so those settle.
   await app.register(xpayWebhookRoutes(deps), { prefix: '/api/payments/xpay/webhook' });
 
   await app.register(

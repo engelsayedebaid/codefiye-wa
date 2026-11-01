@@ -1,4 +1,5 @@
-import { type OnlinePaymentStatus, XPAY_MODES, type XPayMode } from '@wa/shared/payments';
+import { KASHIER_MODES, type KashierMode } from '@wa/shared/kashier';
+import type { OnlinePaymentStatus } from '@wa/shared/payments';
 import { getPlan } from '@wa/shared/plans';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { FlaskConical, Zap } from '../icons';
@@ -10,7 +11,8 @@ import { Badge, cx, Loading, LoadError, type Tone, usePlanName } from '../ui';
 
 type AdminOnlinePayment = {
   id: string;
-  mode: XPayMode;
+  provider: string;
+  mode: KashierMode;
   status: OnlinePaymentStatus;
   workspace: { id: string; name: string };
   planId: string;
@@ -26,17 +28,17 @@ type AdminOnlinePayment = {
 const TONES: Record<OnlinePaymentStatus, Tone> = { pending: 'info', paid: 'good', failed: 'neutral', review: 'warning', refunded: 'critical' };
 const MODE_ICONS = { test: FlaskConical, live: Zap } as const;
 
-/** The latest XPay payments of one mode at a time: Test and Live are never listed together. */
-export function XPayPaymentsCard() {
+/** The latest online payments of one mode at a time (Test and Live are never listed together), Kashier's and earlier XPay ones. */
+export function OnlinePaymentsCard() {
   const { t, fmt } = useI18n();
-  const x = t.admin.payments.xpay;
+  const x = t.admin.payments.kashier;
   const pay = x.payments;
   const p = t.subscription.payment;
   const planName = usePlanName();
-  const [mode, setMode] = useState<XPayMode>('live');
+  const [mode, setMode] = useState<KashierMode>('live');
   const list = useQuery({
-    queryKey: qk.admin.xpayPayments(mode),
-    queryFn: ({ signal }) => api<AdminOnlinePayment[]>(`/api/admin/xpay/payments?mode=${mode}`, { signal }),
+    queryKey: qk.admin.onlinePayments(mode),
+    queryFn: ({ signal }) => api<AdminOnlinePayment[]>(`/api/admin/payments?mode=${mode}`, { signal }),
     placeholderData: keepPreviousData,
   });
 
@@ -48,7 +50,7 @@ export function XPayPaymentsCard() {
           <p className="text-xs text-muted">{pay.text}</p>
         </div>
         <div role="tablist" className="flex gap-1 rounded-lg border border-line p-1">
-          {XPAY_MODES.map((m) => {
+          {KASHIER_MODES.map((m) => {
             const Icon = MODE_ICONS[m];
             return (
               <button
@@ -93,7 +95,8 @@ export function XPayPaymentsCard() {
                 <p className="font-semibold">{p.egp(row.amountCents / 100)}</p>
                 {row.refundedCents > 0 && <p className="text-xs text-critical">{pay.refunded(p.egp(row.refundedCents / 100))}</p>}
               </div>
-              <div className="flex items-center gap-1.5 sm:justify-end">
+              <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">
+                <Badge tone="neutral">{row.provider === 'kashier' ? pay.providers.kashier : pay.providers.xpay}</Badge>
                 {row.mode === 'test' && <Badge tone="warning">{x.modes.test}</Badge>}
                 <Badge tone={TONES[row.status]}>{pay.status[row.status]}</Badge>
               </div>

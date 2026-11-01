@@ -31,8 +31,8 @@ import { qk } from '../queries';
 import { navigate, useQuery as useSearchParams } from '../router';
 import { ActivityLog, ActivityUsers, AdminOverview, type Period, PeriodPicker, PERIODS, useActivitySummary } from './AdminActivity';
 import { PlanPricingSettings } from './AdminPricing';
-import { useXPayEnabled, XPaySettingsCard } from './AdminXPay';
-import { XPayPaymentsCard } from './AdminXPayPayments';
+import { KashierSettingsCard, useKashierLive } from './AdminKashier';
+import { OnlinePaymentsCard } from './AdminOnlinePayments';
 import { SiteContactCard, SiteSettingsCard } from './AdminSite';
 import { TemplatePreview } from './Templates';
 import { Badge, Button, Card, cx, delay, EmptyState, ErrorNote, Field, inputClass, Loading, LoadError, Modal, Pagination, Select, SuccessNote, TextArea, usePlanName } from '../ui';
@@ -304,7 +304,7 @@ function RequestCard({ req, index, egpPerUsd, onProof, onReject }: { req: AdminR
       <div className={cx('flex flex-wrap items-start gap-4 border-t px-4 py-3', look ? cx('border-line/60 bg-raised/20') : 'border-line/60 bg-raised/10')}>
         {req.payment ? (
           <>
-            {req.payment.method !== 'xpay' && <ProofThumb req={req} onOpen={onProof} />}
+            {req.payment.method !== 'xpay' && req.payment.method !== 'kashier' && <ProofThumb req={req} onOpen={onProof} />}
             <div className="min-w-0 flex-1 space-y-2">
               <div className="flex flex-wrap items-center gap-2">
                 <MethodGlyph method={req.payment.method} size="sm" />
@@ -429,7 +429,7 @@ function PaymentMethodsSettings() {
   const dirty = draft !== null && JSON.stringify(draft) !== JSON.stringify(settings.data);
   const enabled = enabledPaymentMethods(current);
   const [saved, setSaved] = useState(false);
-  const xpayOn = useXPayEnabled();
+  const onlineLive = useKashierLive();
 
   const save = useMutation({
     mutationFn: () => api<PaymentSettings>('/api/admin/payment-methods', { method: 'PUT', body: current }),
@@ -460,7 +460,7 @@ function PaymentMethodsSettings() {
         <p className="max-w-2xl text-sm text-muted">{a.text}</p>
       </div>
 
-      {xpayOn && (
+      {onlineLive && (
         <p className="flex items-start gap-2 rounded-lg border border-info/25 bg-info/10 px-3 py-2 text-sm text-info">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" /> {a.manualHidden}
         </p>
@@ -1093,8 +1093,8 @@ export function AdminPage() {
           {tab === 'users' && <UsersTable selfId={account?.user?.id ?? null} />}
           {tab === 'payments' && (
             <div className="space-y-8">
-              <XPaySettingsCard />
-              <XPayPaymentsCard />
+              <KashierSettingsCard />
+              <OnlinePaymentsCard />
               <PaymentMethodsSettings />
             </div>
           )}
