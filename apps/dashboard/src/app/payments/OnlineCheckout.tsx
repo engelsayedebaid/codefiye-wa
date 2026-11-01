@@ -169,6 +169,13 @@ export function PaymentReturnModal({ id, onClose }: { id: string; onClose: () =>
       <div className="pb-4">
         {result === undefined ? (
           <OutcomeView tone="wait" icon={<Loader2 className="animate-spin" />} title={o.confirming} text={o.confirmingText} />
+        ) : result?.status === 'paid' && result.mode === 'test' ? (
+          // A verified sandbox payment: the flow works, but test payments never activate a plan.
+          <OutcomeView tone="good" icon={<CheckCircle2 />} title={o.testPaidTitle} text={o.testPaidText}>
+            <Button variant="outline" onClick={onClose}>
+              {o.done}
+            </Button>
+          </OutcomeView>
         ) : result?.status === 'paid' ? (
           <OutcomeView tone="good" icon={<CheckCircle2 />} title={o.paidTitle} text={o.paidText(planName(getPlan(result.planId)))}>
             <Button variant="brand" onClick={onClose}>

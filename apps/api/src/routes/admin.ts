@@ -682,6 +682,13 @@ export function adminRoutes({ sql, db, auth, workers, encryptionKey }: Deps, opt
           }
           if (Object.keys(errors).length > 0 || !kashierModeComplete(after)) throw unprocessable(`Fill in every ${m} credential before switching Kashier on`, errors);
         }
+        // Test accounts must be existing accounts (the list grants sandbox checkout, nothing else).
+        if (body.testers && body.testers.length > 0) {
+          const found = await sql<{ email: string }[]>`select lower(email) as email from users where lower(email) = any(${body.testers})`;
+          const known = new Set(found.map((r) => r.email));
+          const unknown = body.testers.filter((e) => !known.has(e));
+          if (unknown.length > 0) throw unprocessable('Each test account must be an existing account', { testers: unknown.map((e) => `No account uses ${e}`) }, { code: 'unknown_tester' });
+        }
         const turningLiveOn = body.enabled && m === 'live' && !(current.enabled && current.mode === 'live');
         if (turningLiveOn) {
           if (credsChanged || !current.live.validatedAt || current.live.validationError) {

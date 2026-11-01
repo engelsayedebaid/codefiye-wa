@@ -340,7 +340,8 @@ export function KashierSettingsCard() {
   const submit = (confirmLive: boolean) => save.mutate({ body: toInput(current, data, confirmLive) });
   const liveForCustomers = kashierLiveForCustomers(data);
   const ready = kashierReady(data);
-  const testersError = Object.entries(fieldErrors).find(([k]) => k.startsWith('testers'))?.[1]?.[0] ? x.testersInvalid : null;
+  // The server names each address that isn't an existing account; other list problems get the general hint.
+  const testersError = fieldErrors.testers?.length ? fieldErrors.testers.join(' ') : Object.keys(fieldErrors).some((k) => k.startsWith('testers')) ? x.testersInvalid : null;
   const connectedButOff = !data.enabled && kashierModeComplete(data[data.mode]) && Boolean(data[data.mode].validatedAt && !data[data.mode].validationError);
   const status = !data.enabled ? { tone: 'neutral' as const, label: x.status.off } : !ready ? { tone: 'warning' as const, label: x.status.incomplete } : data.mode === 'live' ? { tone: 'good' as const, label: x.status.live } : { tone: 'warning' as const, label: x.status.test };
   const saveError = save.isError ? (save.error instanceof ApiRequestError && save.error.code === 'test_connection_first' ? x.testFirst : errorMessage(save.error)) : null;

@@ -7,6 +7,7 @@ import {
   kashierEventId,
   kashierReviewReasons,
   kashierSignature,
+  parseAccountMethods,
   parseKashierAmount,
   testKashierConnection,
   verifyKashierWebhook,
@@ -178,5 +179,61 @@ describe('Kashier connection test', () => {
   it('never lists a method Kashier has no name for', async () => {
     const fetchImpl = route({ '/v2/merchants/validate-credentials': () => json(200, {}), '/v2/merchants/': () => json(200, { card: true, fawry: true, instapay: true, wallet: false }) });
     expect((await testKashierConnection(account, fetchImpl as never)).accountMethods).toEqual(['card']);
+  });
+});
+
+describe("Kashier account methods (GET /v2/merchants/{mid}/paymentMethods)", () => {
+  // Kashier's real answers on 2026-11-01 (merchant id left out): its test API seeds a default set; the
+  // live account, not provisioned yet, answers empty lists.
+  const REAL_TEST = {
+    acceptedPaymentMethods: ['card', 'wallet', 'installments', 'instapay', 'basata'],
+    acceptedBNPLMethods: ['valu', 'octo', 'souhoola', 'aman', 'contact', 'tru'],
+    excessiveCapturePercentage: 10,
+    supportsAuthorizationUpdate: false,
+    authorizationExpiryDays: 30,
+    acquirerAutoVoid: false,
+    transfersEnabled: true,
+    transfersProviders: ['kashier_account'],
+    motoEnabled: true,
+    operations: { valu: { downPayment: true }, souhoola: { downPayment: true } },
+    acceptedCardProviders: ['mpgs', 'upg', 'amex'],
+    acceptedWalletProviders: ['upg', 'vodafoneCash'],
+    acceptedCardWalletProviders: [],
+  };
+  const REAL_LIVE_UNPROVISIONED = { ...REAL_TEST, acceptedPaymentMethods: [], acceptedBNPLMethods: [], operations: {}, acceptedCardProviders: [], acceptedWalletProviders: [] };
+
+  it('reads the real array answer (regression: it used to read no methods at all)', () => {
+    expect(parseAccountMethods(REAL_TEST)).toEqual(['card', 'wallet', 'bank_installments', 'valu', 'souhoola', 'aman', 'contact']);
+  });
+
+  it('drops methods we never offer (InstaPay, Basata, octo, tru) and maps "installments" to bank_installments', () => {
+    const m = parseAccountMethods(REAL_TEST)!;
+    for (const never of ['instapay', 'basata', 'octo', 'tru', 'installments']) expect(m).not.toContain(never);
+    expect(parseAccountMethods({ acceptedPaymentMethods: ['CARD', 'Installments'], acceptedBNPLMethods: ['VALU'] })).toEqual(['card', 'bank_installments', 'valu']);
+  });
+
+  it('an unprovisioned account has no methods (that is a real "none", not an unreadable answer)', () => {
+    expect(parseAccountMethods(REAL_LIVE_UNPROVISIONED)).toEqual([]);
+  });
+
+  it('still reads the documented map shape', () => {
+    expect(parseAccountMethods({ card: true, wallet: true, bank_installments: false })).toEqual(['card', 'wallet']);
+  });
+
+  it('an answer in neither shape is unknown (null), never "no methods"', () => {
+    for (const odd of [null, 'text', [], {}, { methods: ['card'] }]) expect(parseAccountMethods(odd)).toBeNull();
+  });
+
+  it('the connection test stores what the real answer lists', async () => {
+    const account: KashierAccount = { mode: 'test', merchantId: 'MID-1-2', secretKey: 'secret-test-key', apiKey: 'api-test-key', methods: ['card'] };
+    const fetchImpl = vi.fn(async (url: string) => {
+      const path = new URL(url).pathname;
+      const body = path.endsWith('/paymentMethods') ? REAL_TEST : { status: 'SUCCESS' };
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+    const result = await testKashierConnection(account, fetchImpl as never);
+    expect(result.error).toBeNull();
+    expect(result.accountMethods).toEqual(['card', 'wallet', 'bank_installments', 'valu', 'souhoola', 'aman', 'contact']);
+    expect(String(fetchImpl.mock.calls[1]![0])).toBe('https://test-api.kashier.io/v2/merchants/MID-1-2/paymentMethods');
   });
 });

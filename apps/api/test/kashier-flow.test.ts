@@ -41,7 +41,10 @@ describe.skipIf(!url)('kashier payments (integration)', () => {
   // --- the fake Kashier ------------------------------------------------------------------------
   const sessions = new Map<string, FakeSession>();
   const created: { mode: KashierMode; body: Record<string, unknown>; headers: Headers }[] = [];
-  const accountMethods = { test: { card: true, wallet: true }, live: { card: true, wallet: true, bank_installments: true, valu: true } } as Record<KashierMode, Record<string, boolean>>;
+  // `GET /v2/merchants/{mid}/paymentMethods` as Kashier really answers it (its test API, 2026-11-01), not the docs' `{ card: true }` example.
+  const accountShape = (methods: string[], bnpl: string[] = []) => ({ acceptedPaymentMethods: methods, acceptedBNPLMethods: bnpl, acceptedCardProviders: ['mpgs'], acceptedWalletProviders: ['upg', 'vodafoneCash'], acceptedCardWalletProviders: [], operations: {} });
+  const LIVE_FULL = () => accountShape(['card', 'wallet', 'installments', 'instapay', 'basata'], ['valu', 'octo', 'souhoola', 'aman', 'contact', 'tru']);
+  const accountMethods: Record<KashierMode, unknown> = { test: accountShape(['card', 'wallet', 'installments', 'instapay', 'basata'], ['valu', 'souhoola']), live: LIVE_FULL() };
   let outage: 'none' | 'http500' | 'network' = 'none';
   const realFetch = globalThis.fetch;
   const fakeFetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -176,7 +179,7 @@ describe.skipIf(!url)('kashier payments (integration)', () => {
   // Every test starts from live mode with complete credentials, so one test failing half-way never leaks into the next.
   beforeEach(async () => {
     outage = 'none';
-    accountMethods.live = { card: true, wallet: true, bank_installments: true, valu: true };
+    accountMethods.live = LIVE_FULL();
     await configure();
   });
 
@@ -385,9 +388,14 @@ describe.skipIf(!url)('kashier payments (integration)', () => {
     await deliver('live', { order: t.payment.id, status: 'SUCCESS' });
     expect((await paymentRow(t.payment.id)).status).toBe('pending');
     await deliver('test', { order: t.payment.id, status: 'SUCCESS' });
-    expect((await paymentRow(t.payment.id)).status).toBe('paid');
-    const [req] = await sql<{ payment: { test?: boolean } }[]>`select payment from plan_requests where id = ${(await paymentRow(t.payment.id)).plan_request_id}`;
-    expect(req!.payment.test).toBe(true);
+    const paid = await paymentRow(t.payment.id);
+    expect(paid.status).toBe('paid');
+    // A sandbox payment never activates a plan, and leaves no plan request an admin could approve.
+    expect(paid.plan_request_id).toBeNull();
+    expect((await planOf(admin)).plan_id).toBe(BASE);
+    const [log] = await sql<{ details: { activated: boolean } }[]>`select details from audit_logs where action = 'payment.test_paid' and target_id = ${t.payment.id}`;
+    expect(log!.details.activated).toBe(false);
+    expect((await call(admin, 'POST', `/api/payments/${t.payment.id}/check`)).json().data).toMatchObject({ status: 'paid', mode: 'test' });
   });
 
   it('a listed test account gets the sandbox checkout too, and loses it when unlisted', async () => {
@@ -397,6 +405,21 @@ describe.skipIf(!url)('kashier payments (integration)', () => {
     expect(listed.statusCode, listed.body).toBe(200);
     expect(listed.json().data.testers).toEqual([row!.email.toLowerCase()]);
     expect((await call(customer, 'GET', '/api/payments/kashier')).json().data).toEqual({ enabled: true, mode: 'test' });
+    // The listed customer pays in the sandbox: verified, recorded, and their plan is untouched.
+    await resetPlan(customer);
+    const t = await openCheckout(customer);
+    expect(t.payment.mode).toBe('test');
+    t.session.status = 'PAID';
+    await deliver('test', { order: t.payment.id, status: 'SUCCESS' });
+    expect(await paymentRow(t.payment.id)).toMatchObject({ status: 'paid', plan_request_id: null });
+    expect((await planOf(customer)).plan_id).toBe(BASE);
+    // Only existing accounts can be listed; the audit keeps a count, never the addresses.
+    const unknown = await call(admin, 'PUT', '/api/admin/kashier', { enabled: true, mode: 'test', methods: ['card'], testers: [row!.email, 'nobody-here@test.local'] });
+    expect(unknown.statusCode).toBe(422);
+    expect(unknown.json().code).toBe('unknown_tester');
+    expect(JSON.stringify(unknown.json().errors)).toContain('nobody-here@test.local');
+    const logs = await sql<{ details: unknown }[]>`select details from audit_logs where actor_id = ${admin.userId} and action = 'kashier.update'`;
+    expect(JSON.stringify(logs)).not.toContain(row!.email.toLowerCase());
     expect((await call(admin, 'PUT', '/api/admin/kashier', { enabled: true, mode: 'test', methods: ['card'], testers: [] })).statusCode).toBe(200);
     expect((await call(customer, 'GET', '/api/payments/kashier')).json().data.enabled).toBe(false);
   });
@@ -434,14 +457,14 @@ describe.skipIf(!url)('kashier payments (integration)', () => {
   });
 
   it('tests the connection without moving money and narrows methods to the account', async () => {
-    accountMethods.live = { card: true, wallet: false };
+    accountMethods.live = accountShape(['card']);
     const good = await call(admin, 'POST', '/api/admin/kashier/test', { mode: 'live' });
     expect(good.json().data).toMatchObject({ ok: true, error: null });
     expect(good.json().data.settings.live).toMatchObject({ accountMethods: ['card'], apiKeyUnconfirmed: true });
     // Kashier offers only cards on this account: the session asks for cards only.
     await openCheckout();
     expect(created.at(-1)!.body.allowedMethods).toBeUndefined();
-    accountMethods.live = { card: true, wallet: true, bank_installments: true, valu: true };
+    accountMethods.live = LIVE_FULL();
     // A signed webhook confirms the Payment API Key.
     const { session, payment } = await openCheckout();
     session.status = 'PAID';
@@ -451,6 +474,22 @@ describe.skipIf(!url)('kashier payments (integration)', () => {
     await saveKashierSettings(sql, encryptionKey, { enabled: true, mode: 'live', methods: ['card'], live: { secretKey: 'secret-wrong-key' } });
     expect((await call(admin, 'POST', '/api/admin/kashier/test', { mode: 'live' })).json().data).toMatchObject({ ok: false, error: 'invalid_secret_key' });
     await configure();
+  });
+
+  it('reads the methods from the real Kashier paymentMethods answer (regression: it used to read none)', async () => {
+    await configure({ mode: 'test' });
+    const tested = await call(admin, 'POST', '/api/admin/kashier/test', { mode: 'test' });
+    expect(tested.json().data.settings.test.accountMethods).toEqual(['card', 'wallet', 'bank_installments', 'valu', 'souhoola']);
+    // Switching Kashier on in test mode with cards and wallets now works, and the admin gets the checkout.
+    const on = await call(admin, 'PUT', '/api/admin/kashier', { enabled: true, mode: 'test', methods: ['card', 'wallet'] });
+    expect(on.statusCode, on.body).toBe(200);
+    expect((await call(admin, 'GET', '/api/payments/kashier')).json().data).toEqual({ enabled: true, mode: 'test' });
+    // A live account Kashier hasn't provisioned yet answers empty lists: nothing can be offered there.
+    accountMethods.live = accountShape([]);
+    const live = await call(admin, 'POST', '/api/admin/kashier/test', { mode: 'live' });
+    expect(live.json().data.settings.live.accountMethods).toEqual([]);
+    const liveOn = await call(admin, 'PUT', '/api/admin/kashier', { enabled: true, mode: 'live', methods: ['card'], confirmLive: true });
+    expect(liveOn.statusCode).toBe(422);
   });
 
   it('switches live payments on only after a passing connection test and an explicit confirmation', async () => {

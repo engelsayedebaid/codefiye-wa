@@ -359,10 +359,41 @@ export async function getSessionPayment(account: KashierAccount, sessionId: stri
   return res.data;
 }
 
-/** The methods the merchant account has in this mode (`GET /v2/merchants/{mid}/paymentMethods`, no credential). */
-export async function getAccountMethods(mode: KashierMode, merchantId: string, fetchImpl?: typeof fetch): Promise<KashierMethod[]> {
-  const map = await call<Record<string, unknown>>(mode, `/v2/merchants/${encodeURIComponent(merchantId)}/paymentMethods`, {}, fetchImpl);
-  return KASHIER_METHODS.filter((m) => map[m] === true || (KASHIER_BNPL.includes(m) && map.bnpl === true && map[m] !== false));
+/**
+ * Kashier's method names for the account (`acceptedPaymentMethods`) mapped to ours: its "installments"
+ * is what sessions call `bank_installments`. Names we don't offer (instapay, basata, …) are dropped.
+ */
+const ACCOUNT_METHOD_NAMES: Record<string, KashierMethod> = { card: 'card', wallet: 'wallet', installments: 'bank_installments', bank_installments: 'bank_installments' };
+
+/**
+ * Reads the merchant's entitlement (`GET /v2/merchants/{mid}/paymentMethods`). Kashier answers
+ * `{ acceptedPaymentMethods: ["card", "wallet", "installments", …], acceptedBNPLMethods: ["valu", …], … }`
+ * (seen from the live API; the published example shows a `{ card: true, … }` map instead, so that is
+ * read too). Null when the answer is in neither shape: then nothing is narrowed (Kashier's checkout
+ * applies the entitlement itself), rather than treating an unreadable answer as "no methods".
+ */
+export function parseAccountMethods(body: unknown): KashierMethod[] | null {
+  if (!body || typeof body !== 'object') return null;
+  const b = body as Record<string, unknown>;
+  if (Array.isArray(b.acceptedPaymentMethods)) {
+    const names = new Set<KashierMethod>();
+    for (const m of b.acceptedPaymentMethods) {
+      const ours = typeof m === 'string' ? ACCOUNT_METHOD_NAMES[m.toLowerCase()] : undefined;
+      if (ours) names.add(ours);
+    }
+    if (Array.isArray(b.acceptedBNPLMethods)) {
+      for (const m of b.acceptedBNPLMethods) if (typeof m === 'string' && KASHIER_BNPL.includes(m.toLowerCase() as KashierMethod)) names.add(m.toLowerCase() as KashierMethod);
+    }
+    return KASHIER_METHODS.filter((m) => names.has(m));
+  }
+  const flags = Object.entries(b).filter(([, v]) => typeof v === 'boolean');
+  if (flags.length > 0) return KASHIER_METHODS.filter((m) => b[m] === true || (m === 'bank_installments' && b.installments === true) || (KASHIER_BNPL.includes(m) && b.bnpl === true && b[m] !== false));
+  return null;
+}
+
+/** The methods the merchant account has in this mode (`GET /v2/merchants/{mid}/paymentMethods`, no credential); null = unreadable. */
+export async function getAccountMethods(mode: KashierMode, merchantId: string, fetchImpl?: typeof fetch): Promise<KashierMethod[] | null> {
+  return parseAccountMethods(await call<unknown>(mode, `/v2/merchants/${encodeURIComponent(merchantId)}/paymentMethods`, {}, fetchImpl));
 }
 
 export type KashierConnectionResult = { error: KashierConnectionError | null; apiKeyUnconfirmed: boolean; accountMethods: KashierMethod[] | null };
@@ -394,7 +425,7 @@ export async function testKashierConnection(account: KashierAccount, fetchImpl?:
   const apiOk = plainVerdict(verdict, 'apiKeys');
   if (secretOk === false) return fail('wrong_mode');
   if (apiOk === false) return fail('invalid_api_key');
-  let accountMethods: KashierMethod[];
+  let accountMethods: KashierMethod[] | null;
   try {
     accountMethods = await getAccountMethods(account.mode, account.merchantId, fetchImpl);
   } catch (err) {
@@ -530,6 +561,21 @@ export async function settleKashierPayment(db: Db, account: KashierAccount, sess
     if (status === 'PAID') {
       const reasons = kashierReviewReasons(result, payment, account.merchantId);
       const extra = { providerPaymentId, raw: result, audit: { sessionId, kashierStatus: status, method: result.method ?? null, amount: result.amount ?? null } };
+      if (payment.mode === 'test') {
+        // A sandbox payment proves the flow end to end but buys nothing: it is verified and recorded,
+        // never turned into a plan or a plan request (so no admin approval can activate one either).
+        await tx
+          .update(payments)
+          .set({ status: reasons.length > 0 ? 'review' : 'paid', providerPaymentId, error: reasons.length > 0 ? reasons.join(',') : null, raw: result as never, paidAt: reasons.length > 0 ? null : new Date() })
+          .where(eq(payments.id, payment.id));
+        await tx.insert(auditLogs).values({
+          action: 'payment.test_paid',
+          targetType: 'payment',
+          targetId: payment.id,
+          details: { provider: 'kashier', mode: 'test', planId: payment.planId, months: payment.months, amountCents: payment.amountCents, activated: false, reasons, ...extra.audit },
+        });
+        return { ...base, status: reasons.length > 0 ? 'review' : 'paid', activated: false };
+      }
       if (reasons.length > 0) {
         await holdPaymentForReview(tx, payment, details, reasons, extra);
         return { ...base, status: 'review', activated: false };
