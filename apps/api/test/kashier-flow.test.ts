@@ -49,6 +49,8 @@ describe.skipIf(!url)('kashier payments (integration)', () => {
   type FakeOrder = { id: string; mode: KashierMode; reference: string; amount: number; status: 'PENDING' | 'SUCCESS' | 'FAILURE' };
   const orders = new Map<string, FakeOrder>();
   const walletRequests: { mode: KashierMode; body: Record<string, unknown>; hashOk: boolean; order: FakeOrder }[] = [];
+  /** Card orders "the browser paid" straight to Kashier, as `GET /v3/payment/orders?search=` projects them (keyed by our reference). */
+  const cardOrders = new Map<string, Record<string, unknown>>();
   // `GET /v2/merchants/{mid}/paymentMethods` as Kashier really answers it (its test API, 2026-11-01), not the docs' `{ card: true }` example.
   const accountShape = (methods: string[], bnpl: string[] = []) => ({ acceptedPaymentMethods: methods, acceptedBNPLMethods: bnpl, acceptedCardProviders: ['mpgs'], acceptedWalletProviders: ['upg', 'vodafoneCash'], acceptedCardWalletProviders: [], operations: {} });
   const LIVE_FULL = () => accountShape(['card', 'wallet', 'installments', 'instapay', 'basata'], ['valu', 'octo', 'souhoola', 'aman', 'contact', 'tru']);
@@ -92,6 +94,13 @@ describe.skipIf(!url)('kashier payments (integration)', () => {
     // Everything else needs this host's own Secret Key (a test key on the live host is refused).
     if (headers.get('authorization') !== CREDS[mode].secretKey) return json(401, { status: 'FAILURE', messages: { en: 'Unauthorized' } });
     if (path === '/v2/merchants/validate-credentials') return json(200, { status: 'SUCCESS' });
+    if (path === '/v3/payment/orders') {
+      // A partial, case-insensitive match on merchantOrderId, newest first; an empty list is "no such order", not a failure.
+      const search = new URL(href).searchParams.get('search') ?? '';
+      if (!search) return json(400, { status: 'FAILURE', messages: { en: 'search is required' } });
+      const data = [...cardOrders.values()].filter((o) => String(o.merchantOrderId).toLowerCase().includes(search.toLowerCase()) && o.mode === mode).reverse();
+      return json(200, { status: 'SUCCESS', message: 'Orders retrieved successfully', data, pagination: { page: 1, limit: 10, total: data.length } });
+    }
     if (init?.method === 'POST' && path === '/v3/payment/sessions') {
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
       created.push({ mode, body, headers });
@@ -321,6 +330,87 @@ describe.skipIf(!url)('kashier payments (integration)', () => {
     expect(walletRequests.at(-1)!.mode).toBe('test');
     walletRequests.at(-1)!.order.status = 'SUCCESS';
     expect((await call(admin, 'POST', `/api/payments/${payment.id}/check`)).json().data).toMatchObject({ status: 'paid', mode: 'test' });
+    expect((await planOf(admin)).plan_id).toBe(BASE);
+  });
+
+  // --- card, paid from the browser (Direct API) ------------------------------------------------
+
+  it('card: signs the order for the browser (the hash binds our price, the key stays here), and settles from Kashier’s order once captured', async () => {
+    await resetPlan(customer);
+    const approvedBefore = await approvedKashier(customer);
+    const res = await call(customer, 'POST', '/api/payments/kashier/card', { planId: 'basic', months: 3 });
+    expect(res.statusCode, res.body).toBe(201);
+    const { payment, order } = res.json().data as { payment: { id: string; status: string; mode: string; amountCents: number }; order: Record<string, unknown> };
+    const [quote, pricing] = await Promise.all([getEgpQuote(sql), getPlanPricing(sql)]);
+    const egp = planPriceEgp(listedPriceUsd('basic', pricing), 3, quote.effective)!;
+    expect(payment).toMatchObject({ status: 'pending', mode: 'live', amountCents: egp * 100 });
+    expect(order).toEqual({
+      host: 'https://fep.kashier.io',
+      merchantId: CREDS.live.merchantId,
+      reference: payment.id,
+      amount: egp,
+      currency: 'EGP',
+      hash: kashierOrderHash(CREDS.live.apiKey, CREDS.live.merchantId, payment.id, egp, 'EGP'),
+      webhookUrl: 'https://wa.codefiye.com/api/payments/kashier/webhook/live',
+      merchantRedirect: `https://wa.codefiye.com/subscription?payment=${payment.id}`,
+      description: 'Basic plan × 3 months',
+      customer: { reference: customer.id, email: expect.stringMatching(/@test\.local$/) },
+    });
+    expect(res.body).not.toContain(CREDS.live.apiKey);
+    expect(res.body).not.toContain(CREDS.live.secretKey);
+    const check = async () => (await call(customer, 'POST', `/api/payments/${payment.id}/check`)).json().data as { status: string; error: string | null };
+    // The browser hasn't paid yet: Kashier knows no such order.
+    expect((await check()).status).toBe('pending');
+    // 3-D Secure under way: the order is INITIATED, nothing is activated.
+    cardOrders.set(payment.id, { mode: 'live', merchantOrderId: payment.id, orderId: 'KO-CARD-1', status: 'INITIATED', amount: egp, currency: 'EGP', transactions: [{ operation: 'authenticate_payer', status: 'INITIATED' }] });
+    expect((await check()).status).toBe('pending');
+    expect((await planOf(customer)).plan_id).toBe(BASE);
+    // Captured: the webhook names our order, the order is read back from Kashier, and the plan turns on once.
+    cardOrders.set(payment.id, {
+      mode: 'live',
+      merchantOrderId: payment.id,
+      orderId: 'KO-CARD-1',
+      status: 'CAPTURED',
+      amount: egp,
+      currency: 'EGP',
+      paymentMethod: { type: 'card', card: { cardBrand: 'Visa', maskedCard: '400000******0002' } },
+      transactions: [
+        { operation: 'authenticate_payer', status: 'SUCCESS' },
+        { operation: 'pay', status: 'SUCCESS', transactionId: 'TX-CARD-1', amount: egp },
+      ],
+    });
+    expect((await deliver('live', { order: payment.id, status: 'SUCCESS', amount: egp })).statusCode).toBe(200);
+    expect(await paymentRow(payment.id)).toMatchObject({ status: 'paid', provider: 'kashier', session_id: null });
+    expect((await planOf(customer)).plan_id).toBe('basic');
+    expect(await approvedKashier(customer)).toBe(approvedBefore + 1);
+    const [approved] = await sql<{ payment: { paymentMethod?: string; orderId?: string; transactionId?: string } }[]>`
+      select payment from plan_requests where workspace_id = ${customer.id} and status = 'approved' order by created_at desc limit 1`;
+    expect(approved!.payment).toMatchObject({ paymentMethod: 'card Visa •••• 0002', orderId: 'KO-CARD-1', transactionId: 'TX-CARD-1' });
+    expect((await check()).status).toBe('paid');
+    expect(await approvedKashier(customer)).toBe(approvedBefore + 1);
+  });
+
+  it('card: a declined order fails, a different amount at Kashier is held for review, and test mode activates nothing', async () => {
+    await resetPlan(customer);
+    const declined = (await call(customer, 'POST', '/api/payments/kashier/card', { planId: 'basic' })).json().data.payment as { id: string; amountCents: number };
+    cardOrders.set(declined.id, { mode: 'live', merchantOrderId: declined.id, orderId: 'KO-D', status: 'FAILED', transactions: [{ operation: 'pay', status: 'FAILURE', transactionResponseCode: '51' }] });
+    expect((await call(customer, 'POST', `/api/payments/${declined.id}/check`)).json().data).toMatchObject({ status: 'failed', error: 'card_declined' });
+
+    const odd = (await call(customer, 'POST', '/api/payments/kashier/card', { planId: 'basic' })).json().data.payment as { id: string; amountCents: number };
+    cardOrders.set(odd.id, { mode: 'live', merchantOrderId: odd.id, orderId: 'KO-ODD', status: 'CAPTURED', amount: odd.amountCents / 100 + 1, currency: 'EGP', transactions: [{ operation: 'pay', status: 'SUCCESS' }] });
+    expect((await call(customer, 'POST', `/api/payments/${odd.id}/check`)).json().data).toMatchObject({ status: 'review', error: 'amount_mismatch' });
+    expect((await planOf(customer)).plan_id).toBe(BASE);
+    const [held] = await sql<{ n: number }[]>`select count(*)::int as n from plan_requests where workspace_id = ${customer.id} and status = 'pending'`;
+    expect(held!.n).toBe(1);
+
+    await configure({ mode: 'test' });
+    expect((await call(customer, 'POST', '/api/payments/kashier/card', { planId: 'basic' })).statusCode).toBe(503);
+    await resetPlan(admin);
+    const t = (await call(admin, 'POST', '/api/payments/kashier/card', { planId: 'basic' })).json().data as { payment: { id: string; mode: string; amountCents: number }; order: { host: string } };
+    expect(t.payment.mode).toBe('test');
+    expect(t.order.host).toBe('https://test-fep.kashier.io');
+    cardOrders.set(t.payment.id, { mode: 'test', merchantOrderId: t.payment.id, orderId: 'KO-T', status: 'CAPTURED', amount: t.payment.amountCents / 100, currency: 'EGP', transactions: [{ operation: 'pay', status: 'SUCCESS' }] });
+    expect((await call(admin, 'POST', `/api/payments/${t.payment.id}/check`)).json().data).toMatchObject({ status: 'paid', mode: 'test' });
     expect((await planOf(admin)).plan_id).toBe(BASE);
   });
 

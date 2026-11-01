@@ -517,6 +517,93 @@ export async function reconcileWalletPayment(account: KashierAccount, systemOrde
   };
 }
 
+// --- Direct API: card, from the browser -----------------------------------------------------------
+
+/**
+ * What the browser needs to pay a card order straight to Kashier (https://developers.kashier.io/docs/direct-api/card-form):
+ * the order as we priced it and its hash (the Payment API Key never leaves the server; the hash binds the
+ * merchant, our reference, the amount and the currency, so the browser cannot change what is charged).
+ * The card data goes from the customer's browser to Kashier and never reaches us.
+ */
+export type SignedCardOrder = {
+  host: string;
+  merchantId: string;
+  reference: string;
+  amount: number;
+  currency: 'EGP';
+  hash: string;
+  webhookUrl: string;
+  merchantRedirect: string;
+  description: string;
+  customer: { reference: string; email: string };
+};
+
+export function signCardOrder(account: KashierAccount, input: { amountCents: number; reference: string; workspaceId: string; customerEmail: string; description: string; webhookUrl: string; merchantRedirect: string }): SignedCardOrder {
+  const amount = Number(kashierAmount(input.amountCents));
+  return {
+    host: KASHIER_FEP[account.mode],
+    merchantId: account.merchantId,
+    reference: input.reference,
+    amount,
+    currency: 'EGP',
+    hash: kashierOrderHash(account.apiKey, account.merchantId, input.reference, amount, 'EGP'),
+    webhookUrl: input.webhookUrl,
+    merchantRedirect: input.merchantRedirect,
+    description: input.description.slice(0, 119),
+    customer: { reference: input.workspaceId, email: input.customerEmail },
+  };
+}
+
+/** An order of ours as Kashier stores it (`GET /v3/payment/orders?search=`, Secret Key): the paid state is `CAPTURED`. */
+export type KashierOrderResult = {
+  status: 'CAPTURED' | 'PENDING' | 'FAILED' | 'REFUNDED' | 'MISSING';
+  orderId: string | null;
+  amount?: number | string;
+  currency?: string;
+  method?: string;
+  cardBrand?: string;
+  maskedCard?: string;
+  transactionId?: string;
+  raw: unknown;
+};
+
+const ORDER_FAILED = new Set(['FAILED', 'CANCELLED', 'REVERSED', 'EXPIRED', 'REJECTED', 'VOIDED', 'DECLINED']);
+const ORDER_PAID = new Set(['CAPTURED', 'SUCCESS', 'PAID']);
+
+type StoredOrder = Record<string, unknown> & {
+  merchantOrderId?: string;
+  orderId?: string;
+  status?: string;
+  amount?: number | string;
+  totalCapturedAmount?: number | string;
+  currency?: string;
+  method?: string;
+  paymentMethod?: { type?: string; card?: { cardBrand?: string; number?: string; maskedCard?: string } } | string;
+  transactions?: ({ operation?: string; status?: string; transactionId?: string; amount?: number | string; method?: string } & Record<string, unknown>)[];
+};
+
+/** Reads the order the browser paid (by our reference, exactly) back from Kashier: the authoritative state. */
+export async function lookupKashierOrder(account: KashierAccount, reference: string, fetchImpl?: typeof fetch): Promise<KashierOrderResult> {
+  const res = await call<{ data?: StoredOrder[] }>(account.mode, `/v3/payment/orders?search=${encodeURIComponent(reference)}&limit=10`, { secretKey: account.secretKey }, fetchImpl);
+  const order = (Array.isArray(res.data) ? res.data : []).find((o) => o.merchantOrderId === reference);
+  if (!order) return { status: 'MISSING', orderId: null, raw: res };
+  const status = String(order.status ?? '').toUpperCase();
+  const pay = [...(order.transactions ?? [])].reverse().find((t) => String(t.operation ?? '').toLowerCase() === 'pay') ?? order.transactions?.at(-1);
+  const pm = typeof order.paymentMethod === 'object' ? order.paymentMethod : undefined;
+  const refunded = (order.transactions ?? []).some((t) => String(t.operation ?? '').toLowerCase() === 'refund' && String(t.status ?? '').toUpperCase() === 'SUCCESS');
+  return {
+    status: refunded ? 'REFUNDED' : ORDER_PAID.has(status) ? 'CAPTURED' : ORDER_FAILED.has(status) ? 'FAILED' : 'PENDING',
+    orderId: typeof order.orderId === 'string' ? order.orderId : null,
+    amount: order.amount ?? order.totalCapturedAmount ?? pay?.amount,
+    currency: order.currency,
+    method: order.method ?? pay?.method ?? (typeof order.paymentMethod === 'string' ? order.paymentMethod : pm?.type),
+    cardBrand: pm?.card?.cardBrand,
+    maskedCard: pm?.card?.maskedCard ?? pm?.card?.number,
+    transactionId: pay?.transactionId,
+    raw: order,
+  };
+}
+
 /**
  * Kashier's method names for the account (`acceptedPaymentMethods`) mapped to ours: its "installments"
  * is what sessions call `bank_installments`. Names we don't offer (instapay, basata, …) are dropped.
@@ -793,6 +880,56 @@ export async function settleKashierWalletPayment(db: Db, account: KashierAccount
     }
     if (result.status === 'FAILURE' && payment.status === 'pending') {
       await tx.update(payments).set({ status: 'failed', error: 'wallet_declined', raw: result.raw as never }).where(and(eq(payments.id, payment.id), eq(payments.status, 'pending')));
+      return { ...base, status: 'failed', activated: false };
+    }
+    return { ...base, status: payment.status, activated: false };
+  });
+}
+
+/**
+ * Records a card order paid from the browser (`lookupKashierOrder`, read with the payment's own mode
+ * keys) against its payment, under the row lock: CAPTURED → activated once (the hash we signed already
+ * bound the amount and currency; they are checked again when Kashier reports them); FAILED → `failed`;
+ * REFUNDED → `refunded`, never activated; INITIATED (3-D Secure under way) or no order yet → unchanged.
+ */
+export async function settleKashierCardPayment(db: Db, account: KashierAccount, paymentId: string, result: KashierOrderResult): Promise<KashierSettled | null> {
+  return db.transaction(async (tx) => {
+    const [payment] = await tx
+      .select()
+      .from(payments)
+      .where(and(eq(payments.id, paymentId), eq(payments.provider, 'kashier')))
+      .for('update');
+    if (!payment || payment.mode !== account.mode) return null;
+    const base = { paymentId: payment.id, workspaceId: payment.workspaceId };
+    if (result.orderId && payment.kashierOrderId !== result.orderId) await tx.update(payments).set({ kashierOrderId: result.orderId }).where(eq(payments.id, payment.id));
+    if (result.status === 'REFUNDED') {
+      if (payment.status === 'paid' || payment.status === 'pending') {
+        await tx.update(payments).set({ status: 'refunded', ...(payment.status === 'pending' ? { error: 'refunded_before_paid' } : {}), raw: result.raw as never }).where(eq(payments.id, payment.id));
+        await tx.insert(auditLogs).values({ action: 'payment.refunded', targetType: 'payment', targetId: payment.id, details: { provider: 'kashier', mode: payment.mode, workspaceId: payment.workspaceId, planId: payment.planId, status: 'REFUNDED', full: true } });
+        return { ...base, status: 'refunded', activated: false };
+      }
+      return { ...base, status: payment.status, activated: false };
+    }
+    if (payment.status !== 'pending' && payment.status !== 'failed') return { ...base, status: payment.status, activated: false };
+    if (result.status === 'CAPTURED') {
+      const reasons: string[] = [];
+      if (result.amount !== undefined && parseKashierAmount(result.amount) !== payment.amountCents) reasons.push('amount_mismatch');
+      if (result.currency !== undefined && String(result.currency).toUpperCase() !== payment.currency) reasons.push('currency_mismatch');
+      const brand = [result.cardBrand, result.maskedCard ? `•••• ${result.maskedCard.slice(-4)}` : null].filter(Boolean).join(' ');
+      const details: PaymentDetails = {
+        method: 'kashier',
+        sessionId: result.orderId ?? payment.id,
+        ...(result.orderId ? { orderId: result.orderId } : {}),
+        ...(result.transactionId ? { transactionId: result.transactionId } : {}),
+        paymentMethod: brand ? `card ${brand}` : (result.method ?? 'card'),
+        amount: payment.amountCents / 100,
+        ...(payment.mode === 'test' ? { test: true } : {}),
+      };
+      const extra: SettleExtra = { providerPaymentId: result.orderId, raw: result.raw, audit: { kashierOrderId: result.orderId, kashierStatus: result.status, method: result.method ?? 'card', amount: result.amount ?? null } };
+      return { ...base, ...(await settlePaid(tx, payment, details, reasons, extra)) };
+    }
+    if (result.status === 'FAILED' && payment.status === 'pending') {
+      await tx.update(payments).set({ status: 'failed', error: 'card_declined', raw: result.raw as never }).where(and(eq(payments.id, payment.id), eq(payments.status, 'pending')));
       return { ...base, status: 'failed', activated: false };
     }
     return { ...base, status: payment.status, activated: false };

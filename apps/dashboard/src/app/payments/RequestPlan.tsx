@@ -1,16 +1,16 @@
-import type { KashierMethod } from '@wa/shared/kashier';
 import { discountPercent } from '@wa/shared/plan-pricing';
 import { enabledPaymentMethods, PAYMENT_MONTHS, type PaymentDetails, type PaymentMethod, type PaymentMonths, type PaymentSettings, planPriceEgp } from '@wa/shared/payments';
 import { useMutation } from '@tanstack/react-query';
-import { ArrowLeft, Check, ImagePlus, Info, Loader2, Receipt, ShieldCheck } from '../../icons';
+import { ArrowLeft, Check, ImagePlus, Info, Loader2, Receipt } from '../../icons';
 import { type DragEvent, type FormEvent, useRef, useState } from 'react';
 import { api, ApiRequestError, errorMessage } from '../../api';
 import { useCurrencyRates } from '../../currency';
 import { useI18n } from '../../i18n';
 import type { PricedPlan } from '../../site/content';
 import { Button, cx, ErrorNote, Field, flip, Modal, usePlanName } from '../../ui';
-import { CopyLine, KASHIER_METHOD_ICON, METHOD_LOOK, MethodGlyph, shrinkImage, usePaymentSettings } from './methods';
-import { CheckoutFrame, KashierCheckout, type OpenedCheckout, useKashierConfig, WalletCheckout } from './OnlineCheckout';
+import { CopyLine, METHOD_LOOK, MethodGlyph, shrinkImage, usePaymentSettings } from './methods';
+import { CheckoutFrame, type OpenedCheckout, useKashierConfig } from './OnlineCheckout';
+import { OnlinePaymentPanel } from './OnlinePay';
 import { RateLine, TrustStrip } from './Trust';
 
 type Proof = { mimetype: 'image/jpeg'; data: string; previewUrl: string };
@@ -101,47 +101,6 @@ function MethodPicker({ methods, value, onChange }: { methods: PaymentMethod[]; 
             <span className="text-sm font-semibold">{p.methods[m]}</span>
             {active && (
               <span className="absolute end-2 top-2 flex size-5 items-center justify-center rounded-full bg-brand text-on-brand">
-                <Check className="size-3" />
-              </span>
-            )}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-/** Kashier's methods for this account, picked here so its checkout opens on the chosen one. */
-function KashierMethodPicker({ methods, value, onChange }: { methods: KashierMethod[]; value: KashierMethod | null; onChange: (m: KashierMethod) => void }) {
-  const { t } = useI18n();
-  const x = t.admin.payments.kashier;
-  return (
-    <div role="radiogroup" aria-label={t.subscription.payment.online.chooseMethod} className="grid gap-2 sm:grid-cols-2">
-      {methods.map((m, i) => {
-        const active = m === value;
-        const Icon = KASHIER_METHOD_ICON[m];
-        return (
-          <button
-            key={m}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            onClick={() => onChange(m)}
-            className={cx(
-              'animate-fade-up relative flex items-center gap-3 rounded-xl border p-3 text-start transition-all',
-              active ? 'border-brand bg-brand/10 shadow-[0_0_0_1px_var(--color-brand)]' : 'border-line hover:border-line-strong hover:bg-raised/30',
-            )}
-            style={{ animationDelay: `${i * 40}ms` }}
-          >
-            <span className={cx('flex size-10 shrink-0 items-center justify-center rounded-lg transition-colors', active ? 'bg-brand text-on-brand' : 'bg-raised text-ink-2')}>
-              <Icon className="size-5" />
-            </span>
-            <span className="min-w-0 pe-5">
-              <span className="block text-sm font-semibold">{x.methodNames[m]}</span>
-              <span className="block text-xs text-muted">{x.methodHints[m]}</span>
-            </span>
-            {active && (
-              <span className="animate-scale-in absolute end-2 top-2 flex size-5 items-center justify-center rounded-full bg-brand text-on-brand">
                 <Check className="size-3" />
               </span>
             )}
@@ -343,12 +302,8 @@ export function RequestPlanModal({
   const online = Boolean(kashier.data?.enabled) && !free && totalEgp !== null && totalEgp > 0;
   const payable = !online && methods.length > 0 && !free;
   const loadingMethods = settings.isPending || kashier.isPending || rates.isPending;
-  const o = p.online;
   const kashierMethods = kashier.data?.methods ?? [];
-  const [picked, setPicked] = useState<KashierMethod | null>(null);
-  // A single offered method needs no choice.
-  const onlineMethod = picked ?? (kashierMethods.length === 1 ? kashierMethods[0]! : null);
-  // Kashier's checkout, once opened, takes over from the dialog (on our page, in its own frame).
+  // Kashier's checkout (installments, BNPL), once opened, takes over from the dialog (on our page, in its own frame).
   const [checkout, setCheckout] = useState<OpenedCheckout | null>(null);
 
   const request = useMutation({
@@ -411,12 +366,12 @@ export function RequestPlanModal({
   }
 
   return (
-    <Modal title={s.modalTitle(planName(plan))} description={step === 'details' ? p.steps.details : undefined} onClose={onClose} size="lg" tall>
+    <Modal title={s.modalTitle(planName(plan))} description={step === 'details' ? p.steps.details : undefined} onClose={onClose} size={online ? 'xl' : 'lg'} tall={!online}>
       <form onSubmit={submit} className="space-y-5">
-        {/* step indicator */}
-        {(payable || online) && (
+        {/* step indicator (manual transfers only: online payment is one screen) */}
+        {payable && (
           <ol className="flex items-center gap-2 text-xs">
-            {(online ? (['plan', 'pay'] as const) : (['plan', 'details'] as const)).map((k, i) => {
+            {(['plan', 'details'] as const).map((k, i) => {
               const done = k === 'plan' && step !== 'plan';
               const active = k === step;
               return (
@@ -425,37 +380,46 @@ export function RequestPlanModal({
                   <span className={cx('flex size-5 items-center justify-center rounded-full text-[11px] font-semibold transition-colors', active || done ? 'bg-brand text-on-brand' : 'bg-raised text-muted')}>
                     {done ? <Check className="size-3" /> : i + 1}
                   </span>
-                  <span className={cx('font-medium', active ? 'text-ink' : 'text-muted')}>{k === 'pay' ? o.steps.pay : online ? o.steps.plan : p.steps[k]}</span>
+                  <span className={cx('font-medium', active ? 'text-ink' : 'text-muted')}>{p.steps[k]}</span>
                 </li>
               );
             })}
           </ol>
         )}
 
-        {step === 'pay' && totalEgp !== null && onlineMethod === 'wallet' ? (
-          // Wallets need no card data, so the whole payment happens on our page: a request-to-pay to the wallet app.
-          <WalletCheckout
-            planId={plan.id}
-            months={months}
-            amountLabel={p.egp(totalEgp)}
-            usdLabel={p.usd(totalUsd)}
-            test={kashier.data?.mode === 'test'}
-            onBack={() => setStep('plan')}
-            onNeedsPhone={onNeedsPhone}
-            onDone={onPaid}
-          />
-        ) : step === 'pay' && totalEgp !== null ? (
-          <KashierCheckout
-            planId={plan.id}
-            months={months}
-            method={onlineMethod}
-            amountLabel={p.egp(totalEgp)}
-            usdLabel={p.usd(totalUsd)}
-            test={kashier.data?.mode === 'test'}
-            onBack={() => setStep('plan')}
-            onNeedsPhone={onNeedsPhone}
-            onOpened={setCheckout}
-          />
+        {online && totalEgp !== null ? (
+          // One screen, as a shop's checkout: the order on one side, the payment methods (each opening into its own form) on the other.
+          <div className="grid gap-6 pb-6 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] md:gap-8">
+            <aside className="space-y-4 md:sticky md:top-0 md:self-start">
+              <OrderSummary plan={plan} months={months} egpPerUsd={egpPerUsd} />
+              <div className="space-y-2">
+                <p className="text-sm font-medium">{p.duration}</p>
+                <MonthsPicker plan={plan} egpPerUsd={egpPerUsd} value={months} onChange={setMonths} />
+              </div>
+              <TrustStrip />
+              <PayAgreement />
+            </aside>
+            <section className="min-w-0">
+              {loadingMethods ? (
+                <div className="flex justify-center py-10">
+                  <Loader2 className="size-5 animate-spin text-brand" />
+                </div>
+              ) : (
+                <OnlinePaymentPanel
+                  // The chosen length changes the amount, so a payment under way is never silently repriced: the panel starts over.
+                  key={months}
+                  methods={kashierMethods}
+                  planId={plan.id}
+                  months={months}
+                  amountLabel={p.egp(totalEgp)}
+                  test={kashier.data?.mode === 'test'}
+                  onNeedsPhone={onNeedsPhone}
+                  onDone={onPaid}
+                  onOpened={setCheckout}
+                />
+              )}
+            </section>
+          </div>
         ) : step === 'plan' ? (
           <>
             <OrderSummary plan={plan} months={months} egpPerUsd={egpPerUsd} />
@@ -468,17 +432,6 @@ export function RequestPlanModal({
             {loadingMethods ? (
               <div className="flex justify-center py-4">
                 <Loader2 className="size-5 animate-spin text-brand" />
-              </div>
-            ) : online ? (
-              <div className="space-y-3">
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">{o.chooseMethod}</p>
-                  <KashierMethodPicker methods={kashierMethods} value={onlineMethod} onChange={setPicked} />
-                </div>
-                <TrustStrip />
-                <p className="flex items-center gap-1.5 text-xs text-muted">
-                  <ShieldCheck className="size-3.5 shrink-0 text-brand" /> {o.secureHint}
-                </p>
               </div>
             ) : payable ? (
               <div className="space-y-2">
@@ -493,8 +446,8 @@ export function RequestPlanModal({
               </div>
             )}
 
-            {!payable && !online && !loadingMethods && <Field label={s.noteLabel} placeholder={s.notePlaceholder} value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} />}
-            {(online || payable) && <PayAgreement />}
+            {!payable && !loadingMethods && <Field label={s.noteLabel} placeholder={s.notePlaceholder} value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} />}
+            {payable && <PayAgreement />}
             <ErrorNote>{topError}</ErrorNote>
             <div className="sticky bottom-0 z-10 -mx-6 flex items-center justify-between gap-3 border-t border-line bg-card px-6 py-4">
               {/* The total travels with the footer, so it stays in view while the form scrolls. */}
@@ -506,11 +459,7 @@ export function RequestPlanModal({
                 <Button variant="outline" onClick={onClose}>
                   {t.common.cancel}
                 </Button>
-                {online ? (
-                  <Button variant="brand" disabled={!onlineMethod} onClick={() => setStep('pay')}>
-                    {o.next}
-                  </Button>
-                ) : payable ? (
+                {payable ? (
                   <Button variant="brand" disabled={!method} onClick={goDetails}>
                     {p.next}
                   </Button>

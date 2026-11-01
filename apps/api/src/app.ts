@@ -76,11 +76,12 @@ function dashboardCsp(indexHtml: string) {
     "img-src 'self' data: blob: https:",
     // Ad-library videos play from the networks' CDNs; files about to be sent preview from blob: URLs.
     "media-src 'self' blob: https:",
-    // Kashier's checkout runs in its own frame on our page (it talks to us by postMessage only), so no
-    // payment provider needs a script or connect source here.
-    "connect-src 'self'",
-    // The landing page's explainer video (loaded only when the visitor presses play), and Kashier's checkout.
-    'frame-src https://www.youtube-nocookie.com https://payments.kashier.io',
+    // Card payments go from the browser straight to Kashier's Direct API (the order is signed by us, the
+    // card data never reaches us); no payment provider needs a script source.
+    "connect-src 'self' https://fep.kashier.io https://test-fep.kashier.io",
+    // Frames: the landing page's explainer video (loaded only on play), Kashier's checkout, and the 3-D Secure
+    // step, which starts on checkout.kashier.io and moves on to the card issuer's own page (any bank).
+    'frame-src https:',
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",

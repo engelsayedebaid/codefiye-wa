@@ -39,11 +39,14 @@ import {
   kashierEventSeen,
   type KashierSettled,
   KashierWalletError,
+  lookupKashierOrder,
   reconcileWalletPayment,
   recordKashierEvent,
   recordKashierWebhookSeen,
+  settleKashierCardPayment,
   settleKashierPayment,
   settleKashierWalletPayment,
+  signCardOrder,
   verifyKashierWebhook,
 } from '../lib/kashier';
 import {
@@ -94,6 +97,17 @@ const toPaymentDto = (p: PaymentRow) => ({
   paidAt: p.paidAt?.toISOString() ?? null,
 });
 
+/** A Direct API wallet order (request-to-pay), as opposed to a card the browser paid or a session. */
+const isWalletOrder = (payment: PaymentRow) => Boolean(payment.kashierOrderId && (payment.raw as { wallet?: unknown } | null)?.wallet);
+
+/** Reads a Kashier payment back the way it was made (session, wallet order, or a card order paid from the browser) and settles it. */
+const settleAnyKashier = (db: Deps['db'], account: KashierAccount, payment: PaymentRow) =>
+  payment.sessionId
+    ? getSessionPayment(account, payment.sessionId).then((result) => settleKashierPayment(db, account, payment.sessionId!, result))
+    : isWalletOrder(payment)
+      ? reconcileWalletPayment(account, payment.kashierOrderId!).then((result) => settleKashierWalletPayment(db, account, payment.kashierOrderId!, result))
+      : lookupKashierOrder(account, payment.id).then((result) => settleKashierCardPayment(db, account, payment.id, result));
+
 /** Customer endpoints for online payments (`/api/payments/…`): Kashier checkouts, and settling any payment. */
 export function paymentRoutes(deps: Deps, options: Options): FastifyPluginAsyncZod {
   const { sql, db, auth } = deps;
@@ -114,13 +128,7 @@ export function paymentRoutes(deps: Deps, options: Options): FastifyPluginAsyncZ
     if (!row) throw notFound('Payment not found');
     return row;
   };
-  /** Reads a Kashier payment back the way it was made (session, or Direct API wallet order) and settles it. */
-  const settleKashier = (account: KashierAccount, payment: PaymentRow) =>
-    payment.sessionId
-      ? getSessionPayment(account, payment.sessionId).then((result) => settleKashierPayment(db, account, payment.sessionId!, result))
-      : payment.kashierOrderId
-        ? reconcileWalletPayment(account, payment.kashierOrderId).then((result) => settleKashierWalletPayment(db, account, payment.kashierOrderId!, result))
-        : Promise.resolve(null);
+  const settleKashier = (account: KashierAccount, payment: PaymentRow) => settleAnyKashier(db, account, payment);
 
   return async (app) => {
     app.get(
@@ -207,6 +215,72 @@ export function paymentRoutes(deps: Deps, options: Options): FastifyPluginAsyncZ
     );
 
     app.post(
+      '/payments/kashier/card',
+      {
+        schema: {
+          tags,
+          summary: 'Prepare a card payment the browser sends to Kashier itself',
+          description:
+            'Prices the plan in EGP on the server and returns the order signed with the merchant’s Payment API Key (`hash`). The browser then ' +
+            'POSTs the order with the card details straight to Kashier’s Direct API (`{host}/v3/orders/`, header `Kashier-Hash`): the card ' +
+            'never reaches this server, and the hash binds the amount. 3-D Secure (`AUTHENTICATION_INITIATED`) is completed in a frame. Poll ' +
+            '`POST /api/payments/{id}/check` until the payment is no longer `pending`: the order is read back from Kashier before anything is activated.',
+          body: z.object({ planId: z.enum(REQUESTABLE_PLANS), months: paymentMonthsSchema.default(1) }),
+          response: {
+            201: successSchema(
+              z.object({
+                payment: paymentDto,
+                order: z.object({
+                  host: z.string(),
+                  merchantId: z.string(),
+                  reference: z.string(),
+                  amount: z.number(),
+                  currency: z.literal('EGP'),
+                  hash: z.string(),
+                  webhookUrl: z.string(),
+                  merchantRedirect: z.string(),
+                  description: z.string(),
+                  customer: z.object({ reference: z.string(), email: z.string() }),
+                }),
+              }),
+            ),
+          },
+        },
+      },
+      async (req, reply) => {
+        requirePat(req);
+        if (!req.auth.isAdmin && !req.auth.phoneVerified) throw forbidden('Verify your phone number before paying for a plan', 'phone_unverified');
+        const account = await getKashierAccountFor(sql, deps.encryptionKey, caller(req));
+        if (!account) throw unavailable('Online payment is not available right now', 'kashier_off');
+        if (!account.methods.includes('card')) throw unprocessable('Card payment is not available', { method: ['Choose one of the offered methods'] });
+        const { planId, months } = req.body;
+        const [quote, pricing, view] = await Promise.all([getEgpQuote(sql, (err) => req.log.warn({ err }, 'exchange rates refresh failed')), getPlanPricing(sql), getKashierSettings(sql, deps.encryptionKey, publicBaseUrl(options.publicUrl, req))]);
+        const egp = planPriceEgp(listedPriceUsd(planId, pricing), months, quote.effective);
+        if (egp === null || egp <= 0) throw unprocessable('This plan cannot be paid online', { planId: ['Request this plan instead'] });
+        const [customer] = await sql<{ email: string }[]>`
+          select email from users where id = coalesce(${req.auth.userId}::uuid, (select owner_id from workspaces where id = ${req.auth.workspaceId}))`;
+        if (!customer) throw forbidden('This workspace has no owner to bill', 'no_owner');
+
+        const amountCents = egp * 100;
+        const [payment] = await db
+          .insert(payments)
+          .values({ workspaceId: req.auth.workspaceId, userId: req.auth.userId, provider: 'kashier', planId, months, amountCents, currency: 'EGP', mode: account.mode, raw: { card: { direct: true } } as never })
+          .returning();
+        const order = signCardOrder(account, {
+          amountCents,
+          reference: payment!.id,
+          workspaceId: req.auth.workspaceId,
+          customerEmail: customer.email,
+          description: `${PLANS[planId].name} plan × ${months} ${months === 1 ? 'month' : 'months'}`,
+          webhookUrl: view[account.mode].webhookUrl,
+          merchantRedirect: `${returnOrigin(req)}/subscription?payment=${payment!.id}`,
+        });
+        reply.code(201);
+        return ok({ payment: toPaymentDto(payment!), order });
+      },
+    );
+
+    app.post(
       '/payments/kashier/wallet',
       {
         schema: {
@@ -286,7 +360,7 @@ export function paymentRoutes(deps: Deps, options: Options): FastifyPluginAsyncZ
       async (req) => {
         requirePat(req);
         const payment = await owned(req, req.params.id);
-        if ((payment.status === 'pending' || payment.status === 'paid') && (payment.sessionId || payment.kashierOrderId)) {
+        if ((payment.status === 'pending' || payment.status === 'paid') && (payment.provider === 'kashier' || payment.sessionId)) {
           let settled: { activated: boolean; workspaceId: string } | null = null;
           try {
             if (payment.provider === 'kashier') {
@@ -407,14 +481,12 @@ export function kashierWebhookRoutes(deps: Deps): FastifyPluginAsyncZod {
         : [];
       let settled: KashierSettled | null = null;
       let outcome = 'unknown_order';
-      if (payment?.sessionId || payment?.kashierOrderId) {
+      if (payment) {
         // The signed payload only says which order changed; its state comes from Kashier itself, read with
-        // this mode's Secret Key (the session, or the wallet order). If Kashier can't be reached, a non-2xx
-        // makes it deliver the event again.
+        // this mode's Secret Key (the session, the wallet order, or the card order). If Kashier can't be
+        // reached, a non-2xx makes it deliver the event again.
         try {
-          settled = payment.sessionId
-            ? await settleKashierPayment(db, account, payment.sessionId, await getSessionPayment(account, payment.sessionId))
-            : await settleKashierWalletPayment(db, account, payment.kashierOrderId!, await reconcileWalletPayment(account, payment.kashierOrderId!));
+          settled = await settleAnyKashier(db, account, payment);
           outcome = settled?.status ?? 'unknown_session';
         } catch (err) {
           if (!(err instanceof KashierError)) throw err;
