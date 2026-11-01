@@ -24,6 +24,7 @@ import {
 import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { api, errorMessage } from '../api';
 import { type PlanRequest, useAccount } from '../app/account';
+import { useCurrencyRates } from '../currency';
 import { usePlanPricing } from '../app/plan-pricing';
 import { METHOD_LOOK, MethodChip, MethodGlyph, PaymentDetailsRows, usePaymentSettings } from '../app/payments/methods';
 import { useI18n } from '../i18n';
@@ -352,7 +353,7 @@ function Requests() {
     queryFn: ({ signal }) => api<AdminRequest[]>(`/api/admin/plan-requests?status=${scope}`, { signal }),
     placeholderData: keepPreviousData,
   });
-  const settings = usePaymentSettings();
+  const rates = useCurrencyRates();
   const [proof, setProof] = useState<AdminRequest | null>(null);
   const [rejecting, setRejecting] = useState<AdminRequest | null>(null);
 
@@ -381,7 +382,7 @@ function Requests() {
       ) : (
         <ul className={cx('space-y-3 transition-opacity', requests.isPlaceholderData && 'opacity-60')}>
           {requests.data.map((req, i) => (
-            <RequestCard key={req.id} req={req} index={i} egpPerUsd={settings.data?.egpPerUsd ?? 0} onProof={() => setProof(req)} onReject={() => setRejecting(req)} />
+            <RequestCard key={req.id} req={req} index={i} egpPerUsd={rates.data?.egp.effective ?? 0} onProof={() => setProof(req)} onReject={() => setRejecting(req)} />
           ))}
         </ul>
       )}
@@ -420,7 +421,7 @@ function MethodSettings({ method, enabled, complete, onToggle, children }: { met
 }
 
 function PaymentMethodsSettings() {
-  const { t } = useI18n();
+  const { t, fmt } = useI18n();
   const a = t.admin.payments;
   const queryClient = useQueryClient();
   const settings = usePaymentSettings();
@@ -430,11 +431,15 @@ function PaymentMethodsSettings() {
   const enabled = enabledPaymentMethods(current);
   const [saved, setSaved] = useState(false);
   const onlineLive = useKashierLive();
+  const egp = useCurrencyRates().data?.egp;
+  const money = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 2 });
 
   const save = useMutation({
     mutationFn: () => api<PaymentSettings>('/api/admin/payment-methods', { method: 'PUT', body: current }),
     onSuccess: (next) => {
       queryClient.setQueryData(qk.paymentMethods, next);
+      // The floor moved: the rate customers pay may have too.
+      void queryClient.invalidateQueries({ queryKey: qk.currencyRates });
       setDraft(null);
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
@@ -469,7 +474,17 @@ function PaymentMethodsSettings() {
       <Card bodyClassName="grid gap-4 md:grid-cols-[14rem_1fr] md:items-start">
         <Field
           label={a.rate}
-          hint={a.rateHint}
+          hint={
+            <span className="grid gap-1">
+              <span>{a.rateHint}</span>
+              {egp && (
+                <>
+                  <span className={cx('ltr font-medium', egp.live === null && 'text-warning')}>{egp.live !== null ? a.rateLive(money(egp.live), egp.liveAt ? fmt.timeAgo(egp.liveAt) : '') : a.rateLiveMissing}</span>
+                  {egp.effective > 0 && <span className="ltr font-semibold text-brand">{a.rateApplied(money(egp.effective))}</span>}
+                </>
+              )}
+            </span>
+          }
           type="number"
           min={1}
           step="0.01"

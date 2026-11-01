@@ -1,5 +1,6 @@
 import { and, eq, payments } from '@wa/db';
 import {
+  KASHIER_METHODS,
   KASHIER_MODES,
   type KashierMode,
   listedPriceUsd,
@@ -19,7 +20,7 @@ import { z } from 'zod';
 import type { Deps } from '../deps';
 import { requirePat } from '../lib/auth';
 import { ApiError, forbidden, notFound, unavailable, unprocessable } from '../lib/errors';
-import { getPaymentSettings } from '../lib/payments';
+import { getEgpQuote } from '../lib/currency';
 import { getPlanPricing } from '../lib/plan-pricing';
 import { publicBaseUrl } from '../lib/public-url';
 import {
@@ -116,7 +117,7 @@ export function paymentRoutes(deps: Deps, options: Options): FastifyPluginAsyncZ
           tags,
           summary: 'Whether this account pays online through Kashier',
           description: 'Live mode: everyone. Test mode: admins and the test accounts the admin listed; everyone else requests plans manually.',
-          response: { 200: successSchema(z.object({ enabled: z.boolean(), mode: z.enum(KASHIER_MODES) })) },
+          response: { 200: successSchema(z.object({ enabled: z.boolean(), mode: z.enum(KASHIER_MODES), methods: z.array(z.enum(KASHIER_METHODS)) })) },
         },
       },
       async (req) => {
@@ -134,8 +135,14 @@ export function paymentRoutes(deps: Deps, options: Options): FastifyPluginAsyncZ
           description:
             'Prices the plan in EGP for `months` on the server (any price the client has in mind is ignored), opens a Kashier payment session and ' +
             "returns its `sessionUrl`: send the customer there to pay on Kashier's page. They come back to `/subscription?payment={id}`; the plan is " +
-            'activated only once Kashier confirms the payment and its order, merchant, currency and amount check out. Poll `POST /api/payments/{id}/check`.',
-          body: z.object({ planId: z.enum(REQUESTABLE_PLANS), months: paymentMonthsSchema.default(1), locale: z.enum(['ar', 'en']).default('ar') }),
+            'activated only once Kashier confirms the payment and its order, merchant, currency and amount check out. Poll `POST /api/payments/{id}/check`. ' +
+            "`method` (one of `GET /api/payments/kashier`'s `methods`) opens Kashier's page on that method alone; without it every offered method is shown.",
+          body: z.object({
+            planId: z.enum(REQUESTABLE_PLANS),
+            months: paymentMonthsSchema.default(1),
+            locale: z.enum(['ar', 'en']).default('ar'),
+            method: z.enum(KASHIER_METHODS).optional(),
+          }),
           response: { 201: successSchema(z.object({ payment: paymentDto, sessionUrl: z.string() })) },
         },
       },
@@ -145,9 +152,11 @@ export function paymentRoutes(deps: Deps, options: Options): FastifyPluginAsyncZ
         // Test mode serves only admins and the listed test accounts: a customer never pays in the sandbox.
         const account = await getKashierAccountFor(sql, deps.encryptionKey, caller(req));
         if (!account) throw unavailable('Online payment is not available right now', 'kashier_off');
-        const { planId, months, locale } = req.body;
-        const [settings, pricing, view] = await Promise.all([getPaymentSettings(sql), getPlanPricing(sql), getKashierSettings(sql, deps.encryptionKey, publicBaseUrl(options.publicUrl, req))]);
-        const egp = planPriceEgp(listedPriceUsd(planId, pricing), months, settings.egpPerUsd);
+        const { planId, months, locale, method } = req.body;
+        if (method && !account.methods.includes(method)) throw unprocessable('This payment method is not available', { method: ['Choose one of the offered methods'] });
+        // Priced at the live EGP rate (floored at the admin's), the same quote the dashboard showed.
+        const [quote, pricing, view] = await Promise.all([getEgpQuote(sql, (err) => req.log.warn({ err }, 'exchange rates refresh failed')), getPlanPricing(sql), getKashierSettings(sql, deps.encryptionKey, publicBaseUrl(options.publicUrl, req))]);
+        const egp = planPriceEgp(listedPriceUsd(planId, pricing), months, quote.effective);
         if (egp === null || egp <= 0) throw unprocessable('This plan cannot be paid online', { planId: ['Request this plan instead'] });
         const [customer] = await sql<{ email: string }[]>`
           select email from users where id = coalesce(${req.auth.userId}::uuid, (select owner_id from workspaces where id = ${req.auth.workspaceId}))`;
@@ -168,7 +177,7 @@ export function paymentRoutes(deps: Deps, options: Options): FastifyPluginAsyncZ
             redirectUrl: `${returnOrigin(req)}/subscription?payment=${payment!.id}`,
             webhookUrl: view[account.mode].webhookUrl,
             locale,
-            allowedMethods: allowedMethodsParam(account.methods, view[account.mode].accountMethods),
+            allowedMethods: allowedMethodsParam(method ? [method] : account.methods, view[account.mode].accountMethods),
           });
           const [saved] = await db.update(payments).set({ sessionId: session._id }).where(eq(payments.id, payment!.id)).returning();
           reply.code(201);

@@ -1,14 +1,17 @@
+import type { KashierMethod } from '@wa/shared/kashier';
 import { discountPercent } from '@wa/shared/plan-pricing';
 import { enabledPaymentMethods, PAYMENT_MONTHS, type PaymentDetails, type PaymentMethod, type PaymentMonths, type PaymentSettings, planPriceEgp } from '@wa/shared/payments';
 import { useMutation } from '@tanstack/react-query';
-import { ArrowLeft, Check, ImagePlus, Info, Loader2, Receipt } from '../../icons';
+import { ArrowLeft, Check, ImagePlus, Info, Loader2, Receipt, ShieldCheck } from '../../icons';
 import { type DragEvent, type FormEvent, useRef, useState } from 'react';
 import { api, ApiRequestError, errorMessage } from '../../api';
+import { useCurrencyRates } from '../../currency';
 import { useI18n } from '../../i18n';
 import type { PricedPlan } from '../../site/content';
 import { Button, cx, ErrorNote, Field, flip, Modal, usePlanName } from '../../ui';
-import { CopyLine, METHOD_LOOK, MethodGlyph, shrinkImage, usePaymentSettings } from './methods';
+import { CopyLine, KASHIER_METHOD_ICON, METHOD_LOOK, MethodGlyph, shrinkImage, usePaymentSettings } from './methods';
 import { KashierCheckout, useKashierConfig } from './OnlineCheckout';
+import { RateLine, TrustStrip } from './Trust';
 
 type Proof = { mimetype: 'image/jpeg'; data: string; previewUrl: string };
 
@@ -32,21 +35,21 @@ function PayAgreement() {
   );
 }
 
-/** A USD price as the customer pays it: in Egyptian pounds once the admin set a rate, else in dollars. */
+/** A USD price as the customer pays it: in Egyptian pounds at the rate charged today, else in dollars. */
 function usePayPrice(egpPerUsd: number) {
   const { t } = useI18n();
   const p = t.subscription.payment;
   return (usd: number, months = 1) => (egpPerUsd > 0 ? p.egp(planPriceEgp(usd, months, egpPerUsd)!) : p.usd(usd * months));
 }
 
-/** Months → total, as a row of choices. */
+/** Months → total, as a row of choices; the yearly one is marked as the best value when it is cheaper per month. */
 function MonthsPicker({ plan, egpPerUsd, value, onChange }: { plan: PricedPlan; egpPerUsd: number; value: PaymentMonths; onChange: (m: PaymentMonths) => void }) {
   const { t } = useI18n();
   const p = t.subscription.payment;
   const price = usePayPrice(egpPerUsd);
   const compare = discountPercent(plan.priceUsd, plan.compareAtUsd) !== null ? plan.compareAtUsd : null;
   return (
-    <div role="radiogroup" aria-label={p.duration} className="grid grid-cols-4 gap-2">
+    <div role="radiogroup" aria-label={p.duration} className="grid grid-cols-2 gap-2 sm:grid-cols-4">
       {PAYMENT_MONTHS.map((m) => {
         const active = m === value;
         return (
@@ -57,7 +60,7 @@ function MonthsPicker({ plan, egpPerUsd, value, onChange }: { plan: PricedPlan; 
             aria-checked={active}
             onClick={() => onChange(m)}
             className={cx(
-              'flex flex-col items-center gap-0.5 rounded-xl border px-2 py-2.5 text-center transition-all',
+              'relative flex flex-col items-center gap-0.5 rounded-xl border px-2 py-2.5 text-center transition-all',
               active ? 'border-brand bg-brand/10 shadow-[0_0_0_1px_var(--color-brand)]' : 'border-line hover:border-line-strong hover:bg-raised/40',
             )}
           >
@@ -98,6 +101,47 @@ function MethodPicker({ methods, value, onChange }: { methods: PaymentMethod[]; 
             <span className="text-sm font-semibold">{p.methods[m]}</span>
             {active && (
               <span className="absolute end-2 top-2 flex size-5 items-center justify-center rounded-full bg-brand text-on-brand">
+                <Check className="size-3" />
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Kashier's methods for this account, picked here so its checkout opens on the chosen one. */
+function KashierMethodPicker({ methods, value, onChange }: { methods: KashierMethod[]; value: KashierMethod | null; onChange: (m: KashierMethod) => void }) {
+  const { t } = useI18n();
+  const x = t.admin.payments.kashier;
+  return (
+    <div role="radiogroup" aria-label={t.subscription.payment.online.chooseMethod} className="grid gap-2 sm:grid-cols-2">
+      {methods.map((m, i) => {
+        const active = m === value;
+        const Icon = KASHIER_METHOD_ICON[m];
+        return (
+          <button
+            key={m}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onChange(m)}
+            className={cx(
+              'animate-fade-up relative flex items-center gap-3 rounded-xl border p-3 text-start transition-all',
+              active ? 'border-brand bg-brand/10 shadow-[0_0_0_1px_var(--color-brand)]' : 'border-line hover:border-line-strong hover:bg-raised/30',
+            )}
+            style={{ animationDelay: `${i * 40}ms` }}
+          >
+            <span className={cx('flex size-10 shrink-0 items-center justify-center rounded-lg transition-colors', active ? 'bg-brand text-on-brand' : 'bg-raised text-ink-2')}>
+              <Icon className="size-5" />
+            </span>
+            <span className="min-w-0 pe-5">
+              <span className="block text-sm font-semibold">{x.methodNames[m]}</span>
+              <span className="block text-xs text-muted">{x.methodHints[m]}</span>
+            </span>
+            {active && (
+              <span className="animate-scale-in absolute end-2 top-2 flex size-5 items-center justify-center rounded-full bg-brand text-on-brand">
                 <Check className="size-3" />
               </span>
             )}
@@ -221,15 +265,53 @@ function ScreenshotPicker({ proof, onChange, error }: { proof: Proof | null; onC
   );
 }
 
+/** The plan, its discount and the total as it will be charged, over the exchange rate behind it. */
+function OrderSummary({ plan, months, egpPerUsd }: { plan: PricedPlan; months: PaymentMonths; egpPerUsd: number }) {
+  const { t } = useI18n();
+  const p = t.subscription.payment;
+  const planName = usePlanName();
+  const price = usePayPrice(egpPerUsd);
+  const totalUsd = plan.priceUsd * months;
+  const totalEgp = planPriceEgp(plan.priceUsd, months, egpPerUsd);
+  const off = discountPercent(plan.priceUsd, plan.compareAtUsd);
+  const compare = off !== null ? plan.compareAtUsd : null;
+  const inEgp = totalEgp !== null && egpPerUsd > 0;
+  return (
+    <section className="overflow-hidden rounded-2xl border border-line">
+      <div className="flex items-start justify-between gap-4 bg-gradient-to-br from-brand/12 via-transparent to-transparent p-4">
+        <div className="min-w-0">
+          <p className="text-[11px] font-medium tracking-wide text-muted uppercase">{p.online.plan}</p>
+          <p className="mt-0.5 flex flex-wrap items-center gap-2 text-lg font-semibold">
+            {planName(plan)}
+            {off !== null && <span className="rounded-full border border-warning/40 bg-warning/15 px-2 py-0.5 text-[11px] font-bold text-warning">{t.plans.off(off)}</span>}
+          </p>
+          <p className="ltr mt-1 text-sm text-muted">
+            {compare !== null && <span className="me-1.5 line-through opacity-70">{price(compare)}</span>}
+            {p.perMonth(price(plan.priceUsd))}
+          </p>
+        </div>
+        <div className="shrink-0 text-end">
+          <p className="text-[11px] font-medium tracking-wide text-muted uppercase">{p.total}</p>
+          {/* Paid in pounds: the EGP total leads, the dollar price is the reference. */}
+          <p className="ltr text-2xl font-bold tabular-nums">{inEgp ? p.egp(totalEgp) : p.usd(totalUsd)}</p>
+          {inEgp && <p className="ltr text-xs text-muted tabular-nums">{p.usd(totalUsd)}</p>}
+        </div>
+      </div>
+      {inEgp && <RateLine className="border-t border-line/60 bg-raised/20 px-4 py-2" />}
+    </section>
+  );
+}
+
 export function RequestPlanModal({ plan, onClose, onSent, onNeedsPhone }: { plan: PricedPlan; onClose: () => void; onSent: () => void; onNeedsPhone: () => void }) {
   const { t } = useI18n();
   const s = t.subscription;
   const p = s.payment;
   const planName = usePlanName();
   const settings = usePaymentSettings();
+  const rates = useCurrencyRates();
   const methods = settings.data ? enabledPaymentMethods(settings.data) : [];
-  const egpPerUsd = settings.data?.egpPerUsd ?? 0;
-  const price = usePayPrice(egpPerUsd);
+  // The rate every price here is worked out at: today's market rate, never below the platform's floor (the server charges at the same one).
+  const egpPerUsd = rates.data?.egp.effective ?? 0;
 
   const [months, setMonths] = useState<PaymentMonths>(1);
   const [method, setMethod] = useState<PaymentMethod | null>(null);
@@ -241,16 +323,18 @@ export function RequestPlanModal({ plan, onClose, onSent, onNeedsPhone }: { plan
 
   const totalUsd = plan.priceUsd * months;
   const totalEgp = planPriceEgp(plan.priceUsd, months, egpPerUsd);
-  const off = discountPercent(plan.priceUsd, plan.compareAtUsd);
-  const compare = off !== null ? plan.compareAtUsd : null;
   // No transfer when nothing is configured, or the plan is free after a 100% discount.
   const free = plan.priceUsd === 0;
   const kashier = useKashierConfig();
   // With Kashier taking payments for this account, priced plans are paid online and the manual transfers are hidden.
   const online = Boolean(kashier.data?.enabled) && !free && totalEgp !== null && totalEgp > 0;
   const payable = !online && methods.length > 0 && !free;
-  const loadingMethods = settings.isPending || kashier.isPending;
+  const loadingMethods = settings.isPending || kashier.isPending || rates.isPending;
   const o = p.online;
+  const kashierMethods = kashier.data?.methods ?? [];
+  const [picked, setPicked] = useState<KashierMethod | null>(null);
+  // A single offered method needs no choice.
+  const onlineMethod = picked ?? (kashierMethods.length === 1 ? kashierMethods[0]! : null);
 
   const request = useMutation({
     mutationFn: (body: Record<string, unknown>) => api('/api/plan-requests', { method: 'POST', body, timeoutMs: 60_000 }),
@@ -296,6 +380,7 @@ export function RequestPlanModal({ plan, onClose, onSent, onNeedsPhone }: { plan
   const detailsReady =
     proof !== null &&
     ((method === 'vodafone_cash' && fields.senderPhone.trim().length >= 11) || (method === 'instapay' && fields.sender.trim().length >= 3) || (method === 'bank_transfer' && fields.senderName.trim().length >= 2));
+  const totalLabel = totalEgp !== null && egpPerUsd > 0 ? p.egp(totalEgp) : p.usd(totalUsd);
 
   return (
     <Modal title={s.modalTitle(planName(plan))} description={step === 'details' ? p.steps.details : undefined} onClose={onClose} size="lg" tall>
@@ -308,8 +393,8 @@ export function RequestPlanModal({ plan, onClose, onSent, onNeedsPhone }: { plan
               const active = k === step;
               return (
                 <li key={k} className="flex items-center gap-2">
-                  {i > 0 && <span className="h-px w-6 bg-line" />}
-                  <span className={cx('flex size-5 items-center justify-center rounded-full text-[11px] font-semibold', active || done ? 'bg-brand text-on-brand' : 'bg-raised text-muted')}>
+                  {i > 0 && <span className={cx('h-px w-8 transition-colors', done ? 'bg-brand' : 'bg-line')} />}
+                  <span className={cx('flex size-5 items-center justify-center rounded-full text-[11px] font-semibold transition-colors', active || done ? 'bg-brand text-on-brand' : 'bg-raised text-muted')}>
                     {done ? <Check className="size-3" /> : i + 1}
                   </span>
                   <span className={cx('font-medium', active ? 'text-ink' : 'text-muted')}>{k === 'pay' ? o.steps.pay : online ? o.steps.plan : p.steps[k]}</span>
@@ -323,32 +408,17 @@ export function RequestPlanModal({ plan, onClose, onSent, onNeedsPhone }: { plan
           <KashierCheckout
             planId={plan.id}
             months={months}
+            method={onlineMethod}
             amountLabel={p.egp(totalEgp)}
+            usdLabel={p.usd(totalUsd)}
             test={kashier.data?.mode === 'test'}
             onBack={() => setStep('plan')}
             onNeedsPhone={onNeedsPhone}
           />
         ) : step === 'plan' ? (
           <>
-            {/* plan + total */}
-            <div className="flex items-center justify-between gap-4 rounded-xl border border-line bg-gradient-to-br from-raised/40 to-transparent p-4">
-              <div>
-                <p className="flex flex-wrap items-center gap-2 text-base font-semibold">
-                  {planName(plan)}
-                  {off !== null && <span className="rounded-full border border-warning/40 bg-warning/15 px-2 py-0.5 text-[11px] font-bold text-warning">{t.plans.off(off)}</span>}
-                </p>
-                <p className="ltr text-sm text-muted">
-                  {compare !== null && <span className="me-1.5 line-through opacity-70">{price(compare)}</span>}
-                  {p.perMonth(price(plan.priceUsd))}
-                </p>
-              </div>
-              <div className="text-end">
-                <p className="text-[11px] text-muted uppercase">{p.total}</p>
-                {/* Paid in pounds: the EGP total leads, the dollar price is the reference. */}
-                <p className="ltr text-xl font-bold tabular-nums">{totalEgp !== null && egpPerUsd > 0 ? p.egp(totalEgp) : p.usd(totalUsd)}</p>
-                {totalEgp !== null && egpPerUsd > 0 && <p className="ltr text-xs text-muted tabular-nums">{p.usd(totalUsd)}</p>}
-              </div>
-            </div>
+            <OrderSummary plan={plan} months={months} egpPerUsd={egpPerUsd} />
+
             <div className="space-y-2">
               <p className="text-sm font-medium">{p.duration}</p>
               <MonthsPicker plan={plan} egpPerUsd={egpPerUsd} value={months} onChange={setMonths} />
@@ -359,12 +429,15 @@ export function RequestPlanModal({ plan, onClose, onSent, onNeedsPhone }: { plan
                 <Loader2 className="size-5 animate-spin text-brand" />
               </div>
             ) : online ? (
-              <div className="flex items-start gap-3 rounded-xl border border-brand/30 bg-brand/[0.06] p-3.5">
-                <MethodGlyph method="kashier" />
-                <span className="min-w-0 text-sm">
-                  <span className="block font-semibold">{o.secure}</span>
-                  <span className="block text-xs text-muted">{o.secureHint}</span>
-                </span>
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">{o.chooseMethod}</p>
+                  <KashierMethodPicker methods={kashierMethods} value={onlineMethod} onChange={setPicked} />
+                </div>
+                <TrustStrip />
+                <p className="flex items-center gap-1.5 text-xs text-muted">
+                  <ShieldCheck className="size-3.5 shrink-0 text-brand" /> {o.secureHint}
+                </p>
               </div>
             ) : payable ? (
               <div className="space-y-2">
@@ -382,23 +455,30 @@ export function RequestPlanModal({ plan, onClose, onSent, onNeedsPhone }: { plan
             {!payable && !online && !loadingMethods && <Field label={s.noteLabel} placeholder={s.notePlaceholder} value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} />}
             {(online || payable) && <PayAgreement />}
             <ErrorNote>{topError}</ErrorNote>
-            <div className="sticky bottom-0 z-10 -mx-6 flex justify-end gap-2 border-t border-line bg-card px-6 py-4">
-              <Button variant="outline" onClick={onClose}>
-                {t.common.cancel}
-              </Button>
-              {online ? (
-                <Button variant="brand" onClick={() => setStep('pay')}>
-                  {o.next}
+            <div className="sticky bottom-0 z-10 -mx-6 flex items-center justify-between gap-3 border-t border-line bg-card px-6 py-4">
+              {/* The total travels with the footer, so it stays in view while the form scrolls. */}
+              <span className="min-w-0">
+                <span className="block text-[11px] text-muted uppercase">{p.total}</span>
+                <span className="ltr block text-base font-bold tabular-nums">{free ? p.usd(0) : totalLabel}</span>
+              </span>
+              <span className="flex gap-2">
+                <Button variant="outline" onClick={onClose}>
+                  {t.common.cancel}
                 </Button>
-              ) : payable ? (
-                <Button variant="brand" disabled={!method} onClick={goDetails}>
-                  {p.next}
-                </Button>
-              ) : (
-                <Button type="submit" variant="brand" loading={request.isPending} disabled={loadingMethods}>
-                  {s.submit}
-                </Button>
-              )}
+                {online ? (
+                  <Button variant="brand" disabled={!onlineMethod} onClick={() => setStep('pay')}>
+                    {o.next}
+                  </Button>
+                ) : payable ? (
+                  <Button variant="brand" disabled={!method} onClick={goDetails}>
+                    {p.next}
+                  </Button>
+                ) : (
+                  <Button type="submit" variant="brand" loading={request.isPending} disabled={loadingMethods}>
+                    {s.submit}
+                  </Button>
+                )}
+              </span>
             </div>
           </>
         ) : (

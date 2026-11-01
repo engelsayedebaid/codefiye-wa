@@ -1,4 +1,4 @@
-import type { KashierPublicConfig } from '@wa/shared/kashier';
+import type { KashierMethod, KashierPublicConfig } from '@wa/shared/kashier';
 import type { OnlinePaymentStatus } from '@wa/shared/payments';
 import { getPlan } from '@wa/shared/plans';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -8,6 +8,8 @@ import { api, ApiRequestError, errorMessage } from '../../api';
 import { useI18n } from '../../i18n';
 import { qk } from '../../queries';
 import { Button, cx, flip, Modal, usePlanName } from '../../ui';
+import { KASHIER_METHOD_ICON } from './methods';
+import { KashierMark, RateLine, TrustStrip } from './Trust';
 
 export type OnlinePayment = {
   id: string;
@@ -65,30 +67,53 @@ export function OutcomeView({ tone, icon, title, text, children }: { tone: 'good
   );
 }
 
+/** Label / value rows of an order or a receipt. */
+function SummaryRows({ rows, className }: { rows: [string, ReactNode][]; className?: string }) {
+  return (
+    <dl className={cx('grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm', className)}>
+      {rows.map(([label, value]) => (
+        <div key={label} className="contents">
+          <dt className="text-muted">{label}</dt>
+          <dd className="min-w-0 text-end font-medium">{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 /**
- * The payment step: opens a Kashier session for the plan (priced on the server) and sends the customer
- * to Kashier's hosted checkout. Card details never touch our pages; the customer comes back to
- * `/subscription?payment=<id>`, where `PaymentReturnModal` confirms the result with the server.
+ * The payment step: the order as it will be charged, then off to Kashier's hosted checkout for the method
+ * picked in the first step (the plan is priced on the server). Card details never touch our pages; the
+ * customer comes back to `/subscription?payment=<id>`, where `PaymentReturnModal` confirms the result with the server.
  */
 export function KashierCheckout({
   planId,
   months,
+  method,
   amountLabel,
+  usdLabel,
   test,
   onBack,
   onNeedsPhone,
 }: {
   planId: string;
   months: number;
+  method: KashierMethod | null;
   amountLabel: string;
+  usdLabel?: string;
   test: boolean;
   onBack: () => void;
   onNeedsPhone: () => void;
 }) {
   const { t, lang } = useI18n();
-  const o = t.subscription.payment.online;
+  const p = t.subscription.payment;
+  const o = p.online;
+  const x = t.admin.payments.kashier;
+  const planName = usePlanName();
+  const MethodIcon = method ? KASHIER_METHOD_ICON[method] : ShieldCheck;
   const open = useMutation({
-    mutationFn: () => api<{ payment: OnlinePayment; sessionUrl: string }>('/api/payments/kashier', { method: 'POST', body: { planId, months, locale: lang }, timeoutMs: 30_000 }),
+    mutationFn: () =>
+      api<{ payment: OnlinePayment; sessionUrl: string }>('/api/payments/kashier', { method: 'POST', body: { planId, months, locale: lang, ...(method ? { method } : {}) }, timeoutMs: 30_000 }),
     onSuccess: ({ sessionUrl }) => window.location.assign(sessionUrl),
     onError: (err) => {
       if (err instanceof ApiRequestError && err.code === 'phone_unverified') onNeedsPhone();
@@ -98,30 +123,59 @@ export function KashierCheckout({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 rounded-xl border border-line bg-gradient-to-br from-raised/40 to-transparent px-4 py-3">
-        <span className="flex min-w-0 items-center gap-2.5">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-brand/12 text-brand">
-            <ShieldCheck className="size-4.5" />
-          </span>
-          <span className="min-w-0">
-            <span className="block text-sm font-semibold">{o.secure}</span>
-            <span className="block text-xs text-muted">{o.secureHint}</span>
-          </span>
-        </span>
-        <span className="shrink-0 text-end">
-          <span className="block text-[11px] text-muted uppercase">{o.due}</span>
-          <span className="block text-lg font-bold tabular-nums">{amountLabel}</span>
-        </span>
-      </div>
+      {/* the order, as it will be charged */}
+      <section className="overflow-hidden rounded-2xl border border-line">
+        <header className="flex items-center justify-between gap-3 border-b border-line/60 bg-raised/30 px-4 py-2.5">
+          <span className="text-sm font-semibold">{o.summary}</span>
+          <KashierMark />
+        </header>
+        <div className="space-y-3 p-4">
+          <SummaryRows
+            rows={[
+              [o.plan, planName(getPlan(planId))],
+              [o.period, p.months(months)],
+              [
+                o.method,
+                <span key="m" className="inline-flex items-center gap-2">
+                  <span className="flex size-6 items-center justify-center rounded-md bg-brand/12 text-brand">
+                    <MethodIcon className="size-3.5" />
+                  </span>
+                  {method ? x.methodNames[method] : o.secure}
+                  <button type="button" onClick={onBack} disabled={leaving} className="text-xs font-medium text-brand hover:underline disabled:opacity-50">
+                    {o.change}
+                  </button>
+                </span>,
+              ],
+            ]}
+          />
+          <div className="flex items-end justify-between gap-3 border-t border-dashed border-line pt-3">
+            <span className="text-sm font-medium">{o.due}</span>
+            <span className="text-end">
+              <span className="ltr block text-2xl font-bold tabular-nums">{amountLabel}</span>
+              {usdLabel && <span className="ltr block text-xs text-muted tabular-nums">{usdLabel}</span>}
+            </span>
+          </div>
+          <RateLine />
+        </div>
+      </section>
 
-      <ul className="grid gap-2 text-sm text-ink-2">
-        {o.steps2.map((step, i) => (
-          <li key={step} className="flex items-start gap-2.5">
-            <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-raised text-[11px] font-semibold text-muted tabular-nums">{i + 1}</span>
-            {step}
-          </li>
-        ))}
-      </ul>
+      {/* what happens next */}
+      <section className="rounded-xl bg-raised/20 p-4">
+        <p className="mb-2 text-sm font-semibold">{o.whatNext}</p>
+        <ol className="grid gap-2 text-sm text-ink-2">
+          {o.steps2.map((step, i) => (
+            <li key={step} className="flex items-start gap-2.5">
+              <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-brand/15 text-[11px] font-semibold text-brand tabular-nums">{i + 1}</span>
+              {step}
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      <TrustStrip />
+      <p className="flex items-center gap-1.5 text-xs text-muted">
+        <ShieldCheck className="size-3.5 shrink-0 text-brand" /> {o.trust.noStore} · {o.secureHint}
+      </p>
 
       {test && (
         <p className="flex items-center gap-2 rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning">
@@ -137,13 +191,36 @@ export function KashierCheckout({
 
       <div className="sticky bottom-0 z-10 -mx-6 flex items-center justify-between gap-2 border-t border-line bg-card px-6 py-4">
         <Button variant="ghost" icon={<ArrowLeft className={cx('size-4', flip)} />} onClick={onBack} disabled={leaving}>
-          {t.subscription.payment.back}
+          {p.back}
         </Button>
         <Button variant="brand" size="lg" loading={leaving} icon={leaving ? undefined : <Lock className="size-4" />} onClick={() => open.mutate()}>
           {leaving ? o.redirecting : o.payNow(amountLabel)}
           {!leaving && <ExternalLink className={cx('size-3.5 opacity-70', flip)} />}
         </Button>
       </div>
+    </div>
+  );
+}
+
+/** The paid order's facts under the outcome: plan, period, amount, reference and time. */
+function Receipt({ payment }: { payment: OnlinePayment }) {
+  const { t, fmt } = useI18n();
+  const p = t.subscription.payment;
+  const o = p.online;
+  const planName = usePlanName();
+  return (
+    <div className="mx-auto w-full max-w-sm overflow-hidden rounded-xl border border-line text-start">
+      <p className="border-b border-line/60 bg-raised/30 px-4 py-2 text-xs font-semibold text-muted uppercase">{o.receipt.title}</p>
+      <SummaryRows
+        className="p-4"
+        rows={[
+          [o.plan, planName(getPlan(payment.planId))],
+          [o.period, p.months(payment.months)],
+          [o.receipt.amount, <span key="a" className="ltr tabular-nums">{payment.currency === 'EGP' ? p.egp(payment.amountCents / 100) : `${payment.currency} ${(payment.amountCents / 100).toLocaleString('en-US')}`}</span>],
+          [o.receipt.reference, <span key="r" className="ltr font-mono text-xs">{payment.id.slice(0, 8).toUpperCase()}</span>],
+          [o.receipt.date, fmt.dateTime(payment.paidAt ?? payment.createdAt)],
+        ]}
+      />
     </div>
   );
 }
@@ -172,18 +249,21 @@ export function PaymentReturnModal({ id, onClose }: { id: string; onClose: () =>
         ) : result?.status === 'paid' && result.mode === 'test' ? (
           // A verified sandbox payment: the flow works, but test payments never activate a plan.
           <OutcomeView tone="good" icon={<CheckCircle2 />} title={o.testPaidTitle} text={o.testPaidText}>
+            <Receipt payment={result} />
             <Button variant="outline" onClick={onClose}>
               {o.done}
             </Button>
           </OutcomeView>
         ) : result?.status === 'paid' ? (
           <OutcomeView tone="good" icon={<CheckCircle2 />} title={o.paidTitle} text={o.paidText(planName(getPlan(result.planId)))}>
+            <Receipt payment={result} />
             <Button variant="brand" onClick={onClose}>
               {o.done}
             </Button>
           </OutcomeView>
         ) : result?.status === 'review' ? (
           <OutcomeView tone="wait" icon={<Hourglass />} title={o.reviewTitle} text={o.reviewText}>
+            <Receipt payment={result} />
             <Button variant="outline" onClick={onClose}>
               {o.done}
             </Button>
@@ -201,6 +281,9 @@ export function PaymentReturnModal({ id, onClose }: { id: string; onClose: () =>
             </Button>
           </OutcomeView>
         )}
+        <div className="mt-2 flex justify-center">
+          <KashierMark />
+        </div>
       </div>
     </Modal>
   );

@@ -30,6 +30,8 @@ export type KashierPublicConfig = {
   /** This caller pays online: live mode for everyone; test mode for admins and listed test accounts only. */
   enabled: boolean;
   mode: KashierMode;
+  /** What the customer can pick from before leaving for Kashier (empty when off). */
+  methods: KashierMethod[];
 };
 
 export const KASHIER_CONNECTION_ERRORS = ['invalid_secret_key', 'invalid_api_key', 'invalid_merchant', 'forbidden', 'wrong_mode', 'unreachable', 'unexpected', 'missing_key'] as const;

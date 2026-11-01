@@ -9,7 +9,7 @@ import { EventBus } from '../src/lib/events';
 import { kashierSignature, saveKashierSettings } from '../src/lib/kashier';
 import { generateKey } from '../src/lib/keys';
 import { otpKey } from '../src/lib/otp';
-import { getPaymentSettings } from '../src/lib/payments';
+import { getEgpQuote } from '../src/lib/currency';
 import { getPlanPricing } from '../src/lib/plan-pricing';
 import { createThrottle } from '../src/lib/throttle';
 import { WorkerClient } from '../src/lib/workers';
@@ -186,9 +186,9 @@ describe.skipIf(!url)('kashier payments (integration)', () => {
   // --- checkout ----------------------------------------------------------------------------------
 
   it('opens a live session priced on the server, for our order, with our webhook and return link', async () => {
-    expect((await call(customer, 'GET', '/api/payments/kashier')).json().data).toEqual({ enabled: true, mode: 'live' });
-    const [settings, pricing] = await Promise.all([getPaymentSettings(sql), getPlanPricing(sql)]);
-    const expectedCents = planPriceEgp(listedPriceUsd('basic', pricing), 3, settings.egpPerUsd)! * 100;
+    expect((await call(customer, 'GET', '/api/payments/kashier')).json().data).toEqual({ enabled: true, mode: 'live', methods: ['card', 'wallet', 'valu'] });
+    const [quote, pricing] = await Promise.all([getEgpQuote(sql), getPlanPricing(sql)]);
+    const expectedCents = planPriceEgp(listedPriceUsd('basic', pricing), 3, quote.effective)! * 100;
     // A price or discount sent by the browser is ignored.
     const { payment, sessionUrl, session } = await openCheckout(customer, 'basic', 3, { amount: 1, amountCents: 100, discount: 99 });
     expect(payment).toMatchObject({ status: 'pending', mode: 'live', provider: 'kashier', amountCents: expectedCents });
@@ -210,6 +210,19 @@ describe.skipIf(!url)('kashier payments (integration)', () => {
     });
     expect((sent.body.customer as { email: string }).email).toMatch(/@test\.local$/);
     expect((await planOf(customer)).plan_id).toBe(BASE);
+  });
+
+  it('opens the checkout on the method the customer picked, and only on an offered one', async () => {
+    const { payment } = await openCheckout(customer, 'basic', 1, { method: 'wallet' });
+    expect(created.at(-1)!.body).toMatchObject({ order: payment.id, allowedMethods: 'wallet' });
+    const bnpl = await openCheckout(customer, 'basic', 1, { method: 'valu' });
+    expect(created.at(-1)!.body).toMatchObject({ order: bnpl.payment.id, allowedMethods: 'bnpl[valu]' });
+    // Souhoola is on the live account but not offered by the admin: refused before any session is opened.
+    const before = created.length;
+    const res = await call(customer, 'POST', '/api/payments/kashier', { planId: 'basic', method: 'souhoola' });
+    expect(res.statusCode).toBe(422);
+    expect(res.json().errors).toEqual({ method: ['Choose one of the offered methods'] });
+    expect(created.length).toBe(before);
   });
 
   it('refuses manual transfers for priced plans while Kashier is live for the account', async () => {
@@ -377,7 +390,7 @@ describe.skipIf(!url)('kashier payments (integration)', () => {
     await configure({ mode: 'test' });
     expect((await call(customer, 'GET', '/api/payments/kashier')).json().data.enabled).toBe(false);
     expect((await call(customer, 'POST', '/api/payments/kashier', { planId: 'basic' })).statusCode).toBe(503);
-    expect((await call(admin, 'GET', '/api/payments/kashier')).json().data).toEqual({ enabled: true, mode: 'test' });
+    expect((await call(admin, 'GET', '/api/payments/kashier')).json().data).toEqual({ enabled: true, mode: 'test', methods: ['card', 'wallet', 'valu'] });
     await resetPlan(admin);
     const t = await openCheckout(admin);
     expect(t.payment.mode).toBe('test');
@@ -404,7 +417,7 @@ describe.skipIf(!url)('kashier payments (integration)', () => {
     const listed = await call(admin, 'PUT', '/api/admin/kashier', { enabled: true, mode: 'test', methods: ['card'], testers: [row!.email.toUpperCase()] });
     expect(listed.statusCode, listed.body).toBe(200);
     expect(listed.json().data.testers).toEqual([row!.email.toLowerCase()]);
-    expect((await call(customer, 'GET', '/api/payments/kashier')).json().data).toEqual({ enabled: true, mode: 'test' });
+    expect((await call(customer, 'GET', '/api/payments/kashier')).json().data).toEqual({ enabled: true, mode: 'test', methods: ['card'] });
     // The listed customer pays in the sandbox: verified, recorded, and their plan is untouched.
     await resetPlan(customer);
     const t = await openCheckout(customer);
@@ -483,7 +496,7 @@ describe.skipIf(!url)('kashier payments (integration)', () => {
     // Switching Kashier on in test mode with cards and wallets now works, and the admin gets the checkout.
     const on = await call(admin, 'PUT', '/api/admin/kashier', { enabled: true, mode: 'test', methods: ['card', 'wallet'] });
     expect(on.statusCode, on.body).toBe(200);
-    expect((await call(admin, 'GET', '/api/payments/kashier')).json().data).toEqual({ enabled: true, mode: 'test' });
+    expect((await call(admin, 'GET', '/api/payments/kashier')).json().data).toEqual({ enabled: true, mode: 'test', methods: ['card', 'wallet'] });
     // A live account Kashier hasn't provisioned yet answers empty lists: nothing can be offered there.
     accountMethods.live = accountShape([]);
     const live = await call(admin, 'POST', '/api/admin/kashier/test', { mode: 'live' });
@@ -504,11 +517,11 @@ describe.skipIf(!url)('kashier payments (integration)', () => {
     expect(settings).toMatchObject({ enabled: false, mode: 'test', methods: ['card', 'wallet'], testers: [row!.email.toLowerCase()] });
     expect(settings.test.accountMethods).toEqual(expect.arrayContaining(['card', 'wallet']));
     // With the switch off, the listed customer is told online payment isn't available…
-    expect((await call(customer, 'GET', '/api/payments/kashier')).json().data).toEqual({ enabled: false, mode: 'test' });
+    expect((await call(customer, 'GET', '/api/payments/kashier')).json().data).toEqual({ enabled: false, mode: 'test', methods: [] });
     expect((await call(customer, 'POST', '/api/payments/kashier', { planId: 'pro' })).statusCode).toBe(503);
     // …and the switch alone turns it on, for that customer only (another customer stays on the manual request).
     expect((await call(admin, 'PUT', '/api/admin/kashier', { enabled: true, mode: 'test', methods: ['card', 'wallet'] })).statusCode).toBe(200);
-    expect((await call(customer, 'GET', '/api/payments/kashier')).json().data).toEqual({ enabled: true, mode: 'test' });
+    expect((await call(customer, 'GET', '/api/payments/kashier')).json().data).toEqual({ enabled: true, mode: 'test', methods: ['card', 'wallet'] });
     await resetPlan(customer);
     const t = await openCheckout(customer, 'pro');
     expect(t.payment).toMatchObject({ mode: 'test', status: 'pending' });
@@ -532,7 +545,7 @@ describe.skipIf(!url)('kashier payments (integration)', () => {
     expect(unconfirmed.json().code, unconfirmed.body).toBe('confirm_live');
     const on = await call(admin, 'PUT', '/api/admin/kashier', { enabled: true, mode: 'live', methods: ['card'], confirmLive: true });
     expect(on.statusCode, on.body).toBe(200);
-    expect((await call(customer, 'GET', '/api/payments/kashier')).json().data).toEqual({ enabled: true, mode: 'live' });
+    expect((await call(customer, 'GET', '/api/payments/kashier')).json().data).toEqual({ enabled: true, mode: 'live', methods: ['card'] });
     const logs = await sql<{ action: string; details: unknown }[]>`select action, details from audit_logs where actor_id = ${admin.userId} and action like 'kashier.%'`;
     expect(logs.map((l) => l.action)).toEqual(expect.arrayContaining(['kashier.live_enabled', 'kashier.test_connection']));
     for (const k of [CREDS.live.secretKey, CREDS.live.apiKey]) expect(JSON.stringify(logs)).not.toContain(k);

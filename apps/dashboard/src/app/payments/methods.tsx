@@ -1,6 +1,7 @@
+import type { KashierMethod } from '@wa/shared/kashier';
 import type { PaidMethod, PaymentDetails, PaymentSettings } from '@wa/shared/payments';
 import { useQuery } from '@tanstack/react-query';
-import { Check, Copy, CreditCard, Landmark, Smartphone, Zap } from '../../icons';
+import { CalendarClock, Check, Copy, CreditCard, Landmark, Smartphone, Zap } from '../../icons';
 import { type ReactNode, useState } from 'react';
 import { api } from '../../api';
 import { useI18n } from '../../i18n';
@@ -14,6 +15,17 @@ export const METHOD_LOOK: Record<PaidMethod, { icon: typeof Smartphone; tint: st
   bank_transfer: { icon: Landmark, tint: 'bg-sky-600 text-white', ring: 'border-sky-500/50', soft: 'bg-sky-500/10 text-sky-400 light:text-sky-700' },
   xpay: { icon: CreditCard, tint: 'bg-raised text-ink-2', ring: 'border-line-strong', soft: 'bg-raised text-ink-2' },
   kashier: { icon: CreditCard, tint: 'bg-brand text-on-brand', ring: 'border-brand/50', soft: 'bg-brand/10 text-brand' },
+};
+
+/** Kashier's checkout methods: cards, wallets, bank installments, and the buy-now-pay-later providers. */
+export const KASHIER_METHOD_ICON: Record<KashierMethod, typeof Smartphone> = {
+  card: CreditCard,
+  wallet: Smartphone,
+  bank_installments: Landmark,
+  valu: CalendarClock,
+  souhoola: CalendarClock,
+  aman: CalendarClock,
+  contact: CalendarClock,
 };
 
 export function MethodGlyph({ method, size = 'md' }: { method: PaidMethod; size?: 'sm' | 'md' | 'lg' }) {

@@ -217,7 +217,7 @@ async function isTester(sql: Sql, testers: string[], userId: string | null): Pro
 
 export async function getKashierPublicConfig(sql: Sql, master: Buffer | null, caller: KashierCaller): Promise<KashierPublicConfig> {
   const account = await getKashierAccountFor(sql, master, caller);
-  return account ? { enabled: true, mode: account.mode } : { enabled: false, mode: 'test' };
+  return account ? { enabled: true, mode: account.mode, methods: account.methods } : { enabled: false, mode: 'test', methods: [] };
 }
 
 export const recordKashierWebhookSeen = (sql: Sql, mode: KashierMode) => patchMode(sql, mode, { lastWebhookAt: new Date().toISOString(), apiKeyUnconfirmed: false });

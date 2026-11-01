@@ -1,11 +1,15 @@
-import { ok, siteSettingsSchema, successSchema } from '@wa/shared';
+import { FX_SOURCES, ok, siteSettingsSchema, successSchema } from '@wa/shared';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { Deps } from '../deps';
 import { getCurrencyRates } from '../lib/currency';
 import { getSiteSettings } from '../lib/site';
 
-const currencyRatesSchema = z.object({ rates: z.record(z.string(), z.number()), updatedAt: z.string().nullable() });
+const currencyRatesSchema = z.object({
+  rates: z.record(z.string(), z.number()),
+  updatedAt: z.string().nullable(),
+  egp: z.object({ effective: z.number(), live: z.number().nullable(), liveAt: z.string().nullable(), source: z.enum(FX_SOURCES).nullable(), floored: z.boolean() }),
+});
 
 /** Public: the website shows the explainer video, the contact details and the prices before anyone is signed in. */
 export function siteRoutes(deps: Deps): FastifyPluginAsyncZod {
