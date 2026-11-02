@@ -26,7 +26,7 @@ import {
 } from '../icons';
 import { getPlan, planHasFeature } from '@wa/shared/plans';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { api, ApiRequestError, errorMessage } from '../api';
 import { PhoneVerifyModal } from '../auth/Otp';
@@ -54,6 +54,22 @@ const readCollapsed = () => {
     return saved === null ? null : saved === '1';
   } catch {
     return null;
+  }
+};
+
+const WIDTH_KEY = 'wa.sidebar.width';
+const SIDEBAR_WIDTH = 280;
+const MIN_WIDTH = 220;
+const MAX_WIDTH = 440;
+/** Dragged narrower than this, the sidebar folds to its icon rail (and back out past it). */
+const FOLD_AT = 150;
+const clampWidth = (w: number) => Math.round(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, w)));
+const readWidth = () => {
+  try {
+    const saved = Number(localStorage.getItem(WIDTH_KEY));
+    return saved ? clampWidth(saved) : SIDEBAR_WIDTH;
+  } catch {
+    return SIDEBAR_WIDTH;
   }
 };
 
@@ -675,16 +691,81 @@ export function AppShell({ children, account }: { children: ReactNode; account: 
   // The other pages' code arrives in idle time, so the first click on each is instant.
   useEffect(() => prefetchAllPages(location.pathname), []);
 
+  const saveCollapsed = (next: boolean) => {
+    try {
+      localStorage.setItem(COLLAPSE_KEY, next ? '1' : '0');
+    } catch {
+      // per-tab only
+    }
+    setSavedCollapsed(next);
+  };
+
   const toggle = () => {
-    if (window.matchMedia('(min-width: 768px)').matches) {
-      const next = !collapsed;
-      try {
-        localStorage.setItem(COLLAPSE_KEY, next ? '1' : '0');
-      } catch {
-        // per-tab only
-      }
-      setSavedCollapsed(next);
-    } else setDrawer(true);
+    if (window.matchMedia('(min-width: 768px)').matches) saveCollapsed(!collapsed);
+    else setDrawer(true);
+  };
+
+  // The sidebar's edge drags to any width in MIN..MAX_WIDTH; narrower than FOLD_AT folds it to the rail.
+  const [width, setWidth] = useState(readWidth);
+  const [resizing, setResizing] = useState(false);
+  const saveWidth = (w: number) => {
+    setWidth(w);
+    try {
+      localStorage.setItem(WIDTH_KEY, String(w));
+    } catch {
+      // per-tab only
+    }
+  };
+  const startResize = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const handle = e.currentTarget;
+    handle.setPointerCapture(e.pointerId);
+    const edge = handle.parentElement!.getBoundingClientRect();
+    const rtl = document.documentElement.dir === 'rtl';
+    const wasFolded = collapsed;
+    let folded = collapsed;
+    let w = width;
+    setResizing(true);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    const move = (ev: PointerEvent) => {
+      const raw = rtl ? edge.right - ev.clientX : ev.clientX - edge.left;
+      folded = raw < FOLD_AT;
+      if (!folded) setWidth((w = clampWidth(raw)));
+      setSavedCollapsed(folded);
+    };
+    const end = () => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', end);
+      handle.removeEventListener('pointercancel', end);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      setResizing(false);
+      saveWidth(w);
+      if (folded !== wasFolded) saveCollapsed(folded);
+      else setSavedCollapsed(savedCollapsed);
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
+  };
+  const resizeByKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    const step = e.shiftKey ? 48 : 16;
+    const wider = document.documentElement.dir === 'rtl' ? 'ArrowLeft' : 'ArrowRight';
+    const narrower = wider === 'ArrowLeft' ? 'ArrowRight' : 'ArrowLeft';
+    if (e.key !== wider && e.key !== narrower) return;
+    e.preventDefault();
+    if (collapsed) {
+      if (e.key === wider) saveCollapsed(false);
+      return;
+    }
+    if (e.key === narrower && width <= MIN_WIDTH) saveCollapsed(true);
+    else saveWidth(clampWidth(width + (e.key === wider ? step : -step)));
+  };
+  const resetWidth = () => {
+    saveWidth(SIDEBAR_WIDTH);
+    if (collapsed) saveCollapsed(false);
   };
 
   const logout = () => void signOut(queryClient);
@@ -694,8 +775,27 @@ export function AppShell({ children, account }: { children: ReactNode; account: 
       <InboxAlerts account={account} path={path} />
       <ReadAlerts account={account} />
       <div className="flex min-h-svh bg-bg">
-        <aside className={cx('sticky top-0 z-20 hidden h-svh shrink-0 border-e border-line bg-bg transition-[width] duration-300 ease-out md:block', collapsed ? 'w-16' : 'w-[280px]')}>
+        <aside
+          style={collapsed ? undefined : { width }}
+          className={cx('sticky top-0 z-20 hidden h-svh shrink-0 border-e border-line bg-bg md:block', !resizing && 'transition-[width] duration-300 ease-out', collapsed && 'w-16')}
+        >
           <Sidebar path={path} account={account} collapsed={collapsed} onLogout={logout} />
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label={t.app.resizeSidebar}
+            aria-valuemin={MIN_WIDTH}
+            aria-valuemax={MAX_WIDTH}
+            aria-valuenow={collapsed ? MIN_WIDTH : width}
+            tabIndex={0}
+            title={t.app.resizeSidebar}
+            onPointerDown={startResize}
+            onDoubleClick={resetWidth}
+            onKeyDown={resizeByKey}
+            className="group absolute inset-y-0 -end-1.5 z-30 flex w-3 cursor-col-resize touch-none justify-center outline-none"
+          >
+            <span className={cx('h-full w-0.5 transition-colors group-hover:bg-line-strong group-focus-visible:bg-brand', resizing && 'bg-brand!')} />
+          </div>
         </aside>
 
         {drawer && (

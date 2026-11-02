@@ -501,6 +501,7 @@ export const en: Dict = {
     sessionDetail: 'Session details',
     breadcrumb: 'Breadcrumb',
     toggleSidebar: 'Toggle sidebar',
+    resizeSidebar: 'Drag to resize the sidebar (double-click to reset)',
     closeMenu: 'Close menu',
     admin: 'Admin',
     userMenu: { profile: 'Profile', subscription: 'Subscription', password: 'Change password', logout: 'Log out' },

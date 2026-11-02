@@ -512,6 +512,7 @@ export const ar = {
     sessionDetail: 'تفاصيل الجلسة',
     breadcrumb: 'مسار التنقل',
     toggleSidebar: 'إظهار/إخفاء الشريط الجانبي',
+    resizeSidebar: 'اسحب لتغيير عرض الشريط الجانبي (نقرتان للعرض الافتراضي)',
     closeMenu: 'إغلاق القائمة',
     admin: 'مسؤول',
     userMenu: { profile: 'الملف الشخصي', subscription: 'الاشتراك', password: 'تغيير كلمة المرور', logout: 'تسجيل الخروج' },

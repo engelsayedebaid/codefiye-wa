@@ -128,6 +128,22 @@ html[data-theme='light'] {
 }
 
 /*
+ * Every scrollbar looks like the sidebar's: thin, a faint thumb, no track or arrows. The colour is
+ * inherited, the width isn't. In the base layer so `[scrollbar-width:none]` utilities still win.
+ */
+@layer base {
+  * {
+    scrollbar-width: thin;
+  }
+  html {
+    scrollbar-color: rgb(255 255 255 / 0.15) transparent;
+  }
+  html[data-theme='light'] {
+    scrollbar-color: rgb(0 0 0 / 0.18) transparent;
+  }
+}
+
+/*
  * A calmer type scale on desktop: Inter runs large, so the root is 15px from 768px up and every rem
  * size and space follows. Phones keep 16px: iOS zooms into any field whose text is under 16px.
  */
