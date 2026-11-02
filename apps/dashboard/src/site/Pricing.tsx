@@ -19,16 +19,16 @@ export function PlanCard({ plan, current, action, embedded }: { plan: PricedPlan
   return (
     <article
       className={cx(
-        'site-card relative flex h-full flex-col rounded-2xl p-7 transition-[translate,box-shadow] duration-300',
-        !embedded && 'motion-safe:hover:-translate-y-1',
-        plan.popular && 'border-brand/70 bg-gradient-to-b from-brand/[0.07] to-card ring-1 ring-brand/30',
+        'site-card relative flex h-full flex-col rounded-2xl p-7 transition-colors duration-200',
+        !embedded && 'hover:border-line-strong',
+        plan.popular && 'border-brand/60 hover:border-brand/80',
       )}
     >
       {(plan.popular || current) && (
         <span
           className={cx(
-            'absolute -top-3.5 left-1/2 -translate-x-1/2 rounded-full border px-3.5 py-1 text-xs font-bold whitespace-nowrap shadow-sm backdrop-blur-md',
-            current ? 'border-info/50 bg-info/15 text-info' : 'border-brand/60 bg-brand text-on-brand',
+            'absolute -top-3 left-1/2 -translate-x-1/2 rounded-full border px-3 py-0.5 text-xs font-semibold whitespace-nowrap',
+            current ? 'border-info/50 bg-card text-info' : 'border-brand bg-brand text-on-brand',
           )}
         >
           {current ? t.plans.current : t.plans.popular}
@@ -36,7 +36,7 @@ export function PlanCard({ plan, current, action, embedded }: { plan: PricedPlan
       )}
       <div className="flex items-start justify-between gap-2">
         <h3 className="text-lg font-semibold">{plan.name}</h3>
-        <span className="shrink-0 rounded-full border border-line bg-ink/[0.03] px-2.5 py-0.5 text-xs font-medium text-muted">
+        <span className="shrink-0 rounded-full border border-line px-2.5 py-0.5 text-xs font-medium text-muted">
           <span className="ltr font-mono">{money(plan.priceUsd / plan.sessions)}</span> {t.plans.perSession}
         </span>
       </div>
@@ -49,7 +49,7 @@ export function PlanCard({ plan, current, action, embedded }: { plan: PricedPlan
       <p className={cx('flex flex-wrap items-baseline gap-x-2 gap-y-1', pct === null ? 'mt-5' : 'mt-3')}>
         {compare !== null && <span className="ltr text-xl font-semibold text-muted line-through decoration-2 decoration-warning/80 tabular-nums">{format(compare)}</span>}
         {/* Long amounts ("IDR 245,000") step down so they still fit a quarter-width card. */}
-        <span className={cx('ltr leading-none font-semibold tracking-tight tabular-nums', priceText.length > 11 ? 'text-3xl' : priceText.length > 8 ? 'text-4xl' : 'text-[2.75rem]')}>
+        <span className={cx('ltr leading-none font-semibold tracking-[-0.04em] tabular-nums', priceText.length > 11 ? 'text-3xl' : priceText.length > 8 ? 'text-4xl' : 'text-[2.75rem]')}>
           {priceText}
         </span>
         <span className="text-sm font-medium text-muted">{t.plans.perMonth}</span>
@@ -63,7 +63,7 @@ export function PlanCard({ plan, current, action, embedded }: { plan: PricedPlan
             <span
               className={cx(
                 'mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full',
-                plan.popular ? 'bg-brand/15 text-brand' : 'border border-line-strong bg-ink/[0.03] text-ink-2',
+                plan.popular ? 'bg-brand/15 text-brand' : 'bg-ink/[0.07] text-ink-2',
               )}
             >
               <Check className="size-3" strokeWidth={3} />
@@ -93,9 +93,9 @@ export function PlanCard({ plan, current, action, embedded }: { plan: PricedPlan
           <Link
             href="/register"
             className={buttonClass(
-              plan.popular ? 'brand' : 'outline',
+              plan.popular ? 'white' : 'outline',
               'lg',
-              'h-11 w-full rounded-lg font-semibold',
+              'h-11 w-full font-semibold',
             )}
           >
             {plan.popular ? t.plans.startNow : t.plans.choose}

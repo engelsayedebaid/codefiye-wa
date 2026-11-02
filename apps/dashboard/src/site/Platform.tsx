@@ -30,10 +30,10 @@ function Tile({
       <article className={cx('site-card flex h-full flex-col gap-6 overflow-hidden rounded-2xl p-6 sm:p-7', wide && 'lg:grid lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] lg:items-center lg:gap-8')}>
         <div>
           <div className="flex items-center justify-between gap-3">
-            <span className="flex size-10 items-center justify-center rounded-xl bg-brand/10 text-brand ring-1 ring-brand/20">
+            <span className="site-icon size-10">
               <Icon className="size-5" />
             </span>
-            {badge && <span className="rounded-full border border-line px-2.5 py-0.5 text-[11px] font-medium whitespace-nowrap text-muted">{badge}</span>}
+            {badge && <span className="rounded-full bg-brand/12 px-2.5 py-0.5 text-[11px] font-medium whitespace-nowrap text-brand">{badge}</span>}
           </div>
           <h3 className="mt-5 text-lg font-semibold">{title}</h3>
           <p className="mt-2 text-sm leading-relaxed text-muted">{text}</p>
@@ -51,7 +51,7 @@ function ApiVisual() {
   const p = t.landing.platform.api;
   return (
     <div className="space-y-4">
-      <div dir="ltr" className="overflow-hidden rounded-xl border border-white/10 bg-[#0a0e0d] font-mono text-[12px] leading-6 text-[#d4d4d4] shadow-lg">
+      <div dir="ltr" className="overflow-hidden rounded-xl border border-white/10 bg-[#0c0c0c] font-mono text-[12px] leading-6 text-[#d4d4d4] shadow-lg">
         <div className="flex items-center gap-2 border-b border-white/10 px-4 py-2 text-[11px] text-white/55">
           <span className="rounded bg-[#34d399]/15 px-1.5 py-0.5 font-bold text-[#34d399]">POST</span>
           /api/send-message
@@ -70,7 +70,7 @@ function ApiVisual() {
       </div>
       <ul className="flex flex-wrap gap-1.5">
         {p.types.map((type) => (
-          <li key={type} className="rounded-full border border-line bg-bg/50 px-2.5 py-1 text-[11px] font-medium text-ink-2">
+          <li key={type} className="rounded-md border border-line bg-bg/50 px-2 py-1 text-[11px] font-medium text-muted">
             {type}
           </li>
         ))}

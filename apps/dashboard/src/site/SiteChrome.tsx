@@ -24,7 +24,7 @@ export function YoutubeIcon({ className }: { className?: string }) {
   );
 }
 
-/** Section title block: a kicker, a headline whose second half is in the brand gradient, and a lead. */
+/** Section title block: a pill label, a two-tone headline (the second half in grey, as Whop writes them), and a lead. */
 export function SectionHeading({
   kicker,
   title,
@@ -49,10 +49,10 @@ export function SectionHeading({
       <p className="kicker" data-center={center || undefined}>
         {kicker}
       </p>
-      <h2 className="mt-4 text-3xl leading-[1.18] font-semibold tracking-tight text-balance sm:text-4xl lg:text-5xl">
-        {title} {accent && <span className={cx('text-brand-gradient', breakAccent && 'sm:block')}>{accent}</span>}
+      <h2 className="mt-5 text-3xl leading-[1.15] font-semibold tracking-[-0.03em] text-balance sm:text-4xl lg:text-[2.75rem]">
+        {title} {accent && <span className={cx('text-faint', breakAccent && 'sm:block')}>{accent}</span>}
       </h2>
-      {text && <p className={cx('mt-5 text-lg leading-relaxed text-muted', center && 'mx-auto max-w-2xl')}>{text}</p>}
+      {text && <p className={cx('mt-4 text-base leading-relaxed text-muted sm:text-lg', center && 'mx-auto max-w-2xl')}>{text}</p>}
     </Reveal>
   );
 }
@@ -101,7 +101,7 @@ export function SiteHeader() {
       >
         {l.skip}
       </a>
-      <div className="mx-auto flex h-16 max-w-7xl items-center gap-3 px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto flex h-14 max-w-7xl items-center gap-3 px-4 sm:px-6 lg:px-8">
         <Link href="/" aria-label={BRAND.name} className="shrink-0">
           <Logo />
         </Link>
@@ -111,7 +111,7 @@ export function SiteHeader() {
             <Link
               key={label}
               href={siteHref(NAV_HREFS[i]!)}
-              className="rounded-md px-3 py-2 text-sm font-medium whitespace-nowrap text-ink-2 transition-colors hover:bg-raised/60 hover:text-ink"
+              className="rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap text-muted transition-colors hover:bg-ink/[0.05] hover:text-ink"
             >
               {label}
             </Link>
@@ -124,15 +124,15 @@ export function SiteHeader() {
           <LangSwitch />
           <span aria-hidden className="mx-1.5 h-5 w-px bg-line" />
           {signedIn ? (
-            <Link href="/dashboard" className={buttonClass('brand', 'md', 'rounded-lg px-4')}>
+            <Link href="/dashboard" className={buttonClass('white', 'md', 'px-4')}>
               {l.dashboard} <Arrow />
             </Link>
           ) : (
             <>
-              <Link href="/login" className={buttonClass('ghost', 'md', 'rounded-lg')}>
+              <Link href="/login" className={buttonClass('ghost', 'md')}>
                 {l.login}
               </Link>
-              <Link href="/register" className={buttonClass('brand', 'md', 'rounded-lg px-4')}>
+              <Link href="/register" className={buttonClass('white', 'md', 'px-4')}>
                 {l.getStarted} <Arrow />
               </Link>
             </>
@@ -161,10 +161,10 @@ export function SiteHeader() {
             ))}
           </nav>
           <div className="mx-auto grid max-w-7xl grid-cols-2 gap-3 px-4 py-4 sm:px-6">
-            <Link href={signedIn ? '/dashboard' : '/login'} onClick={close} className={buttonClass('outline', 'lg', 'rounded-lg')}>
+            <Link href={signedIn ? '/dashboard' : '/login'} onClick={close} className={buttonClass('outline', 'lg')}>
               {signedIn ? l.dashboard : l.login}
             </Link>
-            <Link href="/register" onClick={close} className={buttonClass('brand', 'lg', 'rounded-lg')}>
+            <Link href="/register" onClick={close} className={buttonClass('white', 'lg')}>
               {l.getStarted}
             </Link>
           </div>
@@ -226,7 +226,7 @@ export function SiteFooter() {
   const siteHref = useSiteHref();
 
   return (
-    <footer className="border-t border-line bg-surface/40">
+    <footer className="border-t border-line bg-surface">
       <div className="mx-auto grid max-w-7xl gap-12 px-4 py-16 sm:px-6 lg:grid-cols-[1.5fr_3fr] lg:px-8">
         <div className="max-w-sm">
           <Link href="/" aria-label={BRAND.name}>

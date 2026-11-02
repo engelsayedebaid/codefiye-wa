@@ -5,7 +5,6 @@ import {
   KeyRound,
   LayoutDashboard,
   LayoutTemplate,
-  Lock,
   Megaphone,
   MessagesSquare,
   Mic,
@@ -13,6 +12,7 @@ import {
   Search,
   Smartphone,
   Smile,
+  filledIcon,
 } from '../icons';
 import type { ReactNode } from 'react';
 import { useI18n } from '../i18n';
@@ -59,8 +59,9 @@ function Bubble({ out, time, children, className }: { out?: boolean; time: strin
 }
 
 /**
- * The hero's "screenshot": the dashboard's chats page drawn in HTML, so it follows the theme and
- * the language. Narrow screens keep only the open conversation.
+ * The hero's "screenshot": the dashboard's chats page drawn in HTML, the way the app looks (Whop's
+ * flat shell: sidebar, a header with the plan pill), so it follows the theme and the language.
+ * Narrow screens keep only the open conversation.
  */
 export function ProductShot() {
   const { t } = useI18n();
@@ -69,133 +70,132 @@ export function ProductShot() {
 
   return (
     <div aria-hidden className="relative select-none">
-      <div className="pointer-events-none absolute -inset-x-6 -top-8 bottom-12 -z-10 rounded-[3rem] bg-brand/15 blur-3xl sm:-inset-x-16" />
-
-      <div className="overflow-hidden rounded-xl border border-line-strong/60 bg-card shadow-[0_40px_100px_-40px_rgb(0_0_0/0.85)] sm:rounded-2xl light:shadow-[0_40px_90px_-50px_rgb(16_24_20/0.4)]">
-        {/* Window bar */}
-        <div className="flex h-10 items-center gap-3 border-b border-line bg-surface px-3 sm:px-4">
-          <div className="flex w-12 gap-1.5" dir="ltr">
-            <span className="size-2.5 rounded-full bg-[#ff5f57]" />
-            <span className="size-2.5 rounded-full bg-[#febc2e]" />
-            <span className="size-2.5 rounded-full bg-[#28c840]" />
-          </div>
-          <div className="mx-auto flex min-w-0 items-center gap-1.5 rounded-md border border-line bg-bg/60 px-3 py-1 text-[11px] text-muted">
-            <Lock className="size-3 shrink-0" />
-            <span className="truncate">{m.address}</span>
-          </div>
-          <div className="w-12" />
-        </div>
-
-        <div className="grid h-[400px] grid-cols-1 sm:h-[460px] md:grid-cols-[minmax(0,230px)_minmax(0,1fr)] lg:h-[500px] lg:grid-cols-[176px_250px_minmax(0,1fr)]">
+      {/* A tray around the app, as Whop frames its product shots. */}
+      <div className="rounded-[1.25rem] border border-line bg-surface p-1.5 sm:p-2">
+        <div className="grid h-[420px] grid-cols-1 overflow-hidden rounded-xl border border-line bg-bg sm:h-[480px] lg:h-[520px] lg:grid-cols-[184px_minmax(0,1fr)]">
           {/* Sidebar */}
-          <aside className="hidden flex-col border-e border-line bg-surface/60 p-3 lg:flex">
-            <div className="flex items-center gap-2 px-1.5 py-1">
+          <aside className="hidden min-h-0 flex-col border-e border-line lg:flex">
+            <div className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-3.5">
               <LogoMark className="size-6" />
               <span className="ltr text-[13px] font-semibold">CodeFiye</span>
             </div>
-            <ul className="mt-5 space-y-0.5">
+            <ul className="space-y-0.5 p-2">
               {m.nav.map((label, i) => {
-                const Icon = NAV_ICONS[i]!;
                 const active = i === 2;
+                const Icon = active ? filledIcon(NAV_ICONS[i]!) : NAV_ICONS[i]!;
                 return (
-                  <li key={label} className={cx('flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[12px]', active ? 'bg-raised font-semibold text-ink' : 'text-muted')}>
-                    <Icon className="size-3.5 shrink-0" />
+                  <li
+                    key={label}
+                    className={cx('flex h-8 items-center gap-2.5 rounded-lg px-2.5 text-[12px]', active ? 'bg-ink/[0.07] font-medium text-ink' : 'text-muted')}
+                  >
+                    <Icon className="size-4 shrink-0" />
                     <span className="truncate">{label}</span>
-                    {active && <span className="ms-auto rounded-full bg-brand px-1.5 text-[10px] leading-4 font-bold text-on-brand">3</span>}
+                    {active && <span className="ms-auto rounded-full bg-brand px-1.5 text-[10px] leading-4 font-semibold text-on-brand">3</span>}
                   </li>
                 );
               })}
             </ul>
-            <div className="mt-auto rounded-lg border border-line bg-card p-2.5">
-              <p className="text-[11px] font-semibold">{m.plan}</p>
-              <div className="mt-2 h-1 overflow-hidden rounded-full bg-raised">
-                <div className="h-full w-3/5 rounded-full bg-brand" />
-              </div>
-            </div>
           </aside>
 
-          {/* Chat list */}
-          <div className="hidden min-w-0 flex-col border-e border-line md:flex">
-            <div className="border-b border-line p-3">
-              <div className="flex items-center gap-2 rounded-md border border-line bg-bg/60 px-2.5 py-1.5 text-[11px] text-faint">
-                <Search className="size-3.5 shrink-0" />
-                <span className="truncate">{m.search}</span>
-              </div>
-              <div className="mt-2.5 flex gap-1.5">
-                {m.filters.map((f, i) => (
-                  <span key={f} className={cx('rounded-full px-2.5 py-0.5 text-[10px] font-medium', i === 0 ? 'bg-ink text-bg' : 'bg-raised text-muted')}>
-                    {f}
-                  </span>
-                ))}
-              </div>
-            </div>
-            <ul className="min-h-0 flex-1 overflow-hidden">
-              {m.chats.map((c, i) => (
-                <li key={c.name} className={cx('flex items-center gap-2.5 px-3 py-2.5', i === 0 && 'bg-raised/70')}>
-                  <Avatar name={c.name} index={i} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <p className="truncate text-[12px] font-semibold">{c.name}</p>
-                      <span className={cx('ltr shrink-0 text-[10px]', c.unread ? 'font-semibold text-brand' : 'text-faint')}>{c.time}</span>
-                    </div>
-                    <div className="mt-0.5 flex items-center justify-between gap-2">
-                      <p className="truncate text-[11px] text-muted">{c.text}</p>
-                      {c.unread > 0 && (
-                        <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-brand text-[9px] font-bold text-on-brand">{c.unread}</span>
-                      )}
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Conversation */}
-          <div className="flex min-w-0 flex-col">
-            <div className="flex items-center gap-3 border-b border-line bg-card px-4 py-2.5">
-              <Avatar name={open.name} index={0} />
-              <div className="min-w-0 flex-1 leading-tight">
-                <p className="truncate text-[13px] font-semibold">{open.name}</p>
-                <p className="mt-0.5 text-[11px] text-good">{m.online}</p>
-              </div>
-              <Search className="size-4 text-muted" />
-              <EllipsisVertical className="size-4 text-muted" />
-            </div>
-            <div className="chat-wall min-h-0 flex-1 overflow-hidden">
-              <div className="relative flex h-full flex-col justify-end gap-2 p-3 sm:p-4">
-                <span className="mx-auto mb-1 rounded-md bg-card/90 px-2.5 py-0.5 text-[10px] font-medium text-muted shadow-xs">{m.today}</span>
-                <Bubble time="10:21">{m.question}</Bubble>
-                <Bubble out time="10:22">
-                  <span className="block font-semibold">{m.shipped}</span>
-                  <span className="mt-0.5 block text-[11.5px] text-ink-2">{m.eta}</span>
-                </Bubble>
-                <Bubble out time="10:22" className="p-1.5">
-                  <span className="flex items-center gap-2.5 rounded-lg bg-ink/[0.05] p-2">
-                    <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-[#e5484d] text-[9px] font-bold text-white">PDF</span>
-                    <span className="min-w-0 leading-tight">
-                      <span className="block truncate text-[12px] font-semibold">{m.pdfName}</span>
-                      <span className="block text-[10px] text-muted">{m.pdfMeta}</span>
-                    </span>
-                    <FileText className="ms-2 size-4 shrink-0 text-muted" />
-                  </span>
-                </Bubble>
-                <Bubble time="10:24">{m.thanks}</Bubble>
-              </div>
-            </div>
-            <div className="flex items-center gap-2.5 border-t border-line bg-card px-3 py-2.5 text-muted">
-              <Smile className="size-4.5 shrink-0" />
-              <Paperclip className="size-4.5 shrink-0" />
-              <span className="min-w-0 flex-1 truncate rounded-full bg-raised px-3.5 py-1.5 text-[12px] text-faint">{m.placeholder}</span>
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-brand text-on-brand">
-                <Mic className="size-4" />
+          <div className="flex min-h-0 min-w-0 flex-col">
+            {/* Header: where you are, and the plan pill */}
+            <div className="flex h-12 shrink-0 items-center gap-3 border-b border-line px-4">
+              <span className="truncate text-[12px] font-medium text-ink-2">{m.address}</span>
+              <span className="ms-auto hidden h-7 items-center gap-2 rounded-full border border-line ps-2.5 pe-3 text-[11px] text-ink-2 sm:inline-flex">
+                <span className="size-1.5 rounded-full bg-brand" />
+                {m.plan}
+                <span className="h-1 w-8 overflow-hidden rounded-full bg-ink/10">
+                  <span className="block h-full w-3/5 rounded-full bg-brand" />
+                </span>
               </span>
+              <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-brand text-[11px] font-semibold text-on-brand max-sm:ms-auto">C</span>
+            </div>
+
+            <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[minmax(0,240px)_minmax(0,1fr)]">
+              {/* Chat list */}
+              <div className="hidden min-w-0 flex-col border-e border-line md:flex">
+                <div className="p-3">
+                  <div className="flex h-8 items-center gap-2 rounded-lg border border-line bg-card px-2.5 text-[11px] text-faint">
+                    <Search className="size-3.5 shrink-0" />
+                    <span className="truncate">{m.search}</span>
+                  </div>
+                  <div className="mt-2.5 flex gap-1.5">
+                    {m.filters.map((f, i) => (
+                      <span key={f} className={cx('rounded-full px-2.5 py-0.5 text-[10px] font-medium', i === 0 ? 'bg-ink text-bg' : 'bg-ink/[0.07] text-muted')}>
+                        {f}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <ul className="min-h-0 flex-1 space-y-0.5 overflow-hidden px-1.5">
+                  {m.chats.map((c, i) => (
+                    <li key={c.name} className={cx('flex items-center gap-2.5 rounded-lg px-2 py-2', i === 0 && 'bg-ink/[0.06]')}>
+                      <Avatar name={c.name} index={i} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <p className="truncate text-[12px] font-semibold">{c.name}</p>
+                          <span className={cx('ltr shrink-0 text-[10px]', c.unread ? 'font-semibold text-brand' : 'text-faint')}>{c.time}</span>
+                        </div>
+                        <div className="mt-0.5 flex items-center justify-between gap-2">
+                          <p className="truncate text-[11px] text-muted">{c.text}</p>
+                          {c.unread > 0 && (
+                            <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-brand text-[9px] font-bold text-on-brand">{c.unread}</span>
+                          )}
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* Conversation */}
+              <div className="flex min-h-0 min-w-0 flex-col">
+                <div className="flex items-center gap-3 border-b border-line px-4 py-2.5">
+                  <Avatar name={open.name} index={0} />
+                  <div className="min-w-0 flex-1 leading-tight">
+                    <p className="truncate text-[13px] font-semibold">{open.name}</p>
+                    <p className="mt-0.5 text-[11px] text-good">{m.online}</p>
+                  </div>
+                  <Search className="size-4 text-muted" />
+                  <EllipsisVertical className="size-4 text-muted" />
+                </div>
+                <div className="chat-wall min-h-0 flex-1 overflow-hidden">
+                  <div className="relative flex h-full flex-col justify-end gap-2 p-3 sm:p-4">
+                    <span className="mx-auto mb-1 rounded-md bg-card/90 px-2.5 py-0.5 text-[10px] font-medium text-muted shadow-xs">{m.today}</span>
+                    <Bubble time="10:21">{m.question}</Bubble>
+                    <Bubble out time="10:22">
+                      <span className="block font-semibold">{m.shipped}</span>
+                      <span className="mt-0.5 block text-[11.5px] text-ink-2">{m.eta}</span>
+                    </Bubble>
+                    <Bubble out time="10:22" className="p-1.5">
+                      <span className="flex items-center gap-2.5 rounded-lg bg-ink/[0.05] p-2">
+                        <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-[#e5484d] text-[9px] font-bold text-white">PDF</span>
+                        <span className="min-w-0 leading-tight">
+                          <span className="block truncate text-[12px] font-semibold">{m.pdfName}</span>
+                          <span className="block text-[10px] text-muted">{m.pdfMeta}</span>
+                        </span>
+                        <FileText className="ms-2 size-4 shrink-0 text-muted" />
+                      </span>
+                    </Bubble>
+                    <Bubble time="10:24">{m.thanks}</Bubble>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2.5 border-t border-line px-3 py-2.5 text-muted">
+                  <Smile className="size-4.5 shrink-0" />
+                  <Paperclip className="size-4.5 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate rounded-full border border-line bg-card px-3.5 py-1.5 text-[12px] text-faint">{m.placeholder}</span>
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-brand text-on-brand">
+                    <Mic className="size-4" />
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
       {/* Floating cards: today's volume, and a live delivery event */}
-      <div className="site-card absolute -start-12 bottom-24 hidden w-56 rounded-xl p-4 shadow-2xl xl:block">
+      <div className="site-card absolute -start-12 bottom-24 hidden w-56 rounded-xl p-4 shadow-[0_20px_50px_-24px_rgb(0_0_0/0.7)] xl:block light:shadow-[0_20px_50px_-28px_rgb(0_0_0/0.25)]">
         <p className="text-xs text-muted">{m.statLabel}</p>
         <p className="ltr mt-1 text-2xl font-semibold tabular-nums">12,480</p>
         <p className="mt-0.5 text-[11px] font-medium text-good">{m.statDelta}</p>
@@ -205,7 +205,7 @@ export function ProductShot() {
           ))}
         </div>
       </div>
-      <div className="site-card absolute -end-12 top-28 hidden w-72 items-start gap-3 rounded-xl p-3.5 shadow-2xl xl:flex">
+      <div className="site-card absolute -end-12 top-28 hidden w-72 items-start gap-3 rounded-xl p-3.5 shadow-[0_20px_50px_-24px_rgb(0_0_0/0.7)] xl:flex light:shadow-[0_20px_50px_-28px_rgb(0_0_0/0.25)]">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-good/12 text-good">
           <CheckCheck className="size-4.5" />
         </span>

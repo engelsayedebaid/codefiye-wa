@@ -22,11 +22,7 @@ function Poster({ ready, onPlay }: { ready: boolean; onPlay: () => void }) {
   const d = t.landing.demo;
   const cover = (
     <>
-      <span aria-hidden className="absolute inset-0 bg-[radial-gradient(60%_70%_at_50%_42%,rgb(52_211_153/0.24),transparent_70%)]" />
-      <span
-        aria-hidden
-        className="absolute inset-0 [background-image:linear-gradient(to_right,rgb(255_255_255/0.05)_1px,transparent_1px),linear-gradient(to_bottom,rgb(255_255_255/0.05)_1px,transparent_1px)] [background-size:44px_44px] [mask-image:radial-gradient(ellipse_75%_70%_at_50%_45%,#000_30%,transparent_80%)]"
-      />
+      <span aria-hidden className="absolute inset-0 bg-[radial-gradient(55%_65%_at_50%_42%,rgb(37_211_102/0.14),transparent_70%)]" />
 
       {/* Two bits of product floating at the sides. */}
       <span aria-hidden className="absolute start-[7%] top-[16%] hidden -rotate-3 rounded-xl border border-white/10 bg-white/[0.06] px-3.5 py-2.5 text-start text-xs shadow-xl backdrop-blur-sm transition-transform duration-500 group-hover:-translate-y-1 md:block">
@@ -106,7 +102,7 @@ export function DemoVideo() {
         <SectionHeading kicker={d.kicker} title={d.title} accent={d.accent} text={d.text} />
 
         <Reveal delay={100} className="mx-auto mt-12 max-w-5xl">
-          <div className="relative aspect-video overflow-hidden rounded-2xl border border-white/10 bg-[#04110d] shadow-[0_50px_120px_-50px_rgb(0_0_0/0.85)] sm:rounded-3xl light:shadow-[0_50px_100px_-50px_rgb(16_24_20/0.5)]">
+          <div className="relative aspect-video overflow-hidden rounded-2xl border border-line bg-[#0e0e0e] sm:rounded-3xl">
             {playing && id ? (
               <iframe
                 className="absolute inset-0 size-full"
@@ -128,7 +124,7 @@ export function DemoVideo() {
             return (
               <li key={p.title}>
                 <Reveal delay={i * 80} className="flex gap-3.5">
-                  <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand/10 text-brand ring-1 ring-brand/20">
+                  <span className="site-icon size-10">
                     <Icon className={cx('size-5', i === 1 && flip)} />
                   </span>
                   <span>
@@ -144,7 +140,7 @@ export function DemoVideo() {
         {(site.youtubeChannelUrl || id) && (
           <div className="mt-12 flex flex-wrap items-center justify-center gap-x-6 gap-y-3">
             {site.youtubeChannelUrl && (
-              <a href={site.youtubeChannelUrl} target="_blank" rel="noreferrer" className={buttonClass('outline', 'lg', 'rounded-lg')}>
+              <a href={site.youtubeChannelUrl} target="_blank" rel="noreferrer" className={buttonClass('outline', 'lg')}>
                 <YoutubeIcon className="size-5 text-[#ff0033]" />
                 {d.youtube}
               </a>

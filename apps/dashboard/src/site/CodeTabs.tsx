@@ -117,7 +117,7 @@ export function CodeTabs({ className }: { className?: string }) {
     <div
       dir="ltr"
       className={cx(
-        'overflow-hidden rounded-2xl border border-white/10 bg-[#0a0e0d] text-[#d4d4d4] shadow-[0_40px_90px_-40px_rgb(0_0_0/0.85)] light:shadow-[0_40px_80px_-40px_rgb(16_24_20/0.45)]',
+        'overflow-hidden rounded-2xl border border-white/10 bg-[#0c0c0c] text-[#d4d4d4] light:border-transparent',
         className,
       )}
     >
