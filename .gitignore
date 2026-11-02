@@ -7,3 +7,6 @@ dist/
 *.log
 .DS_Store
 .neon
+
+# Local copy of whop.com (design reference, contains third-party keys)
+whop/
