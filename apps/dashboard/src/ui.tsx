@@ -52,18 +52,18 @@ type Variant = 'white' | 'brand' | 'outline' | 'secondary' | 'ghost' | 'danger';
 type Size = 'sm' | 'md' | 'lg';
 
 const VARIANTS: Record<Variant, string> = {
-  // The light theme's primary is the brand teal (reference design), not near-black.
-  white: 'bg-ink text-bg shadow-xs hover:bg-ink/90 light:bg-brand light:text-on-brand light:hover:bg-brand-strong',
-  brand: 'bg-brand text-on-brand shadow-xs hover:bg-brand-strong hover:shadow-[0_8px_30px_-8px] hover:shadow-brand/60',
-  outline: 'border border-line bg-bg text-ink shadow-xs hover:bg-raised',
-  secondary: 'bg-raised text-ink shadow-xs hover:bg-raised/80',
+  // Whop: a near-white primary on dark, the brand green in the light theme.
+  white: 'bg-ink text-bg hover:bg-ink/90 light:bg-brand light:text-on-brand light:hover:bg-brand-strong',
+  brand: 'bg-brand text-on-brand hover:bg-brand-strong',
+  outline: 'border border-line-strong/70 bg-transparent text-ink hover:bg-raised',
+  secondary: 'bg-ink/[0.07] text-ink hover:bg-ink/[0.11]',
   ghost: 'text-ink-2 hover:bg-raised hover:text-ink',
-  danger: 'bg-destructive text-white shadow-xs hover:bg-destructive/90',
+  danger: 'bg-destructive text-white hover:bg-destructive/90',
 };
 const SIZES: Record<Size, string> = {
-  sm: 'h-8 px-3 text-sm gap-1.5 rounded-md',
-  md: 'h-9 px-4 text-sm gap-2 rounded-md',
-  lg: 'h-11 px-6 text-base gap-2.5 rounded-md',
+  sm: 'h-8 px-3 text-sm gap-1.5 rounded-lg',
+  md: 'h-9 px-4 text-sm gap-2 rounded-[10px]',
+  lg: 'h-11 px-6 text-base gap-2.5 rounded-xl',
 };
 
 export const buttonClass = (variant: Variant = 'white', size: Size = 'md', className?: string) =>
@@ -170,7 +170,7 @@ export function ThemeSwitch({ className }: { className?: string }) {
         <Current className="size-4" />
       </button>
       {open && (
-        <div role="menu" aria-label={t.theme.aria} className="animate-scale-in absolute end-0 top-full z-50 mt-1.5 w-max min-w-40 origin-top rounded-md border border-line bg-card p-1 shadow-xl shadow-black/50 light:shadow-black/15">
+        <div role="menu" aria-label={t.theme.aria} className="animate-scale-in absolute end-0 top-full z-50 mt-1.5 w-max min-w-40 origin-top rounded-xl border border-line bg-card p-1 shadow-xl shadow-black/50 light:shadow-black/15">
           {(['light', 'dark', 'system'] as const).map((option) => {
             const Icon = THEME_ICONS[option];
             const selected = option === pref;
@@ -185,7 +185,7 @@ export function ThemeSwitch({ className }: { className?: string }) {
                   setOpen(false);
                 }}
                 className={cx(
-                  'flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm transition-colors hover:bg-raised hover:text-ink',
+                  'flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-raised hover:text-ink',
                   selected ? 'font-medium text-ink' : 'text-ink-2',
                 )}
               >
@@ -253,11 +253,11 @@ export function Card({
 }) {
   const hasHeader = Boolean(title || actions);
   return (
-    <section style={style} className={cx('flex min-w-0 flex-col gap-6 rounded-xl border border-line bg-card py-6 shadow-sm', className)}>
+    <section style={style} className={cx('flex min-w-0 flex-col gap-6 rounded-2xl border border-line bg-card py-6', className)}>
       {hasHeader && (
         <header className="flex flex-wrap items-start justify-between gap-3 px-6">
           <div className="space-y-1.5">
-            <h2 className="text-lg leading-none font-semibold">{title}</h2>
+            <h2 className="text-base leading-none font-semibold">{title}</h2>
             {description && <p className="text-sm text-muted">{description}</p>}
           </div>
           {actions && <div className="flex max-w-full flex-wrap items-center gap-2">{actions}</div>}
@@ -272,8 +272,8 @@ export function PageHeader({ title, description, actions }: { title: string; des
   return (
     <div className="flex flex-wrap items-center justify-between gap-4">
       <div className="space-y-1">
-        <h1 className="text-3xl font-bold tracking-tight">{title}</h1>
-        {description && <p className="text-muted">{description}</p>}
+        <h1 className="text-2xl leading-tight font-semibold tracking-[-0.015em]">{title}</h1>
+        {description && <p className="text-sm text-muted">{description}</p>}
       </div>
       {actions && <div className="flex max-w-full flex-wrap items-center gap-2">{actions}</div>}
     </div>
@@ -316,7 +316,7 @@ export function EmptyState({ icon: Icon, title, text, action }: { icon: typeof W
 // --- form controls -------------------------------------------------------------------------------
 
 export const inputClass =
-  'h-9 w-full min-w-0 rounded-md border border-line bg-card px-3 py-1 text-base text-ink shadow-xs outline-none transition-[color,box-shadow,border-color] placeholder:text-muted md:text-sm focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50';
+  'h-9 w-full min-w-0 rounded-[10px] border border-line-strong/60 bg-card px-3 py-1 text-base text-ink outline-none transition-[color,box-shadow,border-color] placeholder:text-muted md:text-sm focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50';
 
 export function Field({
   label,
@@ -485,7 +485,7 @@ export function Select<T extends string>({
             role="listbox"
             aria-labelledby={label ? `${id}-label` : undefined}
             aria-label={label ? undefined : ariaLabel}
-            className="animate-scale-in absolute inset-x-0 top-full z-50 mt-1.5 max-h-72 min-w-max origin-top overflow-auto rounded-md border border-line bg-card p-1 shadow-xl shadow-black/50 light:shadow-black/15"
+            className="animate-scale-in absolute inset-x-0 top-full z-50 mt-1.5 max-h-72 min-w-max origin-top overflow-auto rounded-xl border border-line bg-card p-1 shadow-xl shadow-black/50 light:shadow-black/15"
           >
             {options.map((option, i) => {
               const selected = option.value === value;
@@ -500,7 +500,7 @@ export function Select<T extends string>({
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => pick(i)}
                   className={cx(
-                    'flex cursor-pointer items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-sm transition-colors select-none',
+                    'flex cursor-pointer items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-sm transition-colors select-none',
                     i === active ? 'bg-raised text-ink' : 'text-ink-2',
                     selected && 'font-medium text-ink',
                   )}
@@ -622,7 +622,7 @@ export function Modal({
         role="dialog"
         aria-modal
         aria-label={title}
-        className={cx('animate-scale-in relative my-auto flex w-full flex-col rounded-lg border border-line bg-card shadow-lg', size !== 'sm' && 'gap-4 p-6', MODAL_SIZES[size], tall && 'max-h-[92svh] pb-0')}
+        className={cx('animate-scale-in relative my-auto flex w-full flex-col rounded-2xl border border-line bg-card shadow-2xl shadow-black/40 light:shadow-black/10', size !== 'sm' && 'gap-4 p-6', MODAL_SIZES[size], tall && 'max-h-[92svh] pb-0')}
         onClick={(e) => e.stopPropagation()}
       >
         <header className="space-y-2 pe-6 text-start">
@@ -715,7 +715,7 @@ export function VerifiedMark({ className }: { className?: string }) {
   const { t } = useI18n();
   return (
     <span title={`${t.profile.verified} · ${t.profile.verifiedHint}`} className={cx('inline-flex shrink-0 text-info', className)}>
-      <BadgeCheck className="size-4 fill-info text-bg" aria-label={t.profile.verified} />
+      <BadgeCheck className="size-4" aria-label={t.profile.verified} />
     </span>
   );
 }

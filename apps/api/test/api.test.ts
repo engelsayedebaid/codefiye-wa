@@ -1092,6 +1092,42 @@ describe.skipIf(!url)('api (integration)', () => {
     });
   });
 
+  describe('profile picture', () => {
+    // A 1×1 PNG.
+    const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+
+    it('uploads, serves to its owner only, refuses a file that is not the image it claims, and removes it', async () => {
+      const a = await register(`avatar-a-${Date.now()}@example.com`);
+      expect((await call('GET', '/api/me', a.cookie)).json().data.user.avatarUrl).toBeNull();
+      expect((await call('GET', '/api/account/avatar', a.cookie)).statusCode).toBe(404);
+
+      const up = await call('PUT', '/api/account/avatar', a.cookie, { mimetype: 'image/png', data: PNG });
+      expect(up.statusCode, up.body).toBe(200);
+      const url: string = up.json().data.user.avatarUrl;
+      expect(url).toMatch(/^\/api\/account\/avatar\?v=\d+$/);
+      const img = await call('GET', url, a.cookie);
+      expect(img.statusCode).toBe(200);
+      expect(img.headers['content-type']).toBe('image/png');
+      expect(img.headers['x-content-type-options']).toBe('nosniff');
+      expect(img.rawPayload.equals(Buffer.from(PNG, 'base64'))).toBe(true);
+      // /api/me carries the same versioned URL.
+      expect((await call('GET', '/api/me', a.cookie)).json().data.user.avatarUrl).toBe(url);
+
+      // Another account sees its own (none), never this one.
+      const b = await register(`avatar-b-${Date.now()}@example.com`);
+      expect((await call('GET', '/api/account/avatar', b.cookie)).statusCode).toBe(404);
+
+      // Markup dressed as a JPEG is refused: only real images are stored and served as images.
+      const fake = await call('PUT', '/api/account/avatar', a.cookie, { mimetype: 'image/jpeg', data: Buffer.from('<svg onload="alert(1)"/>').toString('base64') });
+      expect(fake.statusCode).toBe(422);
+
+      const removed = await call('DELETE', '/api/account/avatar', a.cookie);
+      expect(removed.statusCode).toBe(200);
+      expect(removed.json().data.user.avatarUrl).toBeNull();
+      expect((await call('GET', '/api/account/avatar', a.cookie)).statusCode).toBe(404);
+    });
+  });
+
   describe('user activity', () => {
     const stamp = Date.now() + 5;
     let admin: { id: string; pat: string };

@@ -134,7 +134,7 @@ export function SessionDetailPage({ id }: { id: string }) {
         </button>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-bold tracking-tight">{session.name}</h1>
+            <h1 className="text-2xl font-semibold tracking-[-0.015em]">{session.name}</h1>
             <SessionStatusBadge status={session.status} />
           </div>
           <div className="flex flex-wrap gap-2">

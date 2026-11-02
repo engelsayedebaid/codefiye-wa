@@ -302,10 +302,10 @@ export const Composer = memo(function Composer({ sessionId, jid, connected, reco
   );
 
   const replyText = reply ? textOf(reply) : null;
-  const iconButton = 'flex size-9 shrink-0 items-center justify-center rounded-xl text-muted transition-colors hover:bg-raised hover:text-ink disabled:opacity-40 disabled:hover:bg-transparent';
+  const iconButton = 'flex size-9 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-ink/[0.07] hover:text-ink disabled:opacity-40 disabled:hover:bg-transparent';
 
   return (
-    <form ref={form} onSubmit={submit} className="chat-composer relative shrink-0 border-t border-line/60 bg-card/80 px-2 py-2.5 backdrop-blur md:px-4">
+    <form ref={form} onSubmit={submit} className="chat-composer relative shrink-0 border-t border-line bg-bg px-2 py-3 md:px-4">
       {dragging &&
         dropRoot &&
         createPortal(
@@ -418,7 +418,7 @@ export const Composer = memo(function Composer({ sessionId, jid, connected, reco
           </Suspense>
         )}
         {/* One rounded field: emoji, attach, text; then the voice-note or send button beside it. */}
-        <div className="flex min-w-0 flex-1 items-end gap-0.5 rounded-2xl border border-line bg-bg p-1 shadow-xs transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/30">
+        <div className="flex min-w-0 flex-1 items-end gap-0.5 rounded-[22px] border border-transparent bg-ink/[0.05] p-1 transition-[border-color,background-color] focus-within:border-line-strong focus-within:bg-transparent">
           <button
             type="button"
             data-emoji-toggle
@@ -429,7 +429,7 @@ export const Composer = memo(function Composer({ sessionId, jid, connected, reco
               rememberCaret();
               setPanel((p) => (p === 'emoji' ? null : 'emoji'));
             }}
-            className={cx(iconButton, panel === 'emoji' && 'bg-raised text-brand')}
+            className={cx(iconButton, panel === 'emoji' && 'bg-ink/[0.07] text-brand')}
             aria-label={c.composer.emoji}
             aria-expanded={panel === 'emoji'}
             title={c.composer.emoji}
@@ -468,7 +468,7 @@ export const Composer = memo(function Composer({ sessionId, jid, connected, reco
           <button
             type="submit"
             disabled={!canSend}
-            className="animate-scale-in flex size-11 shrink-0 items-center justify-center rounded-2xl bg-brand text-on-brand shadow-[0_8px_24px_-10px] shadow-brand/70 transition-[transform,opacity] hover:-translate-y-0.5 active:translate-y-0 disabled:translate-y-0 disabled:opacity-40 disabled:shadow-none"
+            className="animate-scale-in flex size-11 shrink-0 items-center justify-center rounded-full bg-brand text-on-brand transition-[background-color,transform,opacity] hover:bg-brand-strong active:scale-95 disabled:translate-y-0 disabled:opacity-40 disabled:shadow-none"
             aria-label={c.composer.send}
             title={c.composer.send}
           >
@@ -480,8 +480,8 @@ export const Composer = memo(function Composer({ sessionId, jid, connected, reco
             data-voice-toggle
             onClick={() => setPanel((p) => (p === 'voice' ? null : 'voice'))}
             className={cx(
-              'animate-scale-in flex size-11 shrink-0 items-center justify-center rounded-2xl shadow-[0_8px_24px_-10px] shadow-brand/70 transition-transform hover:-translate-y-0.5 active:translate-y-0',
-              panel === 'voice' ? 'bg-brand-strong text-on-brand ring-4 ring-brand/20' : 'bg-brand text-on-brand',
+              'animate-scale-in flex size-11 shrink-0 items-center justify-center rounded-full transition-[background-color,transform] active:scale-95',
+              panel === 'voice' ? 'bg-brand-strong text-on-brand ring-4 ring-brand/20' : 'bg-brand text-on-brand hover:bg-brand-strong',
             )}
             aria-label={c.composer.record}
             aria-expanded={panel === 'voice'}

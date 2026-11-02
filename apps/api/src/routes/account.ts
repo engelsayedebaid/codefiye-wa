@@ -56,6 +56,8 @@ const userDto = z.object({
   twoFactorGraceUntil: z.string().nullable(),
   /** The skip button is offered only before that one skip is used. */
   twoFactorSkippable: z.boolean(),
+  /** The profile picture (`GET /api/account/avatar`, versioned so it caches until it changes), or null for the monogram. */
+  avatarUrl: z.string().nullable(),
 });
 const workspaceDto = z.object({
   id: z.uuid(),
@@ -106,6 +108,7 @@ type UserRow = {
   phone_verified_at: Date | null;
   totp_enabled_at: Date | null;
   totp_skipped_at: Date | null;
+  avatar_updated_at?: Date | null;
 };
 type WorkspaceRow = { id: string; name: string; plan_id: string; trial_ends_at: Date | null; plan_expires_at: Date | null };
 
@@ -121,6 +124,7 @@ const toUserDto = (u: UserRow): z.infer<typeof userDto> => ({
   twoFactorEnabled: u.totp_enabled_at !== null,
   twoFactorGraceUntil: u.totp_enabled_at ? null : (twoFactorGraceUntil(u.totp_skipped_at)?.toISOString() ?? null),
   twoFactorSkippable: u.totp_enabled_at === null && u.totp_skipped_at === null,
+  avatarUrl: u.avatar_updated_at ? `/api/account/avatar?v=${u.avatar_updated_at.getTime()}` : null,
 });
 const workspaceRowDto = (w: WorkspaceRow): z.infer<typeof workspaceDto> => ({
   id: w.id,
@@ -199,7 +203,17 @@ export const planRequestRowDto = (r: PlanRequestRow) =>
     decidedAt: r.decided_at,
   });
 
-const USER_COLUMNS = (sql: Sql | TxSql) => sql`id, name, email, password_hash, role, status, suspended_reason, phone, phone_verified_at, totp_enabled_at, totp_skipped_at`;
+const USER_COLUMNS = (sql: Sql | TxSql) => sql`id, name, email, password_hash, role, status, suspended_reason, phone, phone_verified_at, totp_enabled_at, totp_skipped_at, avatar_updated_at`;
+
+/** Profile pictures: the dashboard sends a 256 px square; the cap leaves room for a larger one. */
+const AVATAR_MIMETYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
+const AVATAR_MAX_BYTES = 512 * 1024;
+/** The file really is the image type it claims (its first bytes), so nothing else is stored and served as an image. */
+function isImage(bytes: Buffer, mimetype: (typeof AVATAR_MIMETYPES)[number]) {
+  if (mimetype === 'image/jpeg') return bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  if (mimetype === 'image/png') return bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  return bytes.subarray(0, 4).toString('latin1') === 'RIFF' && bytes.subarray(8, 12).toString('latin1') === 'WEBP';
+}
 
 /** A dashboard login token: a workspace token with scope `console` that expires; it lives in the session cookie. */
 async function issueConsoleToken(sql: Sql | TxSql, workspaceId: string, remember: boolean) {
@@ -899,11 +913,12 @@ export function accountRoutes(deps: Deps): FastifyPluginAsyncZod {
         phone_verified_at: Date | null;
         totp_enabled_at: Date | null;
         totp_skipped_at: Date | null;
+        avatar_updated_at: Date | null;
         request: PlanRequestRow | null;
       })[]
     >`
       select w.id, w.name, w.plan_id, w.trial_ends_at, w.plan_expires_at,
-        u.id as user_id, u.name as user_name, u.email, u.role, u.status, u.phone, u.phone_verified_at, u.totp_enabled_at, u.totp_skipped_at,
+        u.id as user_id, u.name as user_name, u.email, u.role, u.status, u.phone, u.phone_verified_at, u.totp_enabled_at, u.totp_skipped_at, u.avatar_updated_at,
         (select to_jsonb(r) from (select ${sql.unsafe(PLAN_REQUEST_COLUMNS)} from plan_requests x where x.workspace_id = w.id and x.status = 'pending' limit 1) r) as request
       from workspaces w
       left join users u on u.id = w.owner_id
@@ -927,6 +942,7 @@ export function accountRoutes(deps: Deps): FastifyPluginAsyncZod {
               phone_verified_at: row.phone_verified_at,
               totp_enabled_at: row.totp_enabled_at,
               totp_skipped_at: row.totp_skipped_at,
+              avatar_updated_at: row.avatar_updated_at,
             })
           : null,
       workspace: workspaceRowDto(row),
@@ -1001,6 +1017,69 @@ export function accountRoutes(deps: Deps): FastifyPluginAsyncZod {
           if (workspaceName !== undefined) await tx`update workspaces set name = ${workspaceName} where id = ${req.auth.workspaceId} and owner_id = ${userId}`;
         });
         return ok(await loadMe(req.auth.workspaceId));
+      },
+    );
+
+    app.put(
+      '/account/avatar',
+      {
+        // The picture travels inside the JSON body, as base64.
+        bodyLimit: 1024 * 1024,
+        schema: {
+          tags,
+          summary: 'Upload your profile picture',
+          description: 'A JPEG, PNG or WebP under 512 KB (the dashboard crops and shrinks it to a 256 px square first). Replaces the previous one.',
+          body: z.object({
+            mimetype: z.enum(AVATAR_MIMETYPES),
+            /** The image, base64 (no data: prefix). */
+            data: z.string().min(1).max(Math.ceil((AVATAR_MAX_BYTES * 4) / 3) + 4),
+          }),
+          response: { 200: successSchema(meResponse) },
+        },
+      },
+      async (req) => {
+        const userId = requireUser(req);
+        if (!req.auth.console) throw forbidden('Change the picture from the dashboard', 'console_required');
+        const bytes = Buffer.from(req.body.data, 'base64');
+        if (bytes.length === 0 || !isImage(bytes, req.body.mimetype)) throw unprocessable('That file is not a picture', { data: ['Choose a JPG, PNG or WebP picture'] });
+        if (bytes.length > AVATAR_MAX_BYTES) throw unprocessable('The picture is too large', { data: ['Use a picture under 512 KB'] });
+        await sql`update users set avatar = ${bytes}, avatar_mimetype = ${req.body.mimetype}, avatar_updated_at = now() where id = ${userId}`;
+        return ok(await loadMe(req.auth.workspaceId));
+      },
+    );
+
+    app.delete(
+      '/account/avatar',
+      { schema: { tags, summary: 'Remove your profile picture (back to the monogram)', response: { 200: successSchema(meResponse) } } },
+      async (req) => {
+        const userId = requireUser(req);
+        if (!req.auth.console) throw forbidden('Change the picture from the dashboard', 'console_required');
+        await sql`update users set avatar = null, avatar_mimetype = null, avatar_updated_at = null where id = ${userId}`;
+        return ok(await loadMe(req.auth.workspaceId));
+      },
+    );
+
+    app.get(
+      '/account/avatar',
+      {
+        schema: {
+          tags,
+          summary: 'Your profile picture',
+          description: 'The image itself. Its URL carries a version (`?v=`), so it is cached for a year and changes with the picture.',
+          querystring: z.object({ v: z.string().max(20).optional() }),
+        },
+      },
+      async (req, reply) => {
+        const userId = requireUser(req);
+        const [row] = await sql<{ avatar: Buffer | null; avatar_mimetype: string | null }[]>`select avatar, avatar_mimetype from users where id = ${userId}`;
+        if (!row?.avatar || !row.avatar_mimetype) throw notFound('No profile picture', 'avatar_not_found');
+        return reply
+          .header('content-type', row.avatar_mimetype)
+          .header('content-length', String(row.avatar.length))
+          .header('cache-control', 'private, max-age=31536000, immutable')
+          .header('x-content-type-options', 'nosniff')
+          .header('content-security-policy', "sandbox; default-src 'none'; img-src 'self'")
+          .send(row.avatar);
       },
     );
 

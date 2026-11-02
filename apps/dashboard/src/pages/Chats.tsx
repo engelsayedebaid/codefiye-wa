@@ -172,7 +172,7 @@ function IconAction({ label, active, onClick, disabled, children }: { label: str
       title={label}
       className={cx(
         'flex size-8 items-center justify-center rounded-lg transition-colors disabled:opacity-40',
-        active ? 'bg-brand/15 text-brand' : 'text-muted hover:bg-raised hover:text-ink',
+        active ? 'bg-ink/10 text-ink' : 'text-muted hover:bg-ink/[0.06] hover:text-ink',
       )}
     >
       {children}
@@ -782,29 +782,29 @@ export function ChatsPage() {
         privacy && 'privacy-on',
         mode
           ? cx('focus-chat fixed inset-0 z-[55] bg-bg', focus.exiting ? 'animate-focus-out' : 'animate-focus-in')
-          : 'relative -m-1 h-[calc(100svh-6.5rem)] min-h-[540px] overflow-hidden rounded-2xl border border-line bg-card shadow-sm md:m-0 md:h-[calc(100svh-8rem)]',
+          : 'relative h-[calc(100svh-3.5rem)] min-h-[540px] overflow-hidden bg-bg',
       )}
     >
       {mode && <FocusBar mode={mode} title={mode === 'accounts' ? c.focus.modes.accounts.label : current.name} onMode={switchFocus} onExit={exitFocus} onShowList={mode === 'single' && listAside ? () => setListDrawer(true) : undefined} onSearch={() => setGlobalSearch(true)} onAnalyze={isAdmin ? () => setAiOpen(true) : undefined} />}
       {mode === 'accounts' ? (
         <AccountsSplit numbers={list} initial={current.id} receipts={receipts} request={openRequest} openChats={paneChats} onToast={showToast} onOpenIn={(sid, jid) => openHit(sid, jid, '')} />
       ) : (
-      <div className={cx('relative flex min-h-0 flex-1 overflow-hidden', mode && 'bg-card')}>
+      <div className={cx('relative flex min-h-0 flex-1 overflow-hidden', mode && 'bg-bg')}>
       {drawer && <div className="animate-fade-in absolute inset-0 z-20 bg-black/45" onClick={() => setListDrawer(false)} />}
       {/* chats column */}
       <aside
         className={cx(
           'shrink-0 flex-col border-e border-line',
           drawer
-            ? 'animate-drawer-in absolute inset-y-0 start-0 z-30 flex w-[23rem] max-w-[90vw] bg-card shadow-2xl'
+            ? 'animate-drawer-in absolute inset-y-0 start-0 z-30 flex w-[22rem] max-w-[90vw] bg-bg shadow-2xl'
             : listAside
               ? 'hidden'
-              : cx('w-full bg-surface/40 lg:flex lg:w-[23rem]', showMain ? 'hidden' : 'flex'),
+              : cx('w-full bg-bg lg:flex lg:w-[22rem]', showMain ? 'hidden' : 'flex'),
         )}
       >
         <div className={cx('px-3 pb-1', mode ? 'space-y-2 pt-2' : 'space-y-3 pt-4')}>
           <div className="flex items-center justify-between gap-2 px-1">
-            <h1 className={cx('font-bold tracking-tight', mode ? 'text-lg' : 'text-2xl')}>{c.title}</h1>
+            <h1 className={cx('font-semibold', mode ? 'text-base' : 'text-lg')}>{c.title}</h1>
             <div className="flex items-center gap-0.5">
               <IconAction label={connected ? c.newChat.open : c.newChat.offline} onClick={() => setNewChat(true)} disabled={!connected}>
                 <MessageSquarePlus className="size-[18px]" />
@@ -922,7 +922,7 @@ export function ChatsPage() {
       {/* main pane */}
       <section className={cx('min-w-0 flex-1', showMain ? 'flex' : 'hidden lg:flex')}>
         {view === 'insights' ? (
-          <div className="flex min-w-0 flex-1 flex-col bg-surface/30">
+          <div className="flex min-w-0 flex-1 flex-col bg-bg">
             <div className="flex h-12 shrink-0 items-center border-b border-line/60 px-2 lg:hidden">
               <button type="button" onClick={() => setView('chats')} className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm text-muted hover:bg-raised hover:text-ink">
                 <ArrowLeft className={cx('size-4', flip)} /> {c.backToChats}
@@ -962,8 +962,8 @@ export function ChatsPage() {
             />
           </div>
         ) : (
-          <div className="chat-wall relative flex flex-1 flex-col items-center justify-center overflow-hidden p-8 text-center">
-            <div className="pointer-events-none absolute top-1/2 left-1/2 size-[28rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand/10 blur-3xl" />
+          <div className="relative flex flex-1 flex-col items-center justify-center overflow-hidden border-s border-transparent bg-bg p-8 text-center">
+            <div className="pointer-events-none absolute top-1/2 left-1/2 size-[26rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand/[0.06] blur-3xl" />
             <div className="relative flex max-w-md flex-col items-center">
               {/* A tiny live conversation: incoming, outgoing (read), and someone typing. */}
               <div aria-hidden className="animate-float w-72 rounded-3xl border border-line bg-card/80 p-4 shadow-[0_30px_80px_-30px] shadow-black/80 light:shadow-black/15 backdrop-blur">
@@ -999,7 +999,7 @@ export function ChatsPage() {
                   </div>
                 </div>
               </div>
-              <h2 className="animate-fade-up mt-9 text-2xl font-bold tracking-tight" style={delay(200)}>
+              <h2 className="animate-fade-up mt-9 text-2xl font-semibold tracking-[-0.02em]" style={delay(200)}>
                 {c.pickTitle}
               </h2>
               <p className="animate-fade-up mt-2 text-sm leading-relaxed text-muted" style={delay(300)}>
@@ -1023,7 +1023,7 @@ export function ChatsPage() {
         {selected && infoOpen && view === 'chats' && (
           <>
             <div className="animate-fade-in fixed inset-0 z-40 bg-black/50 xl:hidden" onClick={() => setInfoOpen(false)} />
-            <aside className="animate-fade-in fixed inset-y-0 end-0 z-50 w-[22rem] max-w-[92vw] border-s border-line bg-card shadow-2xl xl:static xl:z-auto xl:w-80 xl:shadow-none">
+            <aside className="animate-fade-in fixed inset-y-0 end-0 z-50 w-[22rem] max-w-[92vw] border-s border-line bg-card shadow-2xl xl:static xl:z-auto xl:w-80 xl:bg-bg xl:shadow-none">
               <ContactPanel
                 key={selected.jid}
                 sessionId={current.id}

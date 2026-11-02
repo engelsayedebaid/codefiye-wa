@@ -85,9 +85,9 @@ export function NumberSwitcher({ numbers, value, onChange, compact = false }: { 
         aria-expanded={open}
         aria-label={c.switchNumber}
         className={cx(
-          'flex w-full items-center gap-3 border border-line bg-card text-start shadow-xs transition-[border-color,box-shadow] hover:border-line-strong',
+          'flex w-full items-center gap-3 border border-line text-start transition-colors hover:bg-ink/[0.04]',
           compact ? 'rounded-xl px-2 py-1.5' : 'rounded-2xl p-2.5',
-          open && 'border-ring ring-[3px] ring-ring/30',
+          open && 'border-line-strong bg-ink/[0.04]',
         )}
       >
         {current && mark(current, compact ? 'size-8' : undefined)}
@@ -103,7 +103,7 @@ export function NumberSwitcher({ numbers, value, onChange, compact = false }: { 
         <ChevronsUpDown className="size-4 shrink-0 text-muted" />
       </button>
       {open && (
-        <ul role="listbox" className="animate-scale-in absolute inset-x-0 top-full z-50 mt-2 max-h-80 origin-top overflow-auto rounded-2xl border border-line bg-bg p-1.5 shadow-2xl">
+        <ul role="listbox" className="animate-scale-in absolute inset-x-0 top-full z-50 mt-2 max-h-80 origin-top overflow-auto rounded-2xl border border-line bg-card p-1.5 shadow-2xl">
           {numbers.map((n) => (
             <li key={n.id} role="option" aria-selected={n.id === value}>
               <button

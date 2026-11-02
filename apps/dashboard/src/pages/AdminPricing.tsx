@@ -132,7 +132,7 @@ export function PlanPricingSettings() {
                     {pct !== null && offer.compareAtUsd !== null && (
                       <span className="ltr text-lg font-semibold text-muted line-through decoration-2 decoration-warning/80 tabular-nums">{t.plans.usd(offer.compareAtUsd)}</span>
                     )}
-                    <span className="ltr text-3xl font-bold tracking-tight tabular-nums">{problem === 'price' ? '—' : t.plans.usd(offer.priceUsd)}</span>
+                    <span className="ltr text-2xl font-semibold tabular-nums">{problem === 'price' ? '—' : t.plans.usd(offer.priceUsd)}</span>
                     <span className="text-xs font-medium text-muted">{t.plans.perMonth}</span>
                   </p>
                 </div>

@@ -12,6 +12,7 @@ import {
   ListChecks,
   Loader2,
   MapPin,
+  MapPinSolid,
   Megaphone,
   MessageCircle,
   Mic,
@@ -33,6 +34,7 @@ import { useI18n } from '../../i18n';
 import { cx, flip } from '../../ui';
 import { errorText, PollResults, StatusTick } from '../MessageFeed';
 import { ChatText } from './ChatText';
+import { EmojiImg } from '../emoji';
 import { Floating } from './Floating';
 import { type ChatMessage, formatBytes, formatDuration, gradientFor, initials, mediaUrl, type Sender, senderColor, textOf } from './model';
 
@@ -361,7 +363,7 @@ function MapPreview({ latitude, longitude }: { latitude: number; longitude: numb
           )),
         )}
       </div>
-      <MapPin className="absolute top-1/2 left-1/2 size-8 -translate-x-1/2 -translate-y-full fill-red-500 text-red-900 drop-shadow-lg" />
+      <MapPinSolid className="absolute top-1/2 left-1/2 size-8 -translate-x-1/2 -translate-y-full text-red-500 drop-shadow-lg" />
     </div>
   );
 }
@@ -598,7 +600,7 @@ function ReactButton({ mine, onPick }: { mine?: string; onPick: (emoji: string) 
                   mine === emoji && 'bg-brand/15 ring-1 ring-brand/40',
                 )}
               >
-                {emoji}
+                <EmojiImg char={emoji} className="size-[26px]" />
               </button>
             ))}
           </div>
@@ -696,11 +698,11 @@ export const Bubble = memo(function Bubble({
       <div className="relative flex max-w-[min(85%,36rem)]">
         <div
           className={cx(
-            'pii relative min-w-0 text-[14.5px] leading-[1.45] text-ink',
-            bare ? '' : cx('rounded-[18px] shadow-[0_1px_2px_rgb(0_0_0/0.13)]', framed ? 'p-1' : 'px-3 pt-1.5 pb-1.5'),
-            !bare && (out ? 'bg-(--chat-out) ring-1 ring-(--chat-out-ring)' : 'bg-(--chat-in) ring-1 ring-line/60'),
+            'pii relative min-w-0 text-[14px] leading-[1.45] text-ink',
+            bare ? '' : cx('rounded-[20px]', framed ? 'p-1' : 'px-3.5 pt-2 pb-1.5'),
+            !bare && (out ? 'bg-(--chat-out)' : 'bg-(--chat-in)'),
             !bare && first && (out ? 'rounded-se-[6px]' : 'rounded-ss-[6px]'),
-            m.status === 'failed' && 'ring-critical/40',
+            m.status === 'failed' && 'ring-1 ring-critical/40',
           )}
         >
           {sender && first && !out && (
@@ -780,16 +782,24 @@ export const Bubble = memo(function Bubble({
           )}
           {reactions && reactions.length > 0 && (
             <span className={cx('absolute -bottom-3.5 flex items-center gap-0.5 rounded-full border border-line bg-card px-1.5 py-0.5 text-xs shadow-md', out ? 'end-2' : 'start-2')}>
-              {[...new Set(reactions)].slice(0, 3).join('')}
+              {[...new Set(reactions)].slice(0, 3).map((r) => (
+                <EmojiImg key={r} char={r} className="size-4" />
+              ))}
               {reactions.length > 1 && <span className="text-[10px] text-muted tabular-nums">{reactions.length}</span>}
             </span>
           )}
         </div>
-        {/* Out of the flow: hidden until hover, it must not make the row any taller. */}
+        {/*
+          Out of the flow: hidden until hover, it must not make the row any taller. A full-height
+          column beside the bubble centers the buttons on a short message; on one taller than the
+          screen they stick inside the visible part (sticky top and bottom), so they never need a scroll,
+          below the sticky day pill (top-12) and above it, so it never covers them.
+        */}
+        <div className={cx('pointer-events-none absolute inset-y-0 flex flex-col justify-center', out ? 'end-full me-1' : 'start-full ms-1')}>
         <div
           className={cx(
-            'absolute top-1/2 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover/msg:opacity-100 focus-within:opacity-100 has-[[aria-expanded=true]]:opacity-100',
-            out ? 'end-full me-1 flex-row-reverse' : 'start-full ms-1',
+            'pointer-events-auto sticky top-12 bottom-2 z-10 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/msg:opacity-100 hover:opacity-100 focus-within:opacity-100 has-[[aria-expanded=true]]:opacity-100',
+            out && 'flex-row-reverse',
           )}
         >
           {m.waMessageId && onReact && !revoked && <ReactButton mine={myReaction} onPick={(emoji) => onReact(m, emoji)} />}
@@ -825,6 +835,7 @@ export const Bubble = memo(function Bubble({
               <Trash2 className="size-4" />
             </button>
           )}
+        </div>
         </div>
       </div>
       {reactions && reactions.length > 0 && <span className="sr-only">{reactions.join(' ')}</span>}

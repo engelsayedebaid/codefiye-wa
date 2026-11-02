@@ -85,6 +85,11 @@ export const users = pgTable(
     totpLastStep: bigint({ mode: 'number' }),
     /** SHA-256 of the unused single-use recovery codes. */
     recoveryCodes: text().array().notNull().default(sql`'{}'::text[]`),
+    /** Profile picture: a square image the dashboard shrinks to 256 px before upload, served at /api/account/avatar. */
+    avatar: bytea(),
+    avatarMimetype: text(),
+    /** When the picture last changed: it versions the picture's URL, so browsers keep it cached until it changes. */
+    avatarUpdatedAt: timestamp({ withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [

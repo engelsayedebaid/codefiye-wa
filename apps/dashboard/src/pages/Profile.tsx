@@ -1,14 +1,15 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, Building2, Check, CheckCircle2, Lock, LockKeyhole, Mail, ShieldCheck, Smartphone, UserRound, XCircle } from '../icons';
-import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
+import { ArrowRight, Building2, Camera, Check, CheckCircle2, Loader2, Lock, LockKeyhole, Mail, ShieldCheck, Smartphone, Trash2, UserRound, XCircle } from '../icons';
+import { type ChangeEvent, type FormEvent, type ReactNode, useEffect, useState } from 'react';
 import { api, ApiRequestError, errorMessage } from '../api';
 import { type Account, planState, useAccount } from '../app/account';
+import { UserAvatar, useAvatar } from '../app/avatar';
 import { ChangePassword } from '../app/AppShell';
 import { PhoneVerifyModal } from '../auth/Otp';
 import { useI18n } from '../i18n';
 import { qk } from '../queries';
 import { Link } from '../router';
-import { Badge, Button, cx, delay, ErrorNote, Field, flip, PageHeader, type Tone, TONES, usePlanName, VerifiedMark } from '../ui';
+import { Badge, Button, buttonClass, cx, delay, ErrorNote, Field, flip, PageHeader, type Tone, TONES, usePlanName, VerifiedMark } from '../ui';
 
 type User = NonNullable<Account['user']>;
 
@@ -49,6 +50,81 @@ function Section({ icon, title, text, index, children, bodyClassName }: { icon: 
 
 // --- identity ------------------------------------------------------------------------------------
 
+/** What went wrong with a picture, in the visitor's language (the API answers in English). */
+function avatarError(err: unknown, invalid: string) {
+  if (err instanceof ApiRequestError) return err.status === 422 ? invalid : errorMessage(err);
+  // createImageBitmap refuses files it can't decode (HEIC on most browsers, a renamed PDF…).
+  return invalid;
+}
+
+/** The picture on the identity card: hover it (or tap the camera badge on a touch screen) to change it. */
+function ProfilePicture({ account, name, avatar }: { account: Account; name: string; avatar: ReturnType<typeof useAvatar> }) {
+  const { t } = useI18n();
+  const a = t.profile.avatar;
+  const user = account.user;
+  const pick = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (file) avatar.upload.mutate(file);
+  };
+  return (
+    <div className="group/avatar relative -mt-10 size-20">
+      <UserAvatar user={user} name={name} className="size-20 rounded-2xl text-2xl tracking-tight shadow-lg ring-4 ring-card" />
+      {user && (
+        <label
+          title={a.change}
+          className={cx(
+            'absolute inset-0 flex cursor-pointer items-center justify-center rounded-2xl bg-black/45 text-white transition-opacity focus-within:opacity-100 group-hover/avatar:opacity-100',
+            avatar.busy ? 'opacity-100' : 'opacity-0',
+          )}
+        >
+          <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={pick} disabled={avatar.busy} aria-label={a.change} />
+          {avatar.busy ? <Loader2 className="size-6 animate-spin" /> : <Camera className="size-6" />}
+        </label>
+      )}
+      {user && (
+        <span aria-hidden className="pointer-events-none absolute -end-1.5 -bottom-1.5 flex size-7 items-center justify-center rounded-full bg-brand text-on-brand ring-4 ring-card">
+          <Camera className="size-3.5" />
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Upload / remove under the name, with the hint or the error. */
+function PictureActions({ user, avatar }: { user: NonNullable<Account['user']>; avatar: ReturnType<typeof useAvatar> }) {
+  const { t } = useI18n();
+  const a = t.profile.avatar;
+  const error = avatar.upload.error ?? avatar.remove.error;
+  return (
+    <div className="mt-4 space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <label className={buttonClass('outline', 'sm', cx('cursor-pointer', avatar.busy && 'pointer-events-none opacity-50'))}>
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="sr-only"
+            disabled={avatar.busy}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (file) avatar.upload.mutate(file);
+            }}
+          />
+          {avatar.upload.isPending ? <Loader2 className="size-4 animate-spin" /> : <Camera className="size-4" />}
+          {user.avatarUrl ? a.change : a.upload}
+        </label>
+        {user.avatarUrl && (
+          <Button variant="ghost" size="sm" loading={avatar.remove.isPending} disabled={avatar.busy} onClick={() => avatar.remove.mutate()} icon={<Trash2 className="size-4" />}>
+            {a.remove}
+          </Button>
+        )}
+      </div>
+      {error ? <ErrorNote>{avatarError(error, a.invalid)}</ErrorNote> : <p className="text-xs text-muted">{a.hint}</p>}
+    </div>
+  );
+}
+
 type Check = { label: string; tone: Tone; status: string };
 
 /** The account at a glance: who you are, the plan, and what still needs attention. */
@@ -58,6 +134,7 @@ function IdentityCard({ account }: { account: Account }) {
   const user = account.user;
   const name = user?.name ?? account.workspace.name;
   const mark = initials(name);
+  const avatar = useAvatar();
 
   const state = planState(account);
   const planOk = state.kind !== 'expired' && state.kind !== 'trial-expired';
@@ -97,7 +174,7 @@ function IdentityCard({ account }: { account: Account }) {
       </div>
 
       <div className="relative px-6 pb-6">
-        <span className="-mt-10 flex size-20 items-center justify-center rounded-2xl bg-ink text-2xl font-bold tracking-tight text-bg shadow-lg ring-4 ring-card">{mark}</span>
+        <ProfilePicture account={account} name={name} avatar={avatar} />
 
         <div className="mt-4 min-w-0">
           <h2 className="flex items-center gap-2 text-xl font-bold tracking-tight">
@@ -116,6 +193,7 @@ function IdentityCard({ account }: { account: Account }) {
               <span className="truncate">{account.workspace.name}</span>
             </li>
           </ul>
+          {user && <PictureActions user={user} avatar={avatar} />}
           {user?.isAdmin && (
             <Badge tone="info" className="mt-3 gap-1">
               <ShieldCheck className="size-3.5" />

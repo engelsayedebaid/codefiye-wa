@@ -1059,7 +1059,7 @@ export function AdminPage() {
             <ShieldCheck className="size-3.5" />
             {a.title}
           </p>
-          <h1 className="text-3xl font-bold tracking-tight">{a.tabs[tab]}</h1>
+          <h1 className="text-2xl font-semibold tracking-[-0.015em]">{a.tabs[tab]}</h1>
           <p className="text-muted">{a.description}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

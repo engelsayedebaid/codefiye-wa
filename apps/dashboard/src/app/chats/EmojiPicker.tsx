@@ -2,6 +2,7 @@ import { Car, Clock, Flag, Heart, Lightbulb, PawPrint, Search, Smile, Trophy, Ut
 import { type KeyboardEvent, memo, useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../../i18n';
 import { cx } from '../../ui';
+import { EmojiImg } from '../emoji';
 
 type Emoji = { u: string; label: string; tags: string[]; group: number; skins?: string[] };
 type Data = { byGroup: Map<number, Emoji[]>; all: Emoji[]; byChar: Map<string, Emoji> };
@@ -87,7 +88,7 @@ const Grid = memo(function Grid({ emojis, tone, onPick }: { emojis: Emoji[]; ton
             onClick={() => onPick(u)}
             className="flex aspect-square items-center justify-center rounded-lg text-[1.55rem] leading-none transition-[transform,background-color] duration-100 outline-none hover:scale-110 hover:bg-raised focus-visible:bg-raised focus-visible:ring-2 focus-visible:ring-ring active:scale-95"
           >
-            {u}
+            <EmojiImg key={u} char={u} className="size-[1.75rem]" />
           </button>
         );
       })}

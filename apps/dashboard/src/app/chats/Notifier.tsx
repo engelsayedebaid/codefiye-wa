@@ -120,7 +120,7 @@ function NoteCard({ note, peek, onOpen, onDismiss }: { note: InboxNote; peek: bo
           </span>
           <span className="pii min-w-0 flex-1">
             <span className="flex items-baseline gap-2 pe-5">
-              <span className="min-w-0 flex-1 truncate text-start text-[14.5px] font-semibold text-ink">
+              <span className="min-w-0 flex-1 truncate text-start text-sm font-semibold text-ink">
                 {note.title.startsWith('+') ? <span className="ltr">{note.title}</span> : <span dir="auto">{note.title}</span>}
               </span>
               <span className="shrink-0 text-[11px] font-medium text-brand">{c.now}</span>

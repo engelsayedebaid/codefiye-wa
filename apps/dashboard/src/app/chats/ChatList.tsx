@@ -219,15 +219,14 @@ function Row({ chat, active, presence, picture, onSelect }: { chat: ChatSummary;
       aria-current={active ? 'true' : undefined}
       className={cx(
         'group relative flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-start transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
-        active ? 'bg-raised' : 'hover:bg-raised/60',
+        active ? 'bg-ink/[0.08]' : 'hover:bg-ink/[0.04]',
       )}
     >
-      {active && <span aria-hidden className="animate-scale-in absolute inset-y-3 start-0 w-[3px] rounded-e-full bg-brand" />}
       <Avatar name={title} id={chat.jid} picture={picture} group={chat.isGroup} online={live?.presence === 'available' || typing} />
       <div className="min-w-0 flex-1 pii">
         <div className="flex items-baseline gap-2">
           {/* The name truncates itself: an English name in the Arabic list loses its end, not its start. */}
-          <p className={cx('flex min-w-0 flex-1 text-start text-[15px]', chat.unread > 0 ? 'font-semibold' : 'font-medium')}>
+          <p className={cx('flex min-w-0 flex-1 text-start text-sm', chat.unread > 0 ? 'font-semibold' : 'font-medium')}>
             {chat.name ? <span dir="auto" className="truncate">{title}</span> : <span className="ltr truncate font-mono text-sm">{title}</span>}
           </p>
           <span className={cx('shrink-0 text-[11px] tabular-nums transition-[margin] group-hover:me-16 [@media(hover:none)]:me-16', chat.unread > 0 ? 'font-semibold text-brand' : 'text-faint')}>
@@ -309,7 +308,7 @@ function FilterBar({ filter, counts, onFilter }: { filter: ChatFilter; counts: P
   };
 
   return (
-    <div className="relative rounded-full border border-line bg-card p-1 shadow-xs">
+    <div className="relative rounded-xl bg-ink/[0.05] p-1">
       <div ref={strip} role="group" aria-label={c.title} className="flex gap-1 overflow-x-auto scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {CHAT_FILTERS.map((f) => {
           const active = filter === f;
@@ -323,14 +322,14 @@ function FilterBar({ filter, counts, onFilter }: { filter: ChatFilter; counts: P
               title={c.filterHints[f]}
               onClick={() => onFilter(f)}
               className={cx(
-                'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
-                active ? 'bg-brand text-on-brand shadow-sm' : 'text-muted hover:bg-raised hover:text-ink',
+                'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-3 text-xs whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+                active ? 'bg-bg font-semibold text-ink shadow-sm light:bg-white' : 'font-medium text-muted hover:text-ink',
               )}
             >
               <Icon className="size-3.5" />
               {c.filters[f]}
               {n !== undefined && n > 0 && (
-                <span className={cx('min-w-4 rounded-full px-1 text-center text-[10px] font-semibold tabular-nums', active ? 'bg-on-brand/15 text-on-brand/70' : 'bg-raised text-faint')}>{fmt.number.format(n)}</span>
+                <span className={cx('min-w-4 rounded-full px-1 text-center text-[10px] font-semibold tabular-nums', active ? 'bg-ink/10 text-muted' : 'bg-ink/[0.06] text-faint')}>{fmt.number.format(n)}</span>
               )}
             </button>
           );
@@ -341,7 +340,7 @@ function FilterBar({ filter, counts, onFilter }: { filter: ChatFilter; counts: P
           type="button"
           onClick={() => nudge(false)}
           aria-label={c.prevFilters}
-          className="animate-scale-in absolute inset-y-1 start-1 flex w-9 items-center justify-start rounded-s-full bg-gradient-to-r from-card via-card/90 to-transparent ps-1 text-muted hover:text-ink rtl:bg-gradient-to-l"
+          className="animate-scale-in absolute inset-y-1 start-1 flex w-9 items-center justify-start rounded-s-lg bg-gradient-to-r from-raised via-raised/90 to-transparent ps-1 text-muted hover:text-ink rtl:bg-gradient-to-l"
         >
           <ChevronLeft className={cx('size-4', flip)} />
         </button>
@@ -351,7 +350,7 @@ function FilterBar({ filter, counts, onFilter }: { filter: ChatFilter; counts: P
           type="button"
           onClick={() => nudge(true)}
           aria-label={c.moreFilters}
-          className="animate-scale-in absolute inset-y-1 end-1 flex w-9 items-center justify-end rounded-e-full bg-gradient-to-l from-card via-card/90 to-transparent pe-1 text-muted hover:text-ink rtl:bg-gradient-to-r"
+          className="animate-scale-in absolute inset-y-1 end-1 flex w-9 items-center justify-end rounded-e-lg bg-gradient-to-l from-raised via-raised/90 to-transparent pe-1 text-muted hover:text-ink rtl:bg-gradient-to-r"
         >
           <ChevronRight className={cx('size-4', flip)} />
         </button>
@@ -512,7 +511,7 @@ export const ChatList = forwardRef<HTMLInputElement, Props>(function ChatList({ 
             dir={query ? 'auto' : undefined}
             placeholder={c.search}
             aria-label={c.search}
-            className="h-10 w-full rounded-xl border border-line bg-card ps-9 pe-8 text-sm text-ink shadow-xs outline-none transition-[border-color,box-shadow] placeholder:text-muted focus:border-ring focus:ring-[3px] focus:ring-ring/30"
+            className="h-10 w-full rounded-[10px] border border-transparent bg-ink/[0.05] ps-9 pe-8 text-sm text-ink outline-none transition-[border-color,background-color] placeholder:text-muted focus:border-line-strong focus:bg-transparent"
           />
           {query && (
             <button type="button" onClick={() => onQuery('')} className="absolute end-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted hover:text-ink" aria-label={t.common.close}>

@@ -267,7 +267,7 @@ export function GlobalSearch({ numbers, initialSession, onOpen, onClose }: { num
               placeholder={g.placeholder}
               aria-label={g.placeholder}
               dir={raw ? 'auto' : undefined}
-              className="h-11 w-full rounded-xl border border-line bg-surface ps-10 pe-9 text-[15px] text-ink outline-none transition-[border-color,box-shadow] placeholder:text-faint focus:border-ring focus:ring-[3px] focus:ring-ring/30"
+              className="h-11 w-full rounded-xl border border-line bg-surface ps-10 pe-9 text-sm text-ink outline-none transition-[border-color,box-shadow] placeholder:text-faint focus:border-ring focus:ring-[3px] focus:ring-ring/30"
             />
             {search.isFetching && !loading ? (
               <Loader2 className="absolute end-3 size-4 animate-spin text-muted" />

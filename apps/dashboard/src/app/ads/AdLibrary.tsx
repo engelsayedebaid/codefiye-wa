@@ -228,7 +228,7 @@ export function AdLibrary() {
               aria-label={l.search}
               enterKeyHint="search"
               className={cx(
-                'h-12 w-full rounded-xl border border-line bg-card ps-12 text-[15px] text-ink shadow-xs outline-none transition-[border-color,box-shadow] placeholder:text-faint focus:border-ring focus:ring-[3px] focus:ring-ring/30',
+                'h-12 w-full rounded-xl border border-line bg-card ps-12 text-sm text-ink shadow-xs outline-none transition-[border-color,box-shadow] placeholder:text-faint focus:border-ring focus:ring-[3px] focus:ring-ring/30',
                 // Room for what sits at the end: the clear button (2.25rem) and the Search button (≈5rem).
                 remote ? (raw ? 'pe-[8rem]' : 'pe-[5.75rem]') : raw ? 'pe-11' : 'pe-4',
               )}
@@ -469,7 +469,7 @@ function LaunchPanel({ q, country, onCountry }: { q: string; country: string; on
           <Globe className="size-5" />
         </span>
         <span className="min-w-0 flex-[999_1_16rem]">
-          <span className="block text-[15px] font-semibold">{l.launch.title}</span>
+          <span className="block text-sm font-semibold">{l.launch.title}</span>
           <span className="block text-sm text-muted">{l.launch.text}</span>
         </span>
         <Select

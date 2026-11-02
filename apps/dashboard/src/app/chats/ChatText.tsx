@@ -1,4 +1,5 @@
 import { Fragment, type ReactNode } from 'react';
+import { emojifyNodes } from '../emoji';
 
 /** WhatsApp formatting: *bold*, _italic_, ~strike~, ```mono```. */
 const FORMAT = /```[\s\S]+?```|\*[^*\n]+\*|_[^_\n]+_|~[^~\n]+~/g;
@@ -20,11 +21,11 @@ function linkify(text: string, key: string): ReactNode[] {
   return out;
 }
 
-/** A message body as WhatsApp shows it; links open in a new tab, `highlight` marks search hits. */
+/** A message body as WhatsApp shows it; links open in a new tab, `highlight` marks search hits, emoji draw as the app's set (../emoji). */
 export function ChatText({ text, highlight }: { text: string; highlight?: string }) {
   const nodes: ReactNode[] = [];
   let last = 0;
-  const plain = (s: string, key: string) => (highlight ? mark(s, highlight, key) : linkify(s, key));
+  const plain = (s: string, key: string) => emojifyNodes(highlight ? mark(s, highlight, key) : linkify(s, key), key);
   for (const m of text.matchAll(FORMAT)) {
     if (m.index! > last) nodes.push(...plain(text.slice(last, m.index), `t${last}`));
     const raw = m[0];

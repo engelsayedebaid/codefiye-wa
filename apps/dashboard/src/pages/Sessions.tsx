@@ -114,8 +114,8 @@ export function SessionsPage() {
             })}
           </div>
           <div className="flex items-center gap-4 text-sm">
-            <span className="text-muted">{limit === null ? s.usageUnlimited(used) : s.usageText(used, limit)}</span>
-            {limit !== null && <Progress className="h-1.5 w-24" value={limit ? (used / limit) * 100 : 0} />}
+            <span className="whitespace-nowrap text-muted">{limit === null ? s.usageUnlimited(used) : s.usageText(used, limit)}</span>
+            {limit !== null && <Progress className="h-1.5 w-24 shrink-0" value={limit ? (used / limit) * 100 : 0} />}
             {atLimit && (
               <Link href="/subscription" className={buttonClass('outline', 'sm')}>
                 {s.upgrade}

@@ -46,6 +46,8 @@ export type Account = {
     twoFactorGraceUntil: string | null;
     /** The skip button is offered only before that one skip is used. */
     twoFactorSkippable: boolean;
+    /** The profile picture's URL (versioned), or null for the monogram (app/avatar.tsx). */
+    avatarUrl?: string | null;
   } | null;
   workspace: { id: string; name: string; planId: string; trialEndsAt: string | null; planExpiresAt: string | null };
   plan: Plan;

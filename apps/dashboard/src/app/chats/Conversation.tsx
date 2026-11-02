@@ -682,11 +682,11 @@ export function Conversation({ sessionId, connected, reconnecting = false, chat,
   return (
     <div className="chat-root relative flex h-full min-h-0 flex-col">
       {/* header */}
-      <header className="chat-head z-10 flex h-[4.25rem] shrink-0 items-center gap-1.5 border-b border-line/60 bg-card/85 px-2 backdrop-blur-md md:px-4">
+      <header className="chat-head z-10 flex h-16 shrink-0 items-center gap-1.5 border-b border-line bg-bg/85 px-2 backdrop-blur-md md:px-4">
         <button type="button" onClick={onBack} className="rounded-full p-2 text-muted hover:bg-raised hover:text-ink lg:hidden" aria-label={c.back}>
           <ArrowLeft className={cx('size-5', flip)} />
         </button>
-        <button type="button" onClick={onToggleInfo} className="flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1 text-start transition-colors hover:bg-raised/60">
+        <button type="button" onClick={onToggleInfo} className="flex min-w-0 flex-1 items-center gap-3 rounded-xl p-1.5 text-start transition-colors hover:bg-ink/[0.05]">
           <Avatar name={title} id={chat.jid} picture={picture} group={chat.isGroup} online={livePresence(presence)?.presence === 'available'} />
           <span className="pii min-w-0">
             <span className="block truncate text-start font-semibold">
@@ -735,7 +735,7 @@ export function Conversation({ sessionId, connected, reconnecting = false, chat,
           {menu && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setMenu(false)} />
-              <div role="menu" className="animate-scale-in absolute end-0 top-full z-50 mt-1 w-56 origin-top-right rounded-lg border border-line bg-bg p-1 shadow-xl">
+              <div role="menu" className="animate-scale-in absolute end-0 top-full z-50 mt-1 w-56 origin-top-right rounded-xl border border-line bg-card p-1 shadow-xl">
                 {[
                   { icon: Pin, label: chat.pinned ? c.actions.unpin : c.actions.pin, run: () => onFlags({ pinned: !chat.pinned }) },
                   { icon: Archive, label: chat.archived ? c.actions.unarchive : c.actions.archive, run: () => onFlags({ archived: !chat.archived }) },
@@ -850,7 +850,8 @@ export function Conversation({ sessionId, connected, reconnecting = false, chat,
                 {sections.map((section) => (
                   <div key={section.key}>
                     {section.label !== null && (
-                      <div className="sticky top-3 z-[5] mt-5 mb-2 flex justify-center">
+                      <div className="pointer-events-none sticky top-3 z-[5] mt-5 mb-2 flex justify-center">
+                        {/* The pill's row spans the thread: it must not catch the pointer, or it covers whatever it passes over (a message's action buttons). */}
                         <span className="rounded-full bg-card/90 px-3.5 py-1 text-[11.5px] font-medium tracking-wide text-ink-2 shadow-[0_1px_2px_rgb(0_0_0/0.12)] ring-1 ring-line/50 backdrop-blur-md">{section.label}</span>
                       </div>
                     )}

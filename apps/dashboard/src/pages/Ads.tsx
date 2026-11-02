@@ -2131,7 +2131,7 @@ function ProgressRing({ value, total, running }: { value: number; total: number;
         />
       </svg>
       <div role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct * 100)} className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="ltr text-5xl font-bold tracking-tight tabular-nums">{shownPct}%</span>
+        <span className="ltr text-4xl font-semibold tabular-nums">{shownPct}%</span>
         <span className="mt-1 text-sm text-muted tabular-nums">{t.ads.live.of(fmt.number.format(value), fmt.number.format(total))}</span>
       </div>
       <Planes count={value} />

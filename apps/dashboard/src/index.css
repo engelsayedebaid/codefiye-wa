@@ -5,58 +5,61 @@
 @custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
 
 /*
- * Cool teal neutrals with one brand. These are the dark values; `:root[data-theme='light']` below
- * overrides the same variables. Status inks (--color-good and friends) are the readable color, so
- * `bg-good/12 text-good` is a soft chip in both themes.
- * Latin glyphs render in Instrument Sans, Arabic falls through to IBM Plex Sans Arabic.
+ * Whop's look (Frosted UI): Radix-style neutral greys, with WhatsApp green as the one accent. These are the dark
+ * values (#111 page, #191919 panels, hairline white-alpha borders); `:root[data-theme='light']`
+ * below overrides the same variables. Status inks (--color-good and friends) are the readable
+ * color, so `bg-good/12 text-good` is a soft chip in both themes.
+ * Latin glyphs render in Inter (Whop's UI face), Arabic falls through to IBM Plex Sans Arabic;
+ * code is Geist Mono.
  */
 @theme {
-  --font-sans: 'Instrument Sans', 'IBM Plex Sans Arabic', ui-sans-serif, system-ui, sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+  --font-sans: 'Inter', 'IBM Plex Sans Arabic', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, monospace;
 
   --radius-md: 0.5rem;
   --radius-lg: 0.625rem;
   --radius-xl: 0.875rem;
 
-  --color-bg: oklch(0.155 0.012 175);
-  /* Sidebar and the frame around the inset content panel. */
-  --color-surface: oklch(0.185 0.014 175);
-  --color-card: oklch(0.21 0.014 175);
-  /* secondary / accent / muted surfaces */
-  --color-raised: oklch(0.27 0.016 175);
-  --color-line: oklch(0.33 0.014 175);
-  --color-line-strong: oklch(0.43 0.016 175);
-  --color-ring: oklch(0.72 0.12 168);
-  --color-ink: oklch(0.97 0.005 175);
-  --color-ink-2: oklch(0.88 0.012 175);
-  --color-muted: oklch(0.75 0.016 175);
-  --color-faint: oklch(0.66 0.016 175);
-  --color-navy: oklch(0.22 0.03 200);
-  --color-destructive: oklch(0.396 0.141 25.723);
-  --color-destructive-ink: oklch(0.637 0.237 25.331);
+  --color-bg: #111111;
+  /* Quiet inner panels (plan meter, code wells). */
+  --color-surface: #151515;
+  --color-card: #191919;
+  /* secondary / accent / muted surfaces, hovers */
+  --color-raised: #242424;
+  --color-line: #2a2a2a;
+  --color-line-strong: #484848;
+  --color-ring: #25d366;
+  --color-ink: #eeeeee;
+  --color-ink-2: #d4d4d4;
+  --color-muted: #b4b4b4;
+  --color-faint: #8b8b8b;
+  --color-navy: #0b2e1f;
+  --color-destructive: #c0372d;
+  --color-destructive-ink: #ff9081;
 
-  --color-brand: oklch(0.78 0.14 168);
-  --color-brand-strong: oklch(0.7 0.14 168);
-  --color-brand-deep: oklch(0.62 0.13 168);
-  --color-teal: oklch(0.72 0.12 180);
+  /* WhatsApp's brand green: bright enough to read as text on #111; fills carry dark text (white on it fails contrast). */
+  --color-brand: #25d366;
+  --color-brand-strong: #1ebe5a;
+  --color-brand-deep: #128c7e;
+  --color-teal: #00a884;
   /* Text and icons drawn on a bg-brand fill. */
-  --color-on-brand: oklch(0.2 0.03 175);
+  --color-on-brand: #06200f;
   /* Accent gradient (progress, launch, hero icons). */
-  --color-grad-from: oklch(0.82 0.15 165);
-  --color-grad-to: oklch(0.62 0.12 185);
+  --color-grad-from: #25d366;
+  --color-grad-to: #128c7e;
 
-  /* Chart series: teal vs blue, separated in lightness so they still split under CVD. */
-  --color-series-sent: oklch(0.75 0.14 170);
-  --color-series-received: oklch(0.72 0.13 250);
+  /* Chart series: green vs blue, separated in lightness so they still split under CVD. */
+  --color-series-sent: #25d366;
+  --color-series-received: #6f9cf2;
 
   /* Status inks (bright on this dark surface; the light theme deepens them). */
-  --color-good: oklch(0.8 0.15 155);
-  --color-info: oklch(0.78 0.11 230);
-  --color-warning: oklch(0.84 0.14 85);
-  --color-on-warning: oklch(0.28 0.05 85);
+  --color-good: #3dd68c;
+  --color-info: #75c7f0;
+  --color-warning: #ffca16;
+  --color-on-warning: #4f3422;
   --color-serious: #ec835a;
-  --color-critical: oklch(0.75 0.16 25);
-  --color-progress: oklch(0.74 0.14 305);
+  --color-critical: #ff9081;
+  --color-progress: #baa7ff;
 
   /* Group-sender names. Bright here; the light theme points the same names at deep shades. */
   --color-sender-emerald: oklch(0.8 0.14 160);
@@ -70,41 +73,41 @@
 }
 
 /*
- * Light theme: off-white page, white cards and fields, hairline grey borders, deep green-teal accent.
+ * Light theme (Whop light): white page and cards, hairline grey borders, WhatsApp Web's deep green accent.
  * Unlayered, so it wins over Tailwind's theme layer.
  */
 :root[data-theme='light'] {
-  --color-bg: #f8faf9;
-  --color-surface: #eef3f1;
+  --color-bg: #ffffff;
+  --color-surface: #f9f9f9;
   --color-card: #ffffff;
-  --color-raised: #edf1ef;
-  --color-line: #e1e6e3;
-  --color-line-strong: #cdd5d1;
-  --color-ring: #367a6b;
-  --color-ink: #111714;
-  --color-ink-2: #2e3934;
-  --color-muted: #646e69;
-  --color-faint: #6b7570;
-  --color-navy: #e3f1ec;
-  --color-destructive: #b91c1c;
-  --color-destructive-ink: #b91c1c;
+  --color-raised: #f0f0f0;
+  --color-line: #e3e3e3;
+  --color-line-strong: #cecece;
+  --color-ring: #008069;
+  --color-ink: #202020;
+  --color-ink-2: #3a3a3a;
+  --color-muted: #646464;
+  --color-faint: #6f6f6f;
+  --color-navy: #e7f8ef;
+  --color-destructive: #d42020;
+  --color-destructive-ink: #c81e1e;
 
-  --color-brand: #367a6b;
-  --color-brand-strong: #2b6558;
-  --color-brand-deep: #2b6558;
-  --color-teal: #0f766e;
+  --color-brand: #008069;
+  --color-brand-strong: #006b58;
+  --color-brand-deep: #075e54;
+  --color-teal: #128c7e;
   --color-on-brand: #fff;
-  --color-grad-from: #3a7f6e;
-  --color-grad-to: #22594d;
+  --color-grad-from: #00a884;
+  --color-grad-to: #075e54;
 
-  --color-series-sent: #0f766e;
-  --color-series-received: #1d4ed8;
-  --color-good: #15803d;
-  --color-info: #1d4ed8;
-  --color-warning: #b45309;
+  --color-series-sent: #008069;
+  --color-series-received: #1754d8;
+  --color-good: #218358;
+  --color-info: #00749e;
+  --color-warning: #ab6400;
   --color-on-warning: #fff;
-  --color-critical: #b91c1c;
-  --color-progress: #6d28d9;
+  --color-critical: #c81e1e;
+  --color-progress: #6550b9;
 
   --color-sender-emerald: #047857;
   --color-sender-sky: #0369a1;
@@ -124,6 +127,27 @@ html[data-theme='light'] {
   color-scheme: light;
 }
 
+/*
+ * A calmer type scale on desktop: Inter runs large, so the root is 15px from 768px up and every rem
+ * size and space follows. Phones keep 16px: iOS zooms into any field whose text is under 16px.
+ */
+@media (min-width: 768px) {
+  html {
+    font-size: 15px;
+  }
+}
+
+/* The simple look: nothing floats, glows or shines for decoration (entrance fades stay). */
+.animate-float,
+.animate-glow {
+  animation: none !important;
+}
+.shine::after,
+.shine-auto::after,
+.hero-glow::before {
+  display: none !important;
+}
+
 body {
   @apply bg-bg font-sans text-ink antialiased;
 }
@@ -140,47 +164,22 @@ body {
   unicode-bidi: isolate;
 }
 
-/* Top specular highlight on elevated premium cards. */
+/* Elevated cards, Whop-flat: a panel fill and a hairline border, no gloss or drop shadow. */
 .card-luxury {
   position: relative;
-  background: linear-gradient(180deg, color-mix(in oklab, var(--color-card) 92%, var(--color-raised)) 0%, var(--color-card) 100%);
-  box-shadow:
-    inset 0 1px 0 0 rgb(255 255 255 / 0.07),
-    0 12px 32px -16px rgb(0 0 0 / 0.45);
-}
-[data-theme='light'] .card-luxury {
-  background: linear-gradient(180deg, #ffffff 0%, #f9fbfa 100%);
-  box-shadow:
-    inset 0 1px 0 0 rgb(255 255 255 / 0.9),
-    0 14px 34px -18px rgb(17 23 20 / 0.1);
+  background: var(--color-card);
 }
 
 /*
- * Hero card on the dashboard: a hairline border that fades from the brand colour at the start
- * corner to the plain line colour, drawn with two backgrounds (padding-box + border-box).
+ * Hero card on the dashboard: Whop's flat panel with a hairline border.
  */
 .card-premium {
   position: relative;
-  border: 1px solid transparent;
-  background:
-    linear-gradient(var(--color-card), var(--color-card)) padding-box,
-    linear-gradient(135deg, color-mix(in oklab, var(--color-brand) 55%, transparent), var(--color-line) 45%, var(--color-line)) border-box;
-  box-shadow:
-    inset 0 1px 0 0 rgb(255 255 255 / 0.06),
-    0 24px 60px -30px rgb(0 0 0 / 0.6);
-}
-[dir='rtl'] .card-premium {
-  background:
-    linear-gradient(var(--color-card), var(--color-card)) padding-box,
-    linear-gradient(225deg, color-mix(in oklab, var(--color-brand) 55%, transparent), var(--color-line) 45%, var(--color-line)) border-box;
-}
-[data-theme='light'] .card-premium {
-  box-shadow:
-    inset 0 1px 0 0 rgb(255 255 255 / 0.9),
-    0 24px 50px -30px rgb(17 23 20 / 0.18);
+  border: 1px solid var(--color-line);
+  background: var(--color-card);
 }
 
-/* Soft radial glow behind the hero's start corner. */
+/* A faint accent wash behind the hero's start corner. */
 .hero-glow::before {
   content: '';
   position: absolute;
@@ -189,12 +188,12 @@ body {
   width: 22rem;
   height: 22rem;
   border-radius: 9999px;
-  background: color-mix(in oklab, var(--color-brand) 14%, transparent);
+  background: color-mix(in oklab, var(--color-brand) 7%, transparent);
   filter: blur(70px);
   pointer-events: none;
 }
 
-/* Auth and marketing backdrop in the light theme: a faint dot grid under a soft mint glow from the start corner. */
+/* Auth and marketing backdrop in the light theme: a faint dot grid under a soft accent glow from the start corner. */
 [data-theme='light'] .page-wash {
   background-color: var(--color-bg);
   background-image:
@@ -761,27 +760,31 @@ body {
 
 /* --- Chats inbox (pages/Chats.tsx) ------------------------------------------------------------ */
 
-/* WhatsApp-like wallpaper and bubbles. */
+/*
+ * Thread and bubbles, Whop-style: by default the thread is the page itself (no doodle), the other
+ * side's bubble Whop's grey, ours a deep WhatsApp green. A wall picked in the chat menu (walls.ts)
+ * still brings its color and the doodle.
+ */
 :root {
-  --chat-wall: #0c0d0e;
+  --chat-wall: var(--color-bg);
   --chat-dots: rgb(255 255 255 / 0.035);
   /* Ink for the doodle overlay (mask-image, like WhatsApp's own wallpaper). */
   --chat-doodle-ink: rgb(255 255 255 / 0.055);
   /* Dark mode gets a geometric batik tile; light gets the classic WhatsApp doodles. */
   --chat-doodle: url('/chat-doodle-dark.svg');
   --chat-doodle-size: 400px;
-  --chat-in: #1e2023;
-  --chat-out: #10402d;
+  --chat-in: #242424;
+  --chat-out: #134b33;
   --chat-out-ring: rgb(52 211 153 / 0.12);
 }
 :root[data-theme='light'] {
-  --chat-wall: #efeae2;
+  --chat-wall: var(--color-bg);
   --chat-dots: rgb(0 0 0 / 0.045);
   --chat-doodle-ink: rgb(0 0 0 / 0.06);
   --chat-doodle: url('/chat-doodle-light.svg');
   --chat-doodle-size: 420px;
-  --chat-in: #ffffff;
-  --chat-out: #d9fdd3;
+  --chat-in: #f0f0f0;
+  --chat-out: #d6f5e0;
   --chat-out-ring: rgb(17 23 20 / 0.06);
 }
 /* Template previews: a WhatsApp conversation in the current theme. */
@@ -824,6 +827,11 @@ body {
   mask-size: var(--chat-doodle-size) auto;
   pointer-events: none;
 }
+/* No wall chosen: the plain page, no doodle (the picker's "theme" swatch shows the same). */
+.chat-wall:not([style*='--wall'])::before,
+.wall-swatch:not([style*='--wall'])::before {
+  display: none;
+}
 /* Wallpaper-picker swatches show the same doodle, tiled smaller. */
 .wall-swatch {
   position: relative;
@@ -855,19 +863,9 @@ body {
   background-image: linear-gradient(135deg, color-mix(in srgb, var(--color-brand) 16%, transparent), transparent 65%);
 }
 
-/* Hairline between chat rows, inset past the avatar so it starts at the text column. */
+/* Chat rows sit on the plain list with no rules between them (Whop); hover and the open chat get a fill. */
 .chat-rows > li {
   position: relative;
-}
-.chat-rows > li + li::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  inset-inline-start: 66px; /* row padding + avatar width + gap */
-  inset-inline-end: 0;
-  height: 1px;
-  background: color-mix(in srgb, var(--color-line) 55%, transparent);
-  pointer-events: none;
 }
 
 /* Private mode: blur personal content; hover a blurred element to peek. */

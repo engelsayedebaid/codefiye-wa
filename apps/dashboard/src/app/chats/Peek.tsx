@@ -175,7 +175,7 @@ function PeekBody({ sessionId, chat, onClose, onOpen }: { sessionId: string; cha
       <header className="relative flex items-center gap-3 border-b border-line bg-card px-3.5 py-3">
         <Avatar name={title} id={chat.jid} group={chat.isGroup} />
         <span className="min-w-0 flex-1">
-          <span className="pii block truncate text-[15px] leading-tight font-semibold">{title}</span>
+          <span className="pii block truncate text-sm leading-tight font-semibold">{title}</span>
           <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-brand/10 px-2 py-0.5 text-[10.5px] font-medium text-brand">
             <EyeOff className="size-3" /> {p.hint}
           </span>

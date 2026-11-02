@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#070e0c" />
+    <meta name="theme-color" content="#111111" />
     <title>WA CodeFiye — منصّة واتساب للأعمال: API ومحادثات وحملات</title>
     <meta name="description" content="اربط أرقام واتساب لشركتك، وأرسل من أنظمتك عبر REST API، وأدِر المحادثات والحملات من لوحة تحكم واحدة — رسائل غير محدودة وبدون رسوم على الرسالة." />
     <!-- Link previews (WhatsApp, Facebook, X, Slack…) when the site is shared. -->
@@ -17,7 +17,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Instrument+Sans:wght@400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Inter:opsz,wght@14..32,400..700&display=swap"
       rel="stylesheet"
     />
     <script>
@@ -34,7 +34,7 @@
         var light = pref === "light" || (pref === "system" && !matchMedia("(prefers-color-scheme: dark)").matches);
         if (light) {
           document.documentElement.dataset.theme = "light";
-          document.querySelector("meta[name=theme-color]").setAttribute("content", "#f8faf9");
+          document.querySelector("meta[name=theme-color]").setAttribute("content", "#ffffff");
         }
       } catch {}
     </script>
