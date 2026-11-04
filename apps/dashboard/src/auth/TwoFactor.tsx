@@ -98,9 +98,9 @@ export function TwoFactorSetup({ canSkip, onEnabled }: { canSkip: boolean; onEna
           {skipButton}
         </div>
       ) : (
-        <form onSubmit={submit} className="overflow-hidden rounded-3xl border border-line bg-card shadow-xl md:grid md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        <form onSubmit={submit} className="ui-panel overflow-hidden md:grid md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
           {/* Scan: the QR, or on a phone the app opened directly; the key for typing it in. */}
-          <section className="flex flex-col items-center justify-center gap-4 border-b border-line bg-raised/40 p-5 md:border-e md:border-b-0 md:p-8">
+          <section className="flex flex-col items-center justify-center gap-5 border-b border-line bg-brand/[.055] p-5 md:border-e md:border-b-0 md:p-8">
             <a
               href={setup.data.otpauthUrl}
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand px-4 py-3 text-sm font-semibold text-on-brand shadow-sm transition-opacity hover:opacity-90 md:hidden"
@@ -108,7 +108,7 @@ export function TwoFactorSetup({ canSkip, onEnabled }: { canSkip: boolean; onEna
               <Smartphone className="size-4" /> {s.openApp}
             </a>
             <p className="text-xs text-muted md:hidden">{s.orScan}</p>
-            <div className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-black/5">
+            <div className="rounded-2xl border border-line bg-white p-4 shadow-sm">
               <img src={setup.data.qrImage} alt="QR" width={192} height={192} className="size-40 md:size-48" />
             </div>
             <div className="grid w-full gap-1.5">
@@ -267,9 +267,9 @@ export function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () =
   return (
     <AuthLayout title={s.codesTitle} subtitle={s.codesText} footer={null}>
       <div className="grid gap-5">
-        <ul className="ltr grid grid-cols-2 gap-2 rounded-lg border border-line bg-raised/30 p-4 font-mono text-sm select-all">
+        <ul className="ltr grid grid-cols-2 overflow-hidden rounded-2xl border border-line bg-brand/[.045] p-3 font-mono text-sm select-all">
           {codes.map((c) => (
-            <li key={c} className="text-center">
+            <li key={c} className="border-b border-dashed border-line py-2 text-center last:border-0">
               {c}
             </li>
           ))}

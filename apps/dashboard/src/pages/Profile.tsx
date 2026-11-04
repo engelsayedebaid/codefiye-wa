@@ -36,7 +36,7 @@ function Tile({ icon: Icon, tone, className }: { icon: typeof Mail; tone?: Tone;
 function Section({ icon, title, text, index, children, bodyClassName }: { icon: typeof Mail; title: string; text: string; index: number; children: ReactNode; bodyClassName?: string }) {
   return (
     <section style={delay(120 + index * 80)} className="card-luxury animate-fade-up min-w-0 rounded-2xl border border-line transition-colors hover:border-line-strong">
-      <header className="flex items-start gap-3.5 px-6 pt-6">
+      <header className="flex items-start gap-3.5 rounded-t-2xl border-b border-line bg-surface/55 px-5 py-5 sm:px-6">
         <Tile icon={icon} className="mt-0.5" />
         <div className="min-w-0 space-y-1">
           <h2 className="text-lg leading-tight font-bold tracking-tight">{title}</h2>
@@ -166,11 +166,11 @@ function IdentityCard({ account }: { account: Account }) {
   const done = checks.filter((c) => c.tone === 'good').length;
 
   return (
-    <aside className="card-premium animate-fade-up overflow-hidden rounded-2xl xl:sticky xl:top-6">
+    <aside className="card-premium animate-fade-up overflow-hidden rounded-2xl xl:sticky xl:top-20">
       {/* Cover: the brand gradient under a dot grid, with the monogram as a watermark in the end corner. */}
-      <div aria-hidden className="relative h-28 overflow-hidden bg-gradient-to-br from-grad-from to-grad-to">
-        <div className="absolute inset-0 opacity-[0.14] [background-image:radial-gradient(#fff_1px,transparent_1px)] [background-size:18px_18px]" />
-        <span className="absolute -bottom-8 end-3 text-[8rem] leading-none font-bold tracking-tighter text-on-brand/10 select-none">{mark}</span>
+      <div aria-hidden className="relative h-24 overflow-hidden bg-[#103b2b]">
+        <div className="absolute inset-0 bg-[repeating-radial-gradient(ellipse_at_75%_150%,transparent_0_16px,rgba(182,243,182,.22)_17px,transparent_18px)]" />
+        <span className="absolute -bottom-3 end-4 text-8xl leading-none font-semibold tracking-tighter text-white/15 select-none">{mark}</span>
       </div>
 
       <div className="relative px-6 pb-6">

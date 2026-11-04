@@ -64,7 +64,7 @@ export function KeysPage() {
         ) : (
           <div className="table-stack overflow-x-auto">
             <table className="w-full text-sm">
-              <thead>
+              <thead className="bg-surface text-muted">
                 <tr className="border-b border-line">
                   <th className={th}>{k.cols.name}</th>
                   <th className={th}>{k.cols.key}</th>
@@ -79,7 +79,7 @@ export function KeysPage() {
                   <tr key={key.id} className="animate-fade-up transition-colors hover:bg-raised/30" style={delay(120 + i * 40)}>
                     <td data-label={k.cols.name} className={`${td} font-medium`}>{key.name}</td>
                     <td data-label={k.cols.key} className={td}>
-                      <code className="ltr font-mono text-muted">{key.prefix}…</code>
+                      <code className="ltr rounded-md border border-line bg-surface px-2 py-1 font-mono text-xs text-ink-2">{key.prefix}…</code>
                     </td>
                     <td data-label={k.cols.type} className={td}>
                       {key.kind === 'pat' ? <Badge tone="info">{k.workspace}</Badge> : <Badge tone="neutral">{k.session(sessionNames.get(key.sessionId!) ?? '—')}</Badge>}

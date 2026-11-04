@@ -1,4 +1,4 @@
-import { ArrowUpRight, BookOpen, Building2, Check, ChevronRight, Mail, Play, Plus, ShieldCheck } from '../icons';
+import { ArrowUpRight, BookOpen, Building2, Check, CheckCheck, ChevronRight, Code2, Mail, MessageCircle, Play, Plus, ShieldCheck } from '../icons';
 import { useEffect } from 'react';
 import { BRAND } from '../brand';
 import { useI18n } from '../i18n';
@@ -23,74 +23,68 @@ function Tick({ className }: { className?: string }) {
 
 function Hero() {
   const { t } = useI18n();
-  const h = t.landing.hero;
+  const { hero } = t.landing;
+  const otp = hero.otpPreview;
   return (
-    <section className="relative isolate overflow-hidden pt-14 sm:pt-20 lg:pt-24">
-      <div aria-hidden className="hero-aura absolute inset-x-0 top-0 -z-10 h-[680px]" />
-
-      <div className="mx-auto max-w-7xl px-4 text-center sm:px-6 lg:px-8">
-        <Link
-          href="#pricing"
-          className="animate-fade-up group inline-flex h-8 max-w-full items-center gap-2.5 rounded-full border border-line bg-card ps-1 pe-3 text-sm text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
-        >
-          <span className="shrink-0 rounded-full bg-brand/15 px-2.5 py-0.5 text-xs font-semibold text-brand">{h.announceTag}</span>
-          <span className="truncate">{h.announce}</span>
-          <ChevronRight className={cx('size-4 shrink-0 text-faint transition-transform group-hover:translate-x-0.5 rtl:group-hover:-translate-x-0.5', flip)} />
-        </Link>
-
-        <h1
-          className="animate-fade-up mx-auto mt-8 max-w-5xl text-[2.5rem] leading-[1.06] font-semibold tracking-[-0.045em] text-balance sm:text-6xl lg:text-[4.5rem] rtl:leading-[1.28]"
-          style={delay(80)}
-        >
-          {h.title}
-          <span className="block pb-1 text-brand">{h.accent}</span>
-        </h1>
-
-        <p className="animate-fade-up mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-muted sm:text-xl" style={delay(160)}>
-          {h.text}
-        </p>
-
-        <div className="animate-fade-up mt-9 flex flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center" style={delay(220)}>
-          <Link href="/register" className={buttonClass('white', 'lg', 'h-12 px-7 font-semibold')}>
-            {h.cta} <Arrow />
+    <section className="studio-hero" aria-labelledby="home-headline">
+      <div className="studio-hero-grid">
+        <div className="min-w-0">
+          <Link href="#pricing" className="studio-announcement">
+            <span>{hero.announceTag}</span> {hero.announce}
+            <ChevronRight className={cx('size-3.5 shrink-0', flip)} />
           </Link>
-          <button type="button" onClick={playDemo} className={buttonClass('outline', 'lg', 'h-12 px-6')}>
-            <span className="flex size-6 items-center justify-center rounded-full bg-ink/[0.08]">
-              <Play className="size-3 translate-x-px" />
-            </span>
-            {h.watch}
-          </button>
+          <h1 id="home-headline" className="animate-fade-up studio-headline">
+            {hero.title} <span>{hero.accent}</span>
+          </h1>
+          <p className="mt-5 max-w-xl text-base leading-relaxed text-muted sm:text-lg">{hero.text}</p>
+          <div className="mt-7 flex flex-wrap gap-2.5">
+            <Link href="/register" className={buttonClass('brand', 'lg')}>
+              {hero.cta} <Arrow />
+            </Link>
+            <button type="button" onClick={playDemo} className={buttonClass('outline', 'lg')}>
+              <Play className="size-4" /> {hero.watch}
+            </button>
+          </div>
+          <ul className="mt-5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
+            {hero.trust.map((item) => (
+              <li key={item} className="flex items-center gap-1.5"><Check className="size-3.5 text-brand" />{item}</li>
+            ))}
+          </ul>
         </div>
-
-        <ul className="animate-fade-up mt-7 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-muted" style={delay(280)}>
-          {h.trust.map((item) => (
-            <li key={item} className="flex items-center gap-2">
-              <Check className="size-4 text-brand" strokeWidth={2.5} />
-              {item}
-            </li>
-          ))}
-        </ul>
-
-        {/* The most asked-for use: WhatsApp verification codes, with a way into the guide. */}
-        <Link
-          href="/guide"
-          className="animate-fade-up group mx-auto mt-8 flex w-fit max-w-2xl items-center gap-3 rounded-xl border border-line bg-card py-2 ps-2 pe-4 text-start text-sm leading-relaxed text-ink-2 transition-colors hover:border-line-strong"
-          style={delay(340)}
-        >
-          <span className="site-icon size-8 text-brand">
-            <ShieldCheck className="size-4" />
-          </span>
-          <span>
-            <span className="font-semibold text-ink">{h.otpTitle}</span> <span className="text-muted">{h.otpText}</span>
-          </span>
-          <span className="hidden shrink-0 items-center gap-1 font-semibold whitespace-nowrap text-ink sm:inline-flex">
-            {h.otpCta} <Arrow className="size-3.5" />
-          </span>
-        </Link>
+        <figure className="studio-dispatch animate-fade-up" style={delay(100)}>
+          <figcaption className="studio-dispatch-label">
+            <span className="inline-flex items-center gap-2"><span aria-hidden className="studio-status-light" />{otp.caption}</span>
+            <bdi>OTP</bdi>
+          </figcaption>
+          <svg aria-hidden className="studio-routing" viewBox="0 0 500 330" preserveAspectRatio="xMidYMid slice" fill="none">
+            <g stroke="currentColor" strokeWidth="1">
+              {[72, 104, 138, 176, 219, 268].map((radius) => <circle key={radius} cx="389" cy="67" r={radius} />)}
+              <path d="M0 264h82l88-88h105l89-89h136M0 278h88l88-88h106l89-89h129" />
+            </g>
+            <g fill="currentColor"><circle cx="82" cy="264" r="3" /><circle cx="275" cy="176" r="4" /><circle cx="364" cy="87" r="3" /></g>
+          </svg>
+          <div className="studio-thread">
+            <div className="flex items-center gap-2.5">
+              <span className="studio-chat-icon"><ShieldCheck aria-hidden className="size-5" /></span>
+              <div><strong className="block text-sm"><bdi>{BRAND.name}</bdi></strong><small>{otp.sender}</small></div>
+            </div>
+            <div className="studio-otp-message">
+              <p>{otp.message}</p>
+              <bdi dir="ltr" className="studio-otp-code">482910</bdi>
+              <small>{otp.safety}</small>
+            </div>
+          </div>
+          <div className="studio-receipt">
+            <span className="studio-receipt-icon"><CheckCheck aria-hidden className="size-5" /></span>
+            <strong>{otp.delivered}</strong>
+          </div>
+          <div className="studio-endpoint" dir="ltr"><Code2 aria-hidden className="size-4" /> POST /api/send-otp</div>
+        </figure>
       </div>
-
-      <div className="animate-fade-up relative mx-auto mt-14 max-w-6xl px-4 sm:mt-16 sm:px-6 lg:px-8" style={delay(420)}>
-        <ProductShot />
+      <div className="studio-shortcuts">
+        <Link href="#platform"><MessageCircle className="size-4" /> {t.landing.platform.inbox.title} <Arrow /></Link>
+        <Link href="#developers"><Code2 className="size-4" /> {t.landing.platform.api.title} <Arrow /></Link>
+        <Link href="/guide"><ShieldCheck className="size-4" /> {hero.otpTitle} <Arrow /></Link>
       </div>
     </section>
   );
@@ -99,9 +93,9 @@ function Hero() {
 function TrustStrip() {
   const { t } = useI18n();
   return (
-    <section className="py-16 sm:py-20">
+    <section className="studio-metrics py-14 sm:py-20">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <Reveal className="overflow-hidden rounded-2xl border border-line bg-card">
+        <Reveal className="studio-metric-panel overflow-hidden rounded-2xl">
           {/* Every cell draws its end and bottom edge; the grid reaches 1px past the box so the outer ones are clipped. */}
           <dl className="-me-px -mb-px grid grid-cols-2 lg:grid-cols-4 [&>div]:border-e [&>div]:border-b [&>div]:border-line">
             {t.landing.stats.map((s) => (
@@ -136,7 +130,7 @@ function HowItWorks() {
   const { t } = useI18n();
   const s = t.landing.how;
   return (
-    <section id="how" className="band scroll-mt-20 py-20 sm:py-28">
+    <section id="how" className="studio-steps band scroll-mt-20 py-20 sm:py-28">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <SectionHeading kicker={s.kicker} title={s.title} accent={s.accent} text={s.text} />
         <ol className="mt-14 grid gap-4 md:grid-cols-3 lg:gap-5">
@@ -149,7 +143,7 @@ function HowItWorks() {
                     <span className="site-icon size-10">
                       <Icon className={cx('size-5', i === 2 && flip)} />
                     </span>
-                    <span className="ltr font-mono text-sm text-faint">0{i + 1}</span>
+                    <span className="studio-step-number ltr font-mono">0{i + 1}</span>
                   </div>
                   <h3 className="mt-6 text-lg font-semibold">{step.title}</h3>
                   <p className="mt-2 text-sm leading-relaxed text-muted">{step.text}</p>
@@ -359,7 +353,7 @@ function FinalCta() {
   return (
     <section className="px-4 pb-20 sm:px-6 sm:pb-28 lg:px-8">
       <Reveal className="mx-auto max-w-7xl">
-        <div className="site-card relative isolate overflow-hidden rounded-3xl px-6 py-16 text-center sm:px-12 sm:py-20">
+        <div className="studio-closing relative isolate overflow-hidden rounded-3xl px-6 py-16 text-center sm:px-12 sm:py-20">
           <div aria-hidden className="hero-aura absolute inset-0 -z-10" />
           <h2 className="mx-auto max-w-2xl text-3xl leading-tight font-semibold tracking-[-0.03em] text-balance sm:text-5xl">{s.title}</h2>
           <p className="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-muted">{s.text}</p>
@@ -379,19 +373,26 @@ function FinalCta() {
 }
 
 export function Landing() {
+  const { t } = useI18n();
   // Opened at /#pricing, or sent here from another page: go to that section once it has rendered.
   useEffect(() => {
     if (location.hash.length > 1) scrollToHash(location.hash.slice(1));
   }, []);
 
   return (
-    <div className="overflow-x-clip">
+    <div className="studio-site overflow-x-clip">
       <SiteHeader />
       <main id="main">
         <Hero />
         <TrustStrip />
         <DemoVideo />
         <Platform />
+        <section className="studio-product-stage">
+          <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+            <SectionHeading align="start" kicker={t.landing.dashboard} title={t.landing.platform.inbox.title} text={t.landing.platform.inbox.text} />
+            <div className="mt-9"><ProductShot /></div>
+          </div>
+        </section>
         <HowItWorks />
         <Developers />
         <Solutions />

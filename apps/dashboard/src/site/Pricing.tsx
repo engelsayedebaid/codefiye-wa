@@ -19,9 +19,9 @@ export function PlanCard({ plan, current, action, embedded }: { plan: PricedPlan
   return (
     <article
       className={cx(
-        'site-card relative flex h-full flex-col rounded-2xl p-7 transition-colors duration-200',
+        'site-card relative flex h-full min-w-0 flex-col rounded-2xl border-t-[3px] p-5 transition-colors duration-200 sm:p-6',
         !embedded && 'hover:border-line-strong',
-        plan.popular && 'border-brand/60 hover:border-brand/80',
+        plan.popular && 'border-brand/60 border-t-brand bg-linear-to-b from-brand/10 via-transparent to-transparent hover:border-brand/80',
       )}
     >
       {(plan.popular || current) && (
@@ -34,8 +34,8 @@ export function PlanCard({ plan, current, action, embedded }: { plan: PricedPlan
           {current ? t.plans.current : t.plans.popular}
         </span>
       )}
-      <div className="flex items-start justify-between gap-2">
-        <h3 className="text-lg font-semibold">{plan.name}</h3>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-xl font-semibold">{plan.name}</h3>
         <span className="shrink-0 rounded-full border border-line px-2.5 py-0.5 text-xs font-medium text-muted">
           <span className="ltr font-mono">{money(plan.priceUsd / plan.sessions)}</span> {t.plans.perSession}
         </span>
@@ -135,7 +135,7 @@ export function PlanCards({ currentPlanId, action }: { currentPlanId?: string; a
   const plans = offeredPlans(pricing.data ?? DEFAULT_PLAN_PRICING);
   return (
     <div>
-      <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center">
+      <div className="mb-8 flex flex-col gap-3 rounded-2xl border border-line bg-card px-4 py-3 sm:flex-row sm:items-center">
         <CurrencySwitch withLabel align="start" className="shrink-0" />
         <CurrencyNote />
       </div>

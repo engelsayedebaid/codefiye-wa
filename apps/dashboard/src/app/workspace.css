@@ -1,0 +1,72 @@
+/* The navigation has its own dark palette so status chips, popovers and focus rings
+   remain legible in both display modes. The workspace content follows the selected theme. */
+.workspace-rail {
+  --color-bg: #102e25;
+  --color-surface: #16392e;
+  --color-card: #173a2e;
+  --color-raised: #23503e;
+  --color-ink: #f0f9f0;
+  --color-ink-2: #e2efe6;
+  --color-muted: #c3d6c9;
+  --color-faint: #a2bfae;
+  --color-brand: #b6f3c1;
+  --color-on-brand: #103824;
+  --color-line: #315344;
+  --color-line-strong: #60846f;
+  --color-ring: #b6f3c1;
+  background: linear-gradient(155deg, #143a2d, #0d2a22 55%, #103025);
+}
+.workspace-current {
+  background: #c4efce;
+  color: #143c29;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 36%);
+}
+.workspace-current:hover { background: #d6f6dc; }
+.workspace-current .text-faint { color: #43634a; }
+.workspace-rail-label:lang(en) {
+  font-size: .66rem;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+.workspace-toolbar {
+  background: color-mix(in srgb, var(--color-card) 95%, transparent);
+  backdrop-filter: blur(14px);
+}
+.workspace-canvas {
+  background-image: linear-gradient(175deg, color-mix(in srgb, var(--color-brand) 4%, transparent), transparent 36rem);
+}
+.workspace-sheet,
+.workspace-ledger {
+  border: 1px solid var(--color-line);
+  border-radius: 1.35rem;
+  background: var(--color-card);
+  box-shadow: 0 6px 22px -18px rgb(10 39 24 / 34%);
+}
+.workspace-ledger {
+  gap: 1px;
+  overflow: hidden;
+  background: var(--color-line);
+}
+.workspace-masthead {
+  color: #f5fff6;
+  background: linear-gradient(115deg, #163f31 10%, #164d37 62%, #246145);
+  box-shadow: 0 8px 36px -26px rgb(5 35 17 / 60%);
+}
+.workspace-date {
+  border-inline-end: 1px solid rgb(255 255 255 / 32%);
+  padding-inline-end: .85rem;
+}
+.workspace-signal {
+  position: absolute;
+  z-index: -1;
+  inset-block: 0;
+  inset-inline-end: 0;
+  width: 48%;
+  pointer-events: none;
+  background: repeating-radial-gradient(ellipse at 100% 0%, transparent 0 1.25rem, rgb(191 244 192 / 27%) 1.28rem 1.33rem, transparent 1.36rem 1.9rem);
+  mask-image: linear-gradient(to left, black, transparent);
+}
+[dir='rtl'] .workspace-signal { transform: scaleX(-1); }
+@media (max-width: 42rem) {
+  .workspace-signal { width: 35%; opacity: .6; }
+}

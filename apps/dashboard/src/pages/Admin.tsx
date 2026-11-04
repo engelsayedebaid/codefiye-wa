@@ -1030,7 +1030,7 @@ export function AdminPage() {
         className={cx(
           'relative flex shrink-0 items-center gap-2.5 text-sm font-medium transition-colors',
           layout === 'side'
-            ? cx('h-9 w-full rounded-lg px-2.5', active ? 'bg-raised text-ink' : 'text-muted hover:bg-raised/50 hover:text-ink')
+            ? cx('h-9 w-full rounded-lg px-2.5', active ? 'bg-brand/10 text-brand' : 'text-muted hover:bg-raised hover:text-ink')
             : cx('h-9 rounded-full border px-3.5', active ? 'border-ink bg-ink text-bg' : 'border-line bg-card text-muted hover:border-line-strong hover:text-ink'),
         )}
       >
@@ -1053,13 +1053,13 @@ export function AdminPage() {
 
   return (
     <div className="mx-auto w-full max-w-[90rem] space-y-6">
-      <header className="animate-fade-up flex flex-wrap items-end justify-between gap-4">
+      <header className="animate-fade-up flex flex-wrap items-end justify-between gap-5 border-b border-line pb-6">
         <div className="space-y-1.5">
           <p className="flex items-center gap-1.5 text-xs font-semibold tracking-wider text-brand uppercase">
             <ShieldCheck className="size-3.5" />
             {a.title}
           </p>
-          <h1 className="text-2xl font-semibold tracking-[-0.015em]">{a.tabs[tab]}</h1>
+          <h1 className="text-3xl font-semibold tracking-tight text-ink md:text-4xl">{a.tabs[tab]}</h1>
           <p className="text-muted">{a.description}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -1089,8 +1089,8 @@ export function AdminPage() {
       </nav>
 
       <div className="grid items-start gap-6 lg:grid-cols-[14.5rem_minmax(0,1fr)]">
-        <aside className="sticky top-4 hidden lg:block">
-          <nav aria-label={a.title} className="space-y-5 rounded-xl border border-line bg-card p-3 shadow-sm">
+        <aside className="sticky top-[4.5rem] hidden lg:block">
+          <nav aria-label={a.title} className="code-scroll max-h-[calc(100dvh-5.5rem)] space-y-5 overflow-y-auto rounded-2xl border border-line bg-card p-3 shadow-sm">
             {NAV.map((g) => (
               <div key={g.group} className="space-y-1">
                 <p className="px-2.5 pb-1 text-[11px] font-semibold tracking-wider text-faint uppercase">{a.navGroups[g.group]}</p>

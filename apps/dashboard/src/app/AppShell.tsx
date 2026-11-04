@@ -45,6 +45,7 @@ import { Button, buttonClass, cx, ErrorNote, Field, flip, LangSwitch, Logo, Logo
 import { type Account, AccountContext, isUnlimitedPlan, planState, useAccount } from './account';
 import { useActivityPing } from './activity';
 import { UserAvatar } from './avatar';
+import './workspace.css';
 
 const COLLAPSE_KEY = 'wa.sidebar.collapsed';
 /** The user's own choice (toggle button), or null when they never made one. */
@@ -166,11 +167,10 @@ function Breadcrumbs({ path }: { path: string }) {
   );
 }
 
-/** Whop's sidebar row: 40px tall, a 20px glyph, grey until hovered; the open page sits on a grey fill. */
 const itemClass = (active: boolean, collapsed: boolean) =>
   cx(
-    'relative flex h-9 w-full items-center gap-2.5 rounded-[10px] px-[10px] text-sm font-medium transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-ring [&>svg]:size-[18px] [&>svg]:shrink-0',
-    active ? 'bg-ink/10 text-ink' : 'text-muted hover:bg-ink/[0.06] hover:text-ink',
+    'relative flex min-h-10 w-full items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-ring [&>svg]:size-[18px] [&>svg]:shrink-0',
+    active ? 'workspace-current' : 'text-muted hover:bg-ink/[0.07] hover:text-ink',
     collapsed && 'mx-auto w-10 justify-center px-0',
   );
 
@@ -346,8 +346,8 @@ function NavGroup({
   const active = (item: NavItem) => path === item.href || path.startsWith(`${item.href}/`);
   return (
     <div className="p-2">
-      {!collapsed && <p className="flex h-7 items-center px-3 text-xs font-medium text-faint">{label}</p>}
-      <ul className="flex flex-col gap-0.5">
+      {!collapsed && <p className="workspace-rail-label mb-2 flex items-center gap-2 px-3 text-xs font-semibold text-faint">{label}<span aria-hidden className="h-px flex-1 bg-line" /></p>}
+      <ul className="flex flex-col gap-1">
         {items.map((item, i) => {
           const Icon = active(item) ? filledIcon(item.icon) : item.icon;
           return (
@@ -362,7 +362,6 @@ function NavGroup({
                 className={itemClass(active(item), collapsed)}
               >
                 {/* The icon rail marks the open page with a pill on its outer edge, as Whop does. */}
-                {collapsed && <span aria-hidden className={cx('absolute -start-3 top-1/2 w-1 -translate-y-1/2 rounded-e-full bg-ink transition-all duration-200', active(item) ? 'h-6 opacity-100' : 'h-0 opacity-0')} />}
                 <Icon />
                 {!collapsed && <span className="truncate">{item.label}</span>}
                 {!!item.count && !collapsed && (
@@ -459,18 +458,18 @@ function Sidebar({
   const { t } = useI18n();
   const nav = useNav();
   return (
-    <div className="flex h-full flex-col">
-      <div className={cx('flex h-14 shrink-0 items-center border-b border-line px-3', collapsed && 'justify-center px-0')}>
+    <div className="workspace-rail flex h-full flex-col text-ink">
+      <div className={cx('flex min-h-[4.5rem] shrink-0 items-center border-b border-line px-5', collapsed && 'justify-center px-0')}>
         <Link href="/dashboard" onClick={onNavigate} className="flex items-center rounded-[10px] p-1 transition-opacity hover:opacity-80">
           {collapsed ? <LogoMark className="size-7" /> : <Logo />}
         </Link>
       </div>
 
-      <nav className="code-scroll flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pt-2">
+      <nav className="code-scroll flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pt-4">
         <NavGroup label={t.app.groupPlatform} items={nav.main} path={path} collapsed={collapsed} onNavigate={onNavigate} />
         {account?.user?.isAdmin && <NavGroup label={t.app.groupAdmin} items={nav.admin} path={path} collapsed={collapsed} onNavigate={onNavigate} />}
 
-        <ul className="mt-auto flex flex-col gap-0.5 p-2">
+        <ul className="mx-2 mt-auto flex flex-col gap-0.5 border-t border-line pt-2 pb-2">
           {nav.secondary.map((item) => (
             <li key={item.href}>
               <Link
@@ -489,7 +488,7 @@ function Sidebar({
       </nav>
 
       {/* The account sits in its own card at the foot of the sidebar (the icon rail shows just the avatar). */}
-      <div className="p-2">
+      <div className="border-t border-line p-2">
         <div className={cx('rounded-2xl border transition-colors', collapsed ? 'border-transparent' : 'border-line bg-ink/[0.03] p-1 hover:border-line-strong')}>
           <UserMenu account={account} collapsed={collapsed} onLogout={onLogout} />
         </div>
@@ -524,8 +523,8 @@ function PlanAlert({ account }: { account: Account | null }) {
     tone = { box: 'border-destructive-ink/20 bg-destructive/15', title: 'text-critical', icon: <CircleX className="size-7" />, heading: copy.title, text: copy.text, cta: copy.cta, variant: 'danger' };
   } else if (state.kind === 'trial') {
     tone = {
-      box: 'border-ink/20 bg-ink/10',
-      title: 'text-ink',
+      box: 'border-brand/25 bg-brand/[0.06]',
+      title: 'text-brand',
       icon: <Clock className="size-7" />,
       heading: a.trialActive.title,
       text: a.trialActive.text(fmt.date(state.endsAt)),
@@ -546,8 +545,8 @@ function PlanAlert({ account }: { account: Account | null }) {
   if (!tone) return null;
 
   return (
-    <div className={cx('animate-fade-up mx-auto w-full max-w-3xl rounded-lg border p-5', tone.box)}>
-      <div className="flex flex-col items-start gap-4 lg:flex-row lg:items-center lg:justify-between">
+    <div className={cx('animate-fade-up mx-auto w-full rounded-2xl border px-5 py-3', tone.box)}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-1 items-start gap-3">
           <div className={cx('mt-0.5 flex items-center justify-center rounded-md p-2', tone.title)}>{tone.icon}</div>
           <div className="flex-1">
@@ -555,7 +554,7 @@ function PlanAlert({ account }: { account: Account | null }) {
             <p className="text-sm text-muted">{tone.text}</p>
           </div>
         </div>
-        <Link href="/subscription" className={buttonClass(tone.variant, 'md', 'w-full lg:w-auto')}>
+        <Link href="/subscription" className={buttonClass(tone.variant, 'sm')}>
           {tone.cta}
         </Link>
       </div>
@@ -774,10 +773,10 @@ export function AppShell({ children, account }: { children: ReactNode; account: 
     <AccountContext.Provider value={context}>
       <InboxAlerts account={account} path={path} />
       <ReadAlerts account={account} />
-      <div className="flex min-h-svh bg-bg">
+      <div className="workspace-canvas flex min-h-svh bg-bg">
         <aside
           style={collapsed ? undefined : { width }}
-          className={cx('sticky top-0 z-20 hidden h-svh shrink-0 border-e border-line bg-bg md:block', !resizing && 'transition-[width] duration-300 ease-out', collapsed && 'w-16')}
+          className={cx('sticky top-0 z-20 hidden h-svh shrink-0 md:block', !resizing && 'transition-[width] duration-300 ease-out', collapsed && 'w-16')}
         >
           <Sidebar path={path} account={account} collapsed={collapsed} onLogout={logout} />
           <div
@@ -801,8 +800,8 @@ export function AppShell({ children, account }: { children: ReactNode; account: 
         {drawer && (
           <div className="fixed inset-0 z-50 md:hidden">
             <div className="animate-fade-in absolute inset-0 bg-black/60" onClick={() => setDrawer(false)} />
-            <aside className="animate-fade-in absolute inset-y-0 start-0 w-[280px] border-e border-line bg-bg">
-              <button onClick={() => setDrawer(false)} className="absolute top-4 end-3 rounded-xs p-1 opacity-70 hover:opacity-100" aria-label={t.app.closeMenu}>
+            <aside className="animate-fade-in absolute inset-y-0 start-0 w-[min(280px,90vw)]">
+              <button onClick={() => setDrawer(false)} className="absolute top-5 end-3 z-10 rounded-full p-2 text-white hover:bg-white/10" aria-label={t.app.closeMenu}>
                 <X className="size-4" />
               </button>
               <Sidebar path={path} account={account} onLogout={logout} onNavigate={() => setDrawer(false)} />
@@ -810,8 +809,8 @@ export function AppShell({ children, account }: { children: ReactNode; account: 
           </div>
         )}
 
-        <div className="relative flex min-w-0 flex-1 flex-col bg-bg">
-          <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b border-line bg-bg/85 px-4 backdrop-blur-md">
+        <div className="relative flex min-w-0 flex-1 flex-col">
+          <header className="workspace-toolbar sticky top-0 z-10 flex h-14 min-w-0 shrink-0 items-center gap-2 border-b border-line px-3 sm:px-6">
             <button onClick={toggle} className="-ms-1 flex size-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-ink/[0.06] hover:text-ink" aria-label={t.app.toggleSidebar}>
               <PanelLeft className={cx('size-5', flip)} />
             </button>
@@ -822,7 +821,7 @@ export function AppShell({ children, account }: { children: ReactNode; account: 
             <LangSwitch />
           </header>
           {/* Chats fill the page edge to edge, like Whop's messages; every other page sits in a 1200px column. */}
-          <div className={cx('flex w-full flex-1 flex-col', path === '/chats' ? '' : 'mx-auto max-w-[1200px] gap-4 p-4 md:p-6')}>
+          <div className={cx('flex w-full min-w-0 flex-1 flex-col', path !== '/chats' && 'mx-auto max-w-[1440px] gap-5 p-4 sm:p-6 xl:px-9 xl:py-7')}>
             {path !== '/subscription' && <PlanAlert account={account} />}
             <PhoneAlert account={account} />
             <main key={path} className="animate-fade-up min-w-0 flex-1">

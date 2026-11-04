@@ -1,6 +1,6 @@
 import { phoneHref } from '@wa/shared/site';
-import { ArrowRight, Mail, MapPin, Menu, Phone, X } from '../icons';
-import { type ReactNode, useEffect, useState } from 'react';
+import { ArrowRight, BookOpen, ChevronDown, Code2, Globe, Layers, LayoutGrid, Mail, MapPin, Menu, Phone, Tags, X } from '../icons';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { sessionHint } from '../api';
 import { BRAND } from '../brand';
 import { CurrencySwitch } from '../currency';
@@ -9,6 +9,7 @@ import { Link, usePath } from '../router';
 import { buttonClass, cx, flip, LangSwitch, Logo, Reveal, ThemeSwitch } from '../ui';
 import { FOOTER_HREFS, NAV_HREFS } from './content';
 import { useSiteSettings } from './settings';
+import './editorial.css';
 
 /** "Forward" arrow: right in LTR, left in RTL, nudging forward on hover. */
 export function Arrow({ className }: { className?: string }) {
@@ -45,12 +46,12 @@ export function SectionHeading({
 }) {
   const center = align === 'center';
   return (
-    <Reveal className={cx(center ? 'mx-auto max-w-3xl text-center' : 'max-w-2xl', className)}>
+    <Reveal className={cx('studio-section-title', center ? 'mx-auto max-w-3xl text-center' : 'max-w-2xl', className)}>
       <p className="kicker" data-center={center || undefined}>
         {kicker}
       </p>
       <h2 className="mt-5 text-3xl leading-[1.15] font-semibold tracking-[-0.03em] text-balance sm:text-4xl lg:text-[2.75rem]">
-        {title} {accent && <span className={cx('text-faint', breakAccent && 'sm:block')}>{accent}</span>}
+        {title} {accent && <span className={cx('text-brand', breakAccent && 'sm:block')}>{accent}</span>}
       </h2>
       {text && <p className={cx('mt-4 text-base leading-relaxed text-muted sm:text-lg', center && 'mx-auto max-w-2xl')}>{text}</p>}
     </Reveal>
@@ -63,121 +64,151 @@ function useSiteHref() {
   return (href: string) => (href.startsWith('#') && !home ? `/${href}` : href);
 }
 
+const navIcons = [LayoutGrid, Layers, Code2, Tags, BookOpen];
+
+function SitePreferences() {
+  const { lang, t } = useI18n();
+  const details = useRef<HTMLDetailsElement>(null);
+
+  useEffect(() => {
+    const dismissOutside = (event: PointerEvent) => {
+      if (details.current?.open && !details.current.contains(event.target as Node)) details.current.open = false;
+    };
+    const desktop = window.matchMedia('(min-width: 72rem)');
+    const dismiss = () => { if (details.current) details.current.open = false; };
+    document.addEventListener('pointerdown', dismissOutside);
+    desktop.addEventListener('change', dismiss);
+    return () => {
+      document.removeEventListener('pointerdown', dismissOutside);
+      desktop.removeEventListener('change', dismiss);
+    };
+  }, []);
+
+  return (
+    <details ref={details} className="mast-settings mast-desktop"
+      onBlur={(e) => {
+        if (e.relatedTarget && !e.currentTarget.contains(e.relatedTarget)) e.currentTarget.open = false;
+      }}
+      onKeyDownCapture={(e) => {
+        if (e.key !== 'Escape' || !e.currentTarget.open) return;
+        const picker = e.currentTarget.querySelector<HTMLButtonElement>('[aria-haspopup="menu"][aria-expanded="true"]');
+        if (picker) picker.focus();
+        else {
+          e.currentTarget.open = false;
+          e.currentTarget.querySelector('summary')?.focus();
+        }
+      }}>
+      <summary aria-label={t.landing.preferences} title={t.landing.preferences}>
+        <Globe aria-hidden className="size-4" /><bdi>{lang.toUpperCase()}</bdi><ChevronDown aria-hidden className="size-3" />
+      </summary>
+      <div className="mast-settings-panel">
+        <strong>{t.landing.preferences}</strong>
+        <div><span>{t.landing.language}</span><LangSwitch /></div>
+        <div><span>{t.currency.label}</span><CurrencySwitch /></div>
+        <div><span>{t.theme.aria}</span><ThemeSwitch /></div>
+      </div>
+    </details>
+  );
+}
+
 export function SiteHeader() {
   const { t } = useI18n();
   const l = t.landing;
-  const siteHref = useSiteHref();
+  const path = usePath();
   const [open, setOpen] = useState(false);
-  const [scrolled, setScrolled] = useState(false);
-  // A UI hint only: the session itself is an HttpOnly cookie the page can't read.
+  const [section, setSection] = useState('');
+  const header = useRef<HTMLElement>(null);
+  const toggle = useRef<HTMLButtonElement>(null);
   const signedIn = sessionHint.get();
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 8);
-    onScroll();
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
+    if (path !== '/') return;
+    const sections = NAV_HREFS.filter((href) => href.startsWith('#')).map((href) => document.getElementById(href.slice(1)));
+    const update = () => {
+      const marker = (header.current?.offsetHeight ?? 68) + 20;
+      const current = sections.find((el) => {
+        const box = el?.getBoundingClientRect();
+        return box && box.top <= marker && box.bottom > marker;
+      });
+      setSection(current ? '#' + current.id : '');
+    };
+    update();
+    window.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+    return () => {
+      window.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+    };
+  }, [path]);
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
-    const onWide = () => window.innerWidth >= 1024 && setOpen(false);
-    document.addEventListener('keydown', onKey);
-    window.addEventListener('resize', onWide);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      const picker = header.current?.querySelector<HTMLButtonElement>('#site-menu [aria-haspopup="menu"][aria-expanded="true"]');
+      if (picker) {
+        picker.focus();
+        return;
+      }
+      setOpen(false);
+      toggle.current?.focus();
+    };
+    const onOutside = (event: PointerEvent) => {
+      if (!header.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const wide = window.matchMedia('(min-width: 72rem)');
+    const onWide = () => { if (wide.matches) setOpen(false); };
+    document.addEventListener('keydown', onKey, true);
+    document.addEventListener('pointerdown', onOutside);
+    wide.addEventListener('change', onWide);
     return () => {
-      document.removeEventListener('keydown', onKey);
-      window.removeEventListener('resize', onWide);
+      document.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('pointerdown', onOutside);
+      wide.removeEventListener('change', onWide);
     };
   }, [open]);
 
   const close = () => setOpen(false);
+  const links = l.nav.map((label, i) => {
+    const target = NAV_HREFS[i]!;
+    const local = target.startsWith('#');
+    const Icon = navIcons[i]!;
+    const current = local ? path === '/' && section === target : path === target;
+    return (
+      <Link key={target} href={local && path !== '/' ? '/' + target : target} onClick={close}
+        aria-current={current ? (local ? 'location' : 'page') : undefined} className="mast-link">
+        <Icon aria-hidden className="mast-link-icon size-4" />
+        {label}
+        <Arrow className="mast-link-arrow" />
+      </Link>
+    );
+  });
 
   return (
-    <header data-scrolled={scrolled || open || undefined} className="site-header sticky top-0 z-50">
-      <a
-        href="#main"
-        className="sr-only rounded-md bg-card px-3 py-2 text-sm font-medium shadow-lg focus:not-sr-only focus:absolute focus:start-4 focus:top-3 focus:z-50"
-      >
-        {l.skip}
-      </a>
-      <div className="mx-auto flex h-14 max-w-7xl items-center gap-3 px-4 sm:px-6 lg:px-8">
-        <Link href="/" aria-label={BRAND.name} className="shrink-0">
-          <Logo />
-        </Link>
-
-        <nav aria-label={t.common.menu} className="ms-4 hidden items-center lg:flex xl:ms-8">
-          {l.nav.map((label, i) => (
-            <Link
-              key={label}
-              href={siteHref(NAV_HREFS[i]!)}
-              className="rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap text-muted transition-colors hover:bg-ink/[0.05] hover:text-ink"
-            >
-              {label}
-            </Link>
-          ))}
-        </nav>
-
-        <div className="ms-auto hidden items-center gap-1 lg:flex">
-          <CurrencySwitch />
-          <ThemeSwitch />
-          <LangSwitch />
-          <span aria-hidden className="mx-1.5 h-5 w-px bg-line" />
-          {signedIn ? (
-            <Link href="/dashboard" className={buttonClass('white', 'md', 'px-4')}>
-              {l.dashboard} <Arrow />
-            </Link>
-          ) : (
-            <>
-              <Link href="/login" className={buttonClass('ghost', 'md')}>
-                {l.login}
-              </Link>
-              <Link href="/register" className={buttonClass('white', 'md', 'px-4')}>
-                {l.getStarted} <Arrow />
-              </Link>
-            </>
-          )}
+    <header ref={header} className="public-mast">
+      <a href="#main" className="mast-skip sr-only focus:not-sr-only">{l.skip}</a>
+      <div className="mast-inner">
+        <Link href="/" aria-label={BRAND.name} className="mast-brand" onClick={close}><Logo /></Link>
+        <nav aria-label={t.common.menu} className="mast-links mast-desktop">{links}</nav>
+        <div className="mast-actions">
+          <SitePreferences />
+          {!signedIn && <Link href="/login" className="mast-login mast-desktop">{l.login}</Link>}
+          <Link href={signedIn ? '/dashboard' : '/register'} onClick={close} className={buttonClass('brand', 'md', 'mast-entry')}>
+            {signedIn ? l.dashboard : l.getStarted}<Arrow />
+          </Link>
+          <button ref={toggle} type="button" className="mast-toggle" aria-controls="site-menu"
+            aria-label={open ? t.app.closeMenu : t.common.menu} aria-expanded={open} onClick={() => setOpen(!open)}>
+            {open ? <X className="size-5" /> : <Menu className="size-5" />}
+          </button>
         </div>
-
-        <button
-          type="button"
-          className="ms-auto rounded-md p-2 text-ink-2 transition-colors hover:bg-raised lg:hidden"
-          onClick={() => setOpen((o) => !o)}
-          aria-label={t.common.menu}
-          aria-expanded={open}
-          aria-controls="site-menu"
-        >
-          {open ? <X className="size-5" /> : <Menu className="size-5" />}
-        </button>
       </div>
-
-      {open && (
-        <div id="site-menu" className="animate-fade-in border-t border-line lg:hidden">
-          <nav aria-label={t.common.menu} className="mx-auto flex max-w-7xl flex-col px-4 py-2 sm:px-6">
-            {l.nav.map((label, i) => (
-              <Link key={label} href={siteHref(NAV_HREFS[i]!)} onClick={close} className="border-b border-line/60 py-3.5 text-base font-medium text-ink-2 hover:text-ink">
-                {label}
-              </Link>
-            ))}
-          </nav>
-          <div className="mx-auto grid max-w-7xl grid-cols-2 gap-3 px-4 py-4 sm:px-6">
-            <Link href={signedIn ? '/dashboard' : '/login'} onClick={close} className={buttonClass('outline', 'lg')}>
-              {signedIn ? l.dashboard : l.login}
-            </Link>
-            <Link href="/register" onClick={close} className={buttonClass('white', 'lg')}>
-              {l.getStarted}
-            </Link>
-          </div>
-          {/* Currency first and theme last: their popups open from the near edge toward the middle. */}
-          <div className="mx-auto flex max-w-7xl items-center justify-between border-t border-line px-4 py-3 sm:px-6">
-            <div className="flex items-center gap-1">
-              <CurrencySwitch align="start" />
-              <LangSwitch />
-            </div>
-            <ThemeSwitch />
-          </div>
+      <div id="site-menu" hidden={!open} className="mast-menu">
+        <div className="mast-preferences">
+          <CurrencySwitch align="start" /><LangSwitch /><ThemeSwitch className="ms-auto" />
         </div>
-      )}
+        <nav aria-label={t.common.menu} className="mast-links">{links}</nav>
+        {!signedIn && <Link href="/login" className="mast-menu-login" onClick={close}>{l.login}<Arrow /></Link>}
+      </div>
     </header>
   );
 }
@@ -226,7 +257,7 @@ export function SiteFooter() {
   const siteHref = useSiteHref();
 
   return (
-    <footer className="border-t border-line bg-surface">
+    <footer className="studio-footer border-t border-line">
       <div className="mx-auto grid max-w-7xl gap-12 px-4 py-16 sm:px-6 lg:grid-cols-[1.5fr_3fr] lg:px-8">
         <div className="max-w-sm">
           <Link href="/" aria-label={BRAND.name}>

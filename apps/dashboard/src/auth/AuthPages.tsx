@@ -31,7 +31,7 @@ function MethodSwitch({ value, onChange }: { value: SignInMethod; onChange: (met
     { id: 'email' as const, label: m.email, icon: Mail },
   ];
   return (
-    <div role="tablist" aria-label={m.label} className="grid grid-cols-2 gap-1 rounded-lg bg-raised p-1">
+    <div role="tablist" aria-label={m.label} className="grid grid-cols-2 gap-1 rounded-full border border-line bg-surface p-1">
       {options.map((option) => {
         const on = value === option.id;
         const Icon = option.icon;
@@ -42,7 +42,7 @@ function MethodSwitch({ value, onChange }: { value: SignInMethod; onChange: (met
             role="tab"
             aria-selected={on}
             onClick={() => onChange(option.id)}
-            className={cx('flex h-9 items-center justify-center gap-2 rounded-md text-sm font-medium transition-colors', on ? 'bg-card text-ink shadow-xs' : 'text-muted hover:text-ink')}
+            className={cx('flex h-9 items-center justify-center gap-2 rounded-full text-sm font-semibold transition-colors', on ? 'bg-brand/12 text-brand' : 'text-muted hover:text-ink')}
           >
             <Icon className="size-4" />
             {option.label}
@@ -57,19 +57,19 @@ function MethodSwitch({ value, onChange }: { value: SignInMethod; onChange: (met
 export function AuthLayout({ title, subtitle, children, footer, wide }: { title: string; subtitle: ReactNode; children: ReactNode; footer: ReactNode; wide?: boolean }) {
   const { t } = useI18n();
   return (
-    <main className={cx('page-wash relative flex min-h-svh flex-col items-center justify-center gap-6 overflow-hidden bg-bg p-6 md:p-10', wide && 'px-4 pt-16 pb-6 md:p-8')}>
+    <main className="relative flex min-h-svh flex-col items-center justify-center gap-6 bg-surface px-4 pt-20 pb-8 sm:px-8">
       <div aria-hidden className="animate-glow pointer-events-none absolute -top-40 left-1/2 size-[480px] -translate-x-1/2 rounded-full bg-brand/[0.07] blur-[110px]" />
       <div className="absolute top-4 end-4 flex items-center gap-1">
         <ThemeSwitch />
         <LangSwitch />
       </div>
-      <div className={cx('relative flex w-full flex-col', wide ? 'max-w-4xl gap-6' : 'max-w-sm gap-8')}>
+      <div className={cx('relative flex w-full flex-col rounded-[1.75rem] border border-line bg-card p-6 shadow-sm sm:p-9', wide ? 'max-w-4xl gap-6' : 'max-w-md gap-8')}>
         <div className={cx('animate-fade-up flex flex-col items-center', wide ? 'gap-3' : 'gap-4')}>
           <Link href="/" aria-label={t.common.home} className="transition-transform duration-500 hover:scale-105 hover:-rotate-6">
             <LogoMark className={wide ? 'size-10' : 'size-11'} />
           </Link>
           <div className="space-y-2 text-center">
-            <h1 className="text-xl font-medium">{title}</h1>
+            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{title}</h1>
             <p className="text-sm text-muted">{subtitle}</p>
           </div>
         </div>
@@ -304,7 +304,7 @@ export function LoginPage({ onAuthed }: { onAuthed: () => void }) {
         </>
       }
     >
-      <form onSubmit={submit} className="grid gap-5">
+      <form onSubmit={submit} className="grid gap-5 lg:gap-[clamp(0.7rem,2svh,1.25rem)]">
         <MethodSwitch
           value={method}
           onChange={(next) => {
@@ -358,7 +358,7 @@ export function LoginPage({ onAuthed }: { onAuthed: () => void }) {
           </Link>
         </div>
         <ErrorNote>{error}</ErrorNote>
-        <Button type="submit" loading={loading} size="lg" className="mt-2 w-full">
+        <Button type="submit" loading={loading} size="lg" className="w-full">
           {l.submit}
         </Button>
       </form>
@@ -443,28 +443,33 @@ function SplitAuthLayout({
   const r = t.auth.register;
   const icons = [Wallet, Code2, LayoutDashboard];
   return (
-    <main className="relative flex min-h-svh bg-bg">
+    <main className="account-entry relative grid min-h-svh items-stretch bg-surface lg:grid-cols-[minmax(20rem,0.86fr)_minmax(0,1.14fr)] lg:gap-3 lg:p-3">
       {/* brand panel */}
-      <aside className="relative hidden w-[46%] max-w-xl shrink-0 overflow-hidden bg-gradient-to-br from-grad-from to-grad-to text-on-brand lg:sticky lg:top-0 lg:flex lg:h-svh lg:flex-col lg:justify-between lg:p-10 xl:p-12">
-        <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[0.12] [background-image:radial-gradient(currentColor_1px,transparent_1px)] [background-size:22px_22px]" />
-        <div aria-hidden className="animate-glow pointer-events-none absolute -bottom-32 -start-24 size-[420px] rounded-full bg-white/15 blur-[100px]" />
+      <aside className="relative isolate hidden overflow-hidden rounded-[1.65rem] bg-[#103b2b] text-[#edf9e8] lg:flex lg:flex-col lg:justify-between lg:p-[clamp(1.5rem,4.5svh,3rem)]">
+        <svg aria-hidden viewBox="0 0 480 220" preserveAspectRatio="xMidYMid slice" className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[clamp(8rem,25svh,16rem)] w-full text-[#a8e8b6]/50">
+          <g fill="none" stroke="currentColor" strokeWidth="1">
+            {[0, 1, 2, 3, 4, 5].map((line) => (
+              <path key={line} transform={`translate(0 ${line * 13})`} d="M-40 148H78C145 148 149 36 220 36h62c72 0 74 75 152 75h88" />
+            ))}
+          </g>
+        </svg>
         <Link href="/" aria-label={t.common.home} className="animate-fade-up relative inline-flex w-fit items-center gap-2.5">
           <LogoMark className="size-9" />
           <span dir="ltr" className="text-lg font-bold tracking-tight">
             {BRAND.name}
           </span>
         </Link>
-        <div className="relative space-y-6 py-6">
-          <div className="animate-fade-up space-y-2" style={delay(80)}>
-            <p className="text-xs font-semibold tracking-[0.2em] uppercase opacity-70">{panel.eyebrow}</p>
-            <h2 className="text-2xl leading-tight font-bold xl:text-3xl">{panel.heading}</h2>
+        <div className="relative mx-auto w-full max-w-lg py-[clamp(1rem,3.5svh,2.5rem)]">
+          <div className="animate-fade-up space-y-3" style={delay(80)}>
+            <p className="flex items-center gap-2 text-xs font-semibold text-[#c8e9c5]"><span aria-hidden className="h-px w-7 bg-current" />{panel.eyebrow}</p>
+            <h2 className="max-w-[17ch] text-[clamp(2rem,5.5svh,3rem)] leading-tight font-semibold tracking-tight text-balance">{panel.heading}</h2>
           </div>
-          <ul className="space-y-4">
+          <ul className="mt-[clamp(0.85rem,2.6svh,1.75rem)] divide-y divide-white/15 border-y border-white/15">
             {r.panel.points.map((p, i) => {
               const Icon = icons[i] ?? Check;
               return (
-                <li key={p.title} className="animate-fade-up flex items-start gap-4" style={delay(160 + i * 80)}>
-                  <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/20 backdrop-blur">
+                <li key={p.title} className="animate-fade-up flex items-start gap-4 py-[clamp(0.5rem,1.5svh,0.875rem)]" style={delay(160 + i * 80)}>
+                  <span className="grid size-9 shrink-0 place-items-center rounded-full border border-white/20 bg-white/5 text-[#cbefc9]">
                     <Icon className="size-5" />
                   </span>
                   <span>
@@ -483,28 +488,29 @@ function SplitAuthLayout({
       </aside>
 
       {/* form */}
-      <section className="page-wash relative flex min-w-0 flex-1 flex-col items-center justify-center px-6 py-14 md:px-10 lg:py-8">
-        <div className="absolute top-3 end-3 flex items-center gap-1">
-          <ThemeSwitch />
-          <LangSwitch />
+      <section className="relative flex min-w-0 flex-col bg-card lg:rounded-[1.65rem] lg:border lg:border-line">
+        <div className="flex items-center justify-between gap-4 border-b border-line px-5 py-3 sm:px-8 lg:justify-end lg:border-0 lg:py-2">
+          <Link href="/" aria-label={t.common.home} className="inline-flex items-center gap-2 font-semibold lg:hidden">
+            <LogoMark className="size-8" /><bdi>{BRAND.name}</bdi>
+          </Link>
+          <div className="flex items-center gap-1"><ThemeSwitch /><LangSwitch /></div>
         </div>
-        <Link href="/" aria-label={t.common.home} className="absolute top-4 start-5 lg:hidden">
-          <LogoMark className="size-9" />
-        </Link>
-        <div className="relative w-full max-w-md space-y-6">
-          <div className="animate-fade-up space-y-4">
+        <div className="relative mx-auto my-auto w-full max-w-lg space-y-6 px-6 py-10 sm:px-8 lg:space-y-[clamp(0.8rem,2.4svh,1.5rem)] lg:py-[clamp(0.75rem,2.4svh,2.5rem)]">
+          <div className="animate-fade-up space-y-4 lg:space-y-2.5">
             {steps && <Steps items={steps.items} current={steps.current} />}
             <div className="space-y-1.5">
-              <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+              <h1 className="text-3xl leading-tight font-semibold tracking-tight text-balance sm:text-4xl">{title}</h1>
               <p className="text-sm text-muted">{subtitle}</p>
             </div>
           </div>
           <div className="animate-fade-up" style={delay(120)}>
             {children}
           </div>
-          <p className="animate-fade-in text-center text-sm text-muted" style={delay(300)}>
-            {footer}
-          </p>
+          {footer && (
+            <p className="animate-fade-in border-t border-line pt-4 text-center text-sm text-muted" style={delay(300)}>
+              {footer}
+            </p>
+          )}
         </div>
       </section>
     </main>

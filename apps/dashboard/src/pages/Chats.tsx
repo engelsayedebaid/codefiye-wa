@@ -16,7 +16,6 @@ import {
   Eye,
   EyeOff,
   Focus as FocusIcon,
-  Lock,
   MessageSquarePlus,
   MessagesSquare,
   Minimize2,
@@ -53,6 +52,7 @@ import { useLiveEvents } from '../events';
 import { useI18n } from '../i18n';
 import { debouncedInvalidate, qk } from '../queries';
 import { Link } from '../router';
+import { FeatureAccess } from './FeatureAccess';
 import { Button, buttonClass, cx, delay, EmptyState, ErrorNote, flip, LoadError, Loading, Modal, PageHeader } from '../ui';
 
 const SESSION_KEY = 'wa.chats.session';
@@ -283,35 +283,16 @@ function ChatsGate() {
   const { t } = useI18n();
   const g = t.chats.gate;
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-6">
+    <div className="mx-auto w-full max-w-7xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
       <PageHeader title={t.chats.title} description={t.chats.description} />
-      <section className="animate-fade-up overflow-hidden rounded-xl border border-line bg-card shadow-sm">
-        <div className="relative flex flex-col items-center gap-3 px-6 py-10 text-center">
-          <span aria-hidden className="absolute -top-16 size-48 rounded-full bg-brand/15 blur-3xl" />
-          <span className="relative flex size-14 items-center justify-center rounded-2xl bg-raised text-muted shadow-lg">
-            <MessagesSquare className="size-7" />
-            <span className="absolute -bottom-1 -end-1 flex size-6 items-center justify-center rounded-full bg-card ring-1 ring-line">
-              <Lock className="size-3.5 text-muted" />
-            </span>
-          </span>
-          <h2 className="relative text-lg font-semibold">{g.title}</h2>
-          <p className="relative max-w-md text-sm text-muted">{g.text}</p>
-          <Link href="/subscription" className="relative mt-1">
-            <Button>{g.upgrade}</Button>
-          </Link>
-        </div>
-        <div className="border-t border-line bg-raised/30 px-6 py-5 text-start">
-          <p className="mb-3 text-xs font-medium text-muted">{g.featuresTitle}</p>
-          <ul className="grid gap-2.5 sm:grid-cols-2">
-            {g.features.map((f) => (
-              <li key={f} className="flex items-start gap-2 text-sm text-ink-2">
-                <Check className="mt-0.5 size-4 shrink-0 text-brand" />
-                {f}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </section>
+      <FeatureAccess
+        icon={<MessagesSquare className="size-6" />}
+        title={g.title}
+        description={g.text}
+        featuresLabel={g.featuresTitle}
+        features={g.features}
+        upgradeLabel={g.upgrade}
+      />
     </div>
   );
 }
@@ -794,17 +775,17 @@ export function ChatsPage() {
       {/* chats column */}
       <aside
         className={cx(
-          'shrink-0 flex-col border-e border-line',
+          'shrink-0 flex-col border-e border-line bg-card',
           drawer
-            ? 'animate-drawer-in absolute inset-y-0 start-0 z-30 flex w-[22rem] max-w-[90vw] bg-bg shadow-2xl'
+            ? 'animate-drawer-in absolute inset-y-0 start-0 z-30 flex w-[22rem] max-w-[90vw] shadow-2xl'
             : listAside
               ? 'hidden'
-              : cx('w-full bg-bg lg:flex lg:w-[22rem]', showMain ? 'hidden' : 'flex'),
+              : cx('w-full lg:flex lg:w-[22rem]', showMain ? 'hidden' : 'flex'),
         )}
       >
-        <div className={cx('px-3 pb-1', mode ? 'space-y-2 pt-2' : 'space-y-3 pt-4')}>
-          <div className="flex items-center justify-between gap-2 px-1">
-            <h1 className={cx('font-semibold', mode ? 'text-base' : 'text-lg')}>{c.title}</h1>
+        <div className={cx('border-b border-line bg-card px-3 pb-2', mode ? 'space-y-2 pt-2' : 'space-y-3 pt-4')}>
+          <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+            <h1 className={cx('font-semibold tracking-tight text-ink', mode ? 'text-base' : 'text-xl')}>{c.title}</h1>
             <div className="flex items-center gap-0.5">
               <IconAction label={connected ? c.newChat.open : c.newChat.offline} onClick={() => setNewChat(true)} disabled={!connected}>
                 <MessageSquarePlus className="size-[18px]" />

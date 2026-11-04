@@ -837,7 +837,7 @@ export function TemplatesPage() {
       {templates === null ? (
         !query.isError && <Loading />
       ) : templates.length === 0 ? (
-        <div className="animate-fade-up rounded-xl border border-line">
+        <div className="animate-fade-up rounded-3xl border border-line bg-card px-4 py-6">
           <EmptyState
             icon={FileText}
             title={tt.emptyTitle}
@@ -854,16 +854,16 @@ export function TemplatesPage() {
           />
         </div>
       ) : (
-        <div className="grid items-start gap-6 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           {templates.map((template, i) => {
             const meta = categoryMeta(template.category);
             return (
               <article
                 key={template.id}
-                className="lift animate-fade-up flex flex-col overflow-hidden rounded-xl border border-line bg-card shadow-sm"
+                className="animate-fade-up flex min-w-0 flex-col overflow-hidden rounded-[1.45rem] border border-line bg-card shadow-xs transition-colors hover:border-line-strong"
                 style={delay(i * 70)}
               >
-                <header className="flex items-start justify-between gap-3 px-5 pt-5">
+                <header className="flex flex-wrap items-start justify-between gap-3 border-b border-line bg-surface/55 px-5 py-4">
                   <div className="min-w-0 space-y-1.5">
                     <h3 className="ltr truncate font-mono text-base font-semibold">{template.name}</h3>
                     <p className="text-xs text-muted">{tt.updated(fmt.timeAgo(template.updatedAt))}</p>

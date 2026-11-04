@@ -100,6 +100,8 @@ export const en: Dict = {
   },
   landing: {
     nav: ['Platform', 'Solutions', 'Developers', 'Pricing', 'Docs'],
+    preferences: 'Display preferences',
+    language: 'Language',
     login: 'Log in',
     getStarted: 'Start free',
     dashboard: 'Dashboard',
@@ -115,6 +117,13 @@ export const en: Dict = {
       otpTitle: 'Turn on WhatsApp OTP',
       otpText: 'in your website or app with one API call — we generate the code, send it to your customer and return it to your server.',
       otpCta: 'How to set it up',
+      otpPreview: {
+        caption: 'WhatsApp verification message preview',
+        sender: 'Business account',
+        message: 'Your verification code is',
+        safety: 'Do not share this code with anyone.',
+        delivered: 'Verification code delivered',
+      },
       trust: ['No credit card required', `${TRIAL_DAYS}-day free trial`, 'Cancel anytime'],
     },
     mock: {

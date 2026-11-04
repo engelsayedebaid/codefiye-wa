@@ -5,34 +5,31 @@
 @custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
 
 /*
- * Whop's look (Frosted UI): Radix-style neutral greys, with WhatsApp green as the one accent. These are the dark
- * values (#111 page, #191919 panels, hairline white-alpha borders); `:root[data-theme='light']`
- * below overrides the same variables. Status inks (--color-good and friends) are the readable
- * color, so `bg-good/12 text-good` is a soft chip in both themes.
- * Latin glyphs render in Inter (Whop's UI face), Arabic falls through to Cairo;
- * code is Geist Mono.
+ * Forest and paper surfaces are shared by the public site and the workspace.
+ * Status colors stay distinct from brand actions in both themes.
+ * Latin glyphs use Instrument Sans, Arabic glyphs use IBM Plex Sans Arabic, and code uses Geist Mono.
  */
 @theme {
-  --font-sans: 'Inter', 'Cairo', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Instrument Sans', 'IBM Plex Sans Arabic', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, monospace;
 
-  --radius-md: 0.5rem;
-  --radius-lg: 0.625rem;
-  --radius-xl: 0.875rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 0.9rem;
+  --radius-xl: 1.2rem;
 
-  --color-bg: #111111;
+  --color-bg: #102018;
   /* Quiet inner panels (plan meter, code wells). */
-  --color-surface: #151515;
-  --color-card: #191919;
+  --color-surface: #14251d;
+  --color-card: #1a2a22;
   /* secondary / accent / muted surfaces, hovers */
-  --color-raised: #242424;
-  --color-line: #2a2a2a;
-  --color-line-strong: #484848;
+  --color-raised: #21392c;
+  --color-line: #294537;
+  --color-line-strong: #456653;
   --color-ring: #25d366;
-  --color-ink: #eeeeee;
-  --color-ink-2: #d4d4d4;
-  --color-muted: #b4b4b4;
-  --color-faint: #8b8b8b;
+  --color-ink: #f4faf6;
+  --color-ink-2: #d9e8de;
+  --color-muted: #adc4b5;
+  --color-faint: #a2b6a9;
   --color-navy: #0b2e1f;
   --color-destructive: #c0372d;
   --color-destructive-ink: #ff9081;
@@ -73,32 +70,32 @@
 }
 
 /*
- * Light theme (Whop light): white page and cards, hairline grey borders, WhatsApp Web's deep green accent.
+ * Light theme: warm mint canvas, paper-white panels and a deep WhatsApp green accent.
  * Unlayered, so it wins over Tailwind's theme layer.
  */
 :root[data-theme='light'] {
-  --color-bg: #ffffff;
-  --color-surface: #f9f9f9;
-  --color-card: #ffffff;
-  --color-raised: #f0f0f0;
-  --color-line: #e3e3e3;
-  --color-line-strong: #cecece;
-  --color-ring: #008069;
-  --color-ink: #202020;
-  --color-ink-2: #3a3a3a;
-  --color-muted: #646464;
-  --color-faint: #6f6f6f;
-  --color-navy: #e7f8ef;
+  --color-bg: #f4faf5;
+  --color-surface: #edf2eb;
+  --color-card: #fffffd;
+  --color-raised: #e5f1e8;
+  --color-line: #d8e7dc;
+  --color-line-strong: #bed3c4;
+  --color-ring: #128c5a;
+  --color-ink: #17261d;
+  --color-ink-2: #344b3c;
+  --color-muted: #506559;
+  --color-faint: #5f7264;
+  --color-navy: #ddf4e5;
   --color-destructive: #d42020;
   --color-destructive-ink: #c81e1e;
 
-  --color-brand: #008069;
-  --color-brand-strong: #006b58;
-  --color-brand-deep: #075e54;
-  --color-teal: #128c7e;
+  --color-brand: #087548;
+  --color-brand-strong: #055c38;
+  --color-brand-deep: #075c3a;
+  --color-teal: #0a9a68;
   --color-on-brand: #fff;
-  --color-grad-from: #00a884;
-  --color-grad-to: #075e54;
+  --color-grad-from: #29c875;
+  --color-grad-to: #087847;
 
   --color-series-sent: #008069;
   --color-series-received: #1754d8;
@@ -120,11 +117,11 @@
 }
 
 html {
-  color-scheme: dark;
+  color-scheme: light;
   scroll-behavior: smooth;
 }
-html[data-theme='light'] {
-  color-scheme: light;
+html[data-theme='dark'] {
+  color-scheme: dark;
 }
 
 /*
@@ -166,6 +163,77 @@ html[data-theme='light'] {
 
 body {
   @apply bg-bg font-sans text-ink antialiased;
+  background-image:
+    radial-gradient(ellipse 55% 34% at 50% -8%, color-mix(in oklab, var(--color-brand) 12%, transparent), transparent 72%),
+    linear-gradient(180deg, color-mix(in oklab, var(--color-card) 28%, transparent), transparent 36rem);
+  background-attachment: fixed;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-brand) 22%, var(--color-card));
+  color: var(--color-ink);
+}
+
+@layer base {
+  :where(a, button, summary, [role='tab']):focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 3px;
+  }
+}
+
+@layer components {
+  .ui-panel {
+    border: 1px solid var(--color-line);
+    border-radius: 1.25rem;
+    background: var(--color-card);
+    box-shadow: 0 2px 2px -2px rgb(8 40 22 / .10), 0 14px 42px -36px rgb(8 40 22 / .3);
+  }
+  .ui-page-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-block: .45rem 1.25rem;
+    border-block-end: 1px solid var(--color-line);
+  }
+  .ui-page-heading h1 {
+    font-size: clamp(1.85rem, 3vw, 2.8rem);
+    line-height: 1.22;
+    letter-spacing: -.045em;
+    font-weight: 600;
+    text-wrap: balance;
+  }
+  .ui-page-heading h1::before {
+    content: '';
+    display: block;
+    width: 2rem;
+    height: 3px;
+    margin-block-end: .75rem;
+    border-radius: 1rem;
+    background: var(--color-brand);
+  }
+  .ui-empty-mark {
+    display: grid;
+    place-items: center;
+    width: 3.25rem;
+    aspect-ratio: 1;
+    margin-block-end: .4rem;
+    border: 1px solid var(--color-line);
+    border-radius: 1rem;
+    background: var(--color-surface);
+    color: var(--color-brand);
+    box-shadow: 0 0 0 .35rem color-mix(in srgb, var(--color-brand) 6%, transparent);
+  }
+  .ui-state-sheet {
+    width: min(100%, 32rem);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.25rem;
+    padding: clamp(1.5rem, 5vw, 3.25rem);
+    border-block-start: 3px solid var(--color-brand);
+  }
 }
 
 /* Arabic script sits taller; give running text a little more room. */
@@ -184,6 +252,7 @@ body {
 .card-luxury {
   position: relative;
   background: var(--color-card);
+  border-radius: 1.35rem;
 }
 
 /*
@@ -193,6 +262,7 @@ body {
   position: relative;
   border: 1px solid var(--color-line);
   background: var(--color-card);
+  border-radius: 1.35rem;
 }
 
 /* A faint accent wash behind the hero's start corner. */
@@ -213,7 +283,7 @@ body {
 [data-theme='light'] .page-wash {
   background-color: var(--color-bg);
   background-image:
-    radial-gradient(ellipse 60% 55% at 0% 0%, color-mix(in oklab, var(--color-brand) 14%, transparent), transparent 70%),
+    radial-gradient(ellipse 70% 62% at 0% 0%, color-mix(in oklab, var(--color-brand) 18%, transparent), transparent 72%),
     radial-gradient(color-mix(in oklab, var(--color-ink) 8%, transparent) 1px, transparent 1.3px);
   background-size:
     100% 100%,
@@ -466,7 +536,7 @@ body {
 }
 [data-theme='light'] .lift:hover {
   border-color: var(--color-line-strong);
-  box-shadow: 0 18px 40px -22px rgb(17 23 20 / 0.22);
+  box-shadow: 0 22px 52px -28px rgb(32 89 55 / 0.3);
 }
 
 /* --- Public website (src/site) ---------------------------------------------------------------- */
@@ -487,7 +557,8 @@ body {
     padding-inline: 0.75rem;
     border: 1px solid var(--color-line);
     border-radius: 9999px;
-    background: var(--color-card);
+    background: color-mix(in oklab, var(--color-card) 88%, transparent);
+    box-shadow: 0 8px 24px -18px rgb(18 98 55 / 0.45);
     font-size: 0.8125rem;
     font-weight: 500;
     color: var(--color-ink-2);
@@ -509,29 +580,21 @@ body {
   .site-card {
     border: 1px solid var(--color-line);
     background-color: var(--color-card);
+    border-radius: 1.5rem;
   }
   [data-theme='light'] .site-card {
-    box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
+    box-shadow:
+      0 1px 2px rgb(19 64 37 / 0.04),
+      0 18px 55px -38px rgb(15 91 48 / 0.38);
   }
 
-  /* Header: see-through at the top, a solid bar with a hairline once the page scrolls. */
-  .site-header {
-    background-color: color-mix(in oklab, var(--color-bg) 70%, transparent);
-    border-bottom: 1px solid transparent;
-    -webkit-backdrop-filter: blur(16px);
-    backdrop-filter: blur(16px);
-    transition:
-      border-color 0.2s,
-      background-color 0.2s;
-  }
-  .site-header[data-scrolled] {
-    background-color: color-mix(in oklab, var(--color-bg) 90%, transparent);
-    border-bottom-color: var(--color-line);
-  }
 
   /* Hero backdrop: one faint brand wash from the top edge, nothing else. */
   .hero-aura {
-    background: radial-gradient(50% 40% at 50% 0%, color-mix(in oklab, var(--color-brand) 9%, transparent), transparent 75%);
+    background:
+      radial-gradient(ellipse 48% 52% at 50% 12%, color-mix(in oklab, var(--color-brand) 22%, transparent), transparent 72%),
+      radial-gradient(ellipse 26% 30% at 20% 26%, color-mix(in oklab, #7ee2a6 19%, transparent), transparent 74%),
+      radial-gradient(ellipse 26% 32% at 83% 18%, color-mix(in oklab, #d9f4df 60%, transparent), transparent 75%);
   }
   /* Hairline grid fading out from the top (the guide and policy pages). */
   .site-grid {
@@ -550,18 +613,38 @@ body {
     align-items: center;
     justify-content: center;
     border: 1px solid var(--color-line);
-    border-radius: 0.625rem;
-    background: color-mix(in oklab, var(--color-ink) 4%, var(--color-card));
-    color: var(--color-ink);
+    border-radius: 0.9rem;
+    background: color-mix(in oklab, var(--color-brand) 8%, var(--color-card));
+    color: var(--color-brand-deep);
   }
 
   /* A tinted band between plain sections. */
   .band {
-    background-color: var(--color-surface);
+    background-color: color-mix(in oklab, var(--color-surface) 78%, transparent);
     border-block: 1px solid var(--color-line);
   }
   [data-theme='light'] .band {
-    background-color: #fbfbfb;
+    background-color: #edf6ef;
+  }
+
+  .app-canvas {
+    background-image:
+      radial-gradient(ellipse 42% 30% at 78% 0%, color-mix(in oklab, var(--color-brand) 10%, transparent), transparent 75%),
+      linear-gradient(180deg, color-mix(in oklab, var(--color-card) 18%, transparent), transparent 24rem);
+  }
+  .app-sidebar {
+    background: color-mix(in oklab, var(--color-card) 88%, transparent);
+    -webkit-backdrop-filter: blur(18px);
+    backdrop-filter: blur(18px);
+  }
+  .app-topbar {
+    margin: 0.75rem 0.75rem 0;
+    border: 1px solid var(--color-line);
+    border-radius: 9999px;
+    background: color-mix(in oklab, var(--color-card) 88%, transparent);
+    box-shadow: 0 12px 40px -30px rgb(18 74 40 / 0.5);
+    -webkit-backdrop-filter: blur(18px);
+    backdrop-filter: blur(18px);
   }
 
   /* Logos strip: an endless loop, edges faded. The track holds the list twice. */

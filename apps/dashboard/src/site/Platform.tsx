@@ -27,7 +27,7 @@ function Tile({
 }) {
   return (
     <Reveal delay={delay} className={cx('h-full min-w-0', className)}>
-      <article className={cx('site-card flex h-full flex-col gap-6 overflow-hidden rounded-2xl p-6 sm:p-7', wide && 'lg:grid lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] lg:items-center lg:gap-8')}>
+      <article className={cx('studio-feature site-card flex h-full flex-col gap-6 overflow-hidden rounded-2xl p-6 sm:p-7', wide && 'studio-feature-wide lg:grid lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] lg:items-center lg:gap-8')}>
         <div>
           <div className="flex items-center justify-between gap-3">
             <span className="site-icon size-10">

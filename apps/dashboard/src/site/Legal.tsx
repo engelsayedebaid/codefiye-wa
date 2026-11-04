@@ -40,10 +40,10 @@ function LegalPage({ page }: { page: LegalKey }) {
   const others = (Object.keys(LEGAL_PATHS) as LegalKey[]).filter((key) => key !== page);
 
   return (
-    <div className="min-h-svh overflow-x-clip">
+    <div className="studio-site studio-doc min-h-svh overflow-x-clip">
       <SiteHeader />
       <main id="main">
-        <header className="relative isolate overflow-hidden border-b border-line">
+        <header className="studio-doc-cover relative isolate overflow-hidden border-b border-line">
           <div aria-hidden className="hero-aura absolute inset-0 -z-10" />
           <div aria-hidden className="site-grid absolute inset-0 -z-10" />
           <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
@@ -80,7 +80,7 @@ function LegalPage({ page }: { page: LegalKey }) {
           <div className="mt-16 grid gap-10 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-16">
             <TocAside title={p.tocTitle} items={toc} active={active} numbered />
 
-            <article className="max-w-3xl min-w-0">
+            <article className="studio-reader max-w-3xl min-w-0">
               <TocFold title={p.tocTitle} items={toc} active={active} numbered className="mb-10" />
               <div className="space-y-14">
                 {p.sections.map((s, i) => (

@@ -52,23 +52,22 @@ type Variant = 'white' | 'brand' | 'outline' | 'secondary' | 'ghost' | 'danger';
 type Size = 'sm' | 'md' | 'lg';
 
 const VARIANTS: Record<Variant, string> = {
-  // Whop: a near-white primary on dark, the brand green in the light theme.
-  white: 'bg-ink text-bg hover:bg-ink/90 light:bg-brand light:text-on-brand light:hover:bg-brand-strong',
-  brand: 'bg-brand text-on-brand hover:bg-brand-strong',
-  outline: 'border border-line-strong/70 bg-transparent text-ink hover:bg-raised',
+  white: 'bg-ink text-bg shadow-[0_10px_24px_-16px_rgb(0_0_0/0.8)] hover:bg-ink/90 light:bg-brand light:text-on-brand light:shadow-[0_14px_28px_-18px_rgb(6_112_61/0.75)] light:hover:bg-brand-strong',
+  brand: 'bg-brand text-on-brand shadow-[0_14px_28px_-18px_rgb(6_112_61/0.75)] hover:bg-brand-strong',
+  outline: 'border border-line-strong/70 bg-card/65 text-ink shadow-xs backdrop-blur hover:bg-raised',
   secondary: 'bg-ink/[0.07] text-ink hover:bg-ink/[0.11]',
   ghost: 'text-ink-2 hover:bg-raised hover:text-ink',
   danger: 'bg-destructive text-white hover:bg-destructive/90',
 };
 const SIZES: Record<Size, string> = {
-  sm: 'h-8 px-3 text-sm gap-1.5 rounded-lg',
-  md: 'h-9 px-4 text-sm gap-2 rounded-[10px]',
-  lg: 'h-11 px-6 text-base gap-2.5 rounded-xl',
+  sm: 'h-8 px-3.5 text-sm gap-1.5 rounded-full',
+  md: 'h-9 px-4.5 text-sm gap-2 rounded-full',
+  lg: 'h-11 px-6 text-base gap-2.5 rounded-full',
 };
 
 export const buttonClass = (variant: Variant = 'white', size: Size = 'md', className?: string) =>
   cx(
-    'group inline-flex shrink-0 cursor-pointer items-center justify-center font-medium whitespace-nowrap transition-[color,background-color,box-shadow,transform] duration-200 active:scale-[0.97] [&_svg]:shrink-0',
+    'group inline-flex shrink-0 cursor-pointer items-center justify-center font-semibold whitespace-nowrap transition-[color,background-color,box-shadow,transform] duration-150 active:scale-[0.98] motion-reduce:transform-none [&_svg]:shrink-0',
     'outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50',
     VARIANTS[variant],
     SIZES[size],
@@ -253,11 +252,17 @@ export function Card({
 }) {
   const hasHeader = Boolean(title || actions);
   return (
-    <section style={style} className={cx('flex min-w-0 flex-col gap-6 rounded-2xl border border-line bg-card py-6', className)}>
+    <section
+      style={style}
+      className={cx(
+        'ui-panel flex min-w-0 flex-col gap-5 py-5 sm:gap-6 sm:py-6',
+        className,
+      )}
+    >
       {hasHeader && (
-        <header className="flex flex-wrap items-start justify-between gap-3 px-6">
-          <div className="space-y-1.5">
-            <h2 className="text-base leading-none font-semibold">{title}</h2>
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 pb-4 sm:px-6">
+          <div className="min-w-0 space-y-1.5">
+            {title && <h2 className="text-lg leading-snug font-semibold tracking-tight">{title}</h2>}
             {description && <p className="text-sm text-muted">{description}</p>}
           </div>
           {actions && <div className="flex max-w-full flex-wrap items-center gap-2">{actions}</div>}
@@ -270,13 +275,13 @@ export function Card({
 
 export function PageHeader({ title, description, actions }: { title: string; description?: ReactNode; actions?: ReactNode }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4">
+    <header className="ui-page-heading">
       <div className="space-y-1">
-        <h1 className="text-2xl leading-tight font-semibold tracking-[-0.015em]">{title}</h1>
+        <h1>{title}</h1>
         {description && <p className="text-sm text-muted">{description}</p>}
       </div>
       {actions && <div className="flex max-w-full flex-wrap items-center gap-2">{actions}</div>}
-    </div>
+    </header>
   );
 }
 
@@ -294,17 +299,17 @@ export function Progress({ value, className }: { value: number; className?: stri
     return () => cancelAnimationFrame(frame);
   }, [pct]);
   return (
-    <div role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct)} className={cx('h-2.5 w-full overflow-hidden rounded-full bg-ink/20', className)}>
-      <div className="h-full rounded-full bg-ink transition-[width] duration-1000 ease-out" style={{ width: `${shown}%` }} />
+    <div role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct)} className={cx('h-1.5 overflow-hidden rounded-full bg-raised', className)}>
+      <div className="h-full rounded-full bg-brand transition-[width] duration-500 ease-out motion-reduce:transition-none" style={{ width: `${shown}%` }} />
     </div>
   );
 }
 
 export function EmptyState({ icon: Icon, title, text, action }: { icon: typeof Wifi; title: string; text?: ReactNode; action?: ReactNode }) {
   return (
-    <div className="flex flex-col items-center justify-center py-12 text-center">
-      <span className="animate-float rounded-full bg-raised p-3">
-        <Icon className="size-6 text-muted" />
+    <div className="flex flex-col items-center justify-center px-3 py-12 text-center">
+      <span className="ui-empty-mark">
+        <Icon className="size-6" aria-hidden />
       </span>
       <h3 className="mt-4 text-lg font-medium">{title}</h3>
       {text && <p className="mt-2 max-w-sm text-sm text-muted">{text}</p>}
@@ -316,7 +321,7 @@ export function EmptyState({ icon: Icon, title, text, action }: { icon: typeof W
 // --- form controls -------------------------------------------------------------------------------
 
 export const inputClass =
-  'h-9 w-full min-w-0 rounded-[10px] border border-line-strong/60 bg-card px-3 py-1 text-base text-ink outline-none transition-[color,box-shadow,border-color] placeholder:text-muted md:text-sm focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50';
+  'h-10 w-full min-w-0 rounded-[14px] border border-line-strong/60 bg-card px-3.5 py-1 text-base text-ink shadow-xs outline-none transition-[color,box-shadow,border-color] placeholder:text-muted md:text-sm focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50';
 
 export function Field({
   label,
@@ -617,19 +622,19 @@ export function Modal({
   const scrolls = size === 'xl' || tall;
   return (
     // A dialog taller than the screen scrolls the overlay (`my-auto` keeps short ones centred) instead of being cut off.
-    <div className="animate-fade-in fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-[2px]" onClick={onClose}>
+    <div className="animate-fade-in fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#0c231c]/55 p-3 backdrop-blur-sm sm:p-5" onClick={onClose}>
       <div
         role="dialog"
         aria-modal
         aria-label={title}
-        className={cx('animate-scale-in relative my-auto flex w-full flex-col rounded-2xl border border-line bg-card shadow-2xl shadow-black/40 light:shadow-black/10', size !== 'sm' && 'gap-4 p-6', MODAL_SIZES[size], tall && 'max-h-[92svh] pb-0')}
+        className={cx('animate-scale-in relative my-auto flex w-full min-w-0 flex-col rounded-3xl border border-line bg-card shadow-2xl', size !== 'sm' && 'gap-5 p-6', MODAL_SIZES[size], tall && 'max-h-[92svh] pb-0')}
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="space-y-2 pe-6 text-start">
-          <h2 className={cx('leading-none font-semibold', size === 'sm' ? 'text-base' : 'text-lg')}>{title}</h2>
+        <header className="space-y-2 border-b border-line pe-9 pb-4 text-start">
+          <h2 className={cx('leading-snug font-semibold', size === 'sm' ? 'text-base' : 'text-xl')}>{title}</h2>
           {description && <p className="text-sm text-muted">{description}</p>}
         </header>
-        <button onClick={onClose} className="absolute top-4 end-4 rounded-xs opacity-70 transition-opacity hover:opacity-100" aria-label={t.common.close}>
+        <button onClick={onClose} className="absolute top-3 end-3 grid size-8 place-items-center rounded-full border border-line bg-surface text-muted hover:text-ink" aria-label={t.common.close}>
           <X className="size-4" />
         </button>
         <div ref={bodyRef} className={cx(size === 'sm' ? 'space-y-3' : 'space-y-4', scrolls && '-mx-6 min-h-0 flex-1 overflow-y-auto px-6 pt-1')}>

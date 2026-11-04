@@ -19,9 +19,9 @@ const REQUEST_TONES: Record<PlanRequest['status'], Tone> = { pending: 'info', ap
 
 function Stat({ label, value, index }: { label: string; value: ReactNode; index: number }) {
   return (
-    <div className="animate-fade-up rounded-lg bg-raised/40 p-4 transition-colors hover:bg-raised/60" style={delay(150 + index * 60)}>
-      <dt className="text-sm text-muted">{label}</dt>
-      <dd className="mt-1 text-xl font-semibold tabular-nums">{value}</dd>
+    <div className="animate-fade-up min-w-0 bg-card px-4 py-5 sm:px-5" style={delay(150 + index * 60)}>
+      <dt className="text-xs font-semibold text-muted">{label}</dt>
+      <dd className="mt-3 text-2xl font-semibold tracking-tight text-ink tabular-nums">{value}</dd>
     </div>
   );
 }
@@ -116,7 +116,7 @@ export function SubscriptionPage() {
         actions={plan && (inactive ? <Badge tone="critical">{s.expired}</Badge> : <Badge tone="good">{s.active}</Badge>)}
       >
         {plan && (
-          <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-line bg-line lg:grid-cols-4">
             <Stat index={0} label={s.stats.sessions} value={unlimited ? <InfinityIcon className="size-6 text-brand" /> : fmt.number.format(plan.sessions)} />
             <Stat index={1} label={s.stats.rpm} value={fmt.number.format(plan.rpm)} />
             <Stat index={2} label={s.stats.daily} value={plan.dailyMessages === null ? t.common.unlimited : fmt.number.format(plan.dailyMessages)} />
@@ -171,7 +171,7 @@ export function SubscriptionPage() {
             </div>
           )}
 
-          <div className="animate-fade-up flex items-start gap-3 rounded-lg border border-line bg-raised/20 p-4 text-sm" style={delay(120)}>
+          <div className="animate-fade-up flex items-start gap-3 border-s-2 border-brand bg-brand/5 px-5 py-4 text-sm" style={delay(120)}>
             <Info className="mt-0.5 size-4 shrink-0 text-muted" />
             <p className="text-ink-2">
               {s.howItWorks}{' '}

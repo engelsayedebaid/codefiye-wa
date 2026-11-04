@@ -5,8 +5,8 @@ export type Theme = 'light' | 'dark';
 
 /** Keep in sync with the pre-paint script in index.html. */
 const THEME_KEY = 'wa.theme';
-const DEFAULT_PREF: ThemePref = 'dark';
-const META_COLORS: Record<Theme, string> = { light: '#ffffff', dark: '#111111' };
+const DEFAULT_PREF: ThemePref = 'light';
+const META_COLORS: Record<Theme, string> = { light: '#f4faf5', dark: '#102018' };
 
 function readPref(): ThemePref {
   try {

@@ -93,7 +93,7 @@ export function SessionsPage() {
 
       {/* usage + filter */}
       {account && sessions && sessions.length > 0 && (
-        <div className="animate-fade-up flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-b border-line pb-4" style={delay(60)}>
+        <div className="animate-fade-up flex flex-wrap items-center justify-between gap-x-6 gap-y-3 rounded-2xl border border-line bg-card px-4 py-3 shadow-xs" style={delay(60)}>
           <div role="radiogroup" aria-label={s.filter} className="flex flex-wrap gap-1">
             {chips.map((c) => {
               const active = filter === c.value;
@@ -104,7 +104,7 @@ export function SessionsPage() {
                   role="radio"
                   aria-checked={active}
                   onClick={() => setFilter(c.value)}
-                  className={cx('flex h-8 items-center gap-2 rounded-md px-3 text-sm transition-colors', active ? 'bg-raised font-medium text-ink' : 'text-muted hover:bg-raised/60 hover:text-ink')}
+                  className={cx('flex h-8 items-center gap-2 rounded-full px-3 text-sm transition-colors', active ? 'bg-brand/12 font-semibold text-brand' : 'text-muted hover:bg-raised/60 hover:text-ink')}
                 >
                   {c.dot && <span className={cx('size-1.5 rounded-full', c.dot)} />}
                   {c.label}
@@ -113,7 +113,7 @@ export function SessionsPage() {
               );
             })}
           </div>
-          <div className="flex items-center gap-4 text-sm">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-sm">
             <span className="whitespace-nowrap text-muted">{limit === null ? s.usageUnlimited(used) : s.usageText(used, limit)}</span>
             {limit !== null && <Progress className="h-1.5 w-24 shrink-0" value={limit ? (used / limit) * 100 : 0} />}
             {atLimit && (
@@ -137,7 +137,7 @@ export function SessionsPage() {
           </div>
         )
       ) : sessions!.length === 0 ? (
-        <div className="animate-fade-up rounded-xl border border-dashed border-line" style={delay(60)}>
+        <div className="animate-fade-up rounded-3xl border border-line bg-card px-4 py-6" style={delay(60)}>
           <EmptyState
             icon={Smartphone}
             title={s.emptyTitle}
@@ -157,16 +157,17 @@ export function SessionsPage() {
             const needsLink = session.status !== 'connected' && session.status !== 'connecting';
             const tone = SESSION_STATUS[session.status].tone;
             return (
-              <article key={session.id} className="animate-fade-up flex flex-col rounded-xl border border-line bg-card transition-colors hover:border-line-strong" style={delay(80 + i * 50)}>
+              <article key={session.id} className="animate-fade-up flex min-w-0 flex-col overflow-hidden rounded-[1.45rem] border border-line bg-card shadow-xs transition-colors hover:border-line-strong" style={delay(80 + i * 50)}>
                 <Link href={`/sessions/${session.id}`} className="block px-5 pt-5 pb-4">
-                  <span className="flex items-center justify-between gap-3">
-                    <span className="flex min-w-0 items-center gap-2.5">
-                      <span className={cx('size-2 shrink-0 rounded-full', TONES[tone].dot)} />
-                      <span dir="auto" className="truncate text-base font-semibold">{session.name}</span>
+                  <span className="mb-4 flex items-center justify-between gap-3">
+                    <span className="relative grid size-10 place-items-center rounded-xl bg-surface text-ink-2 ring-1 ring-line">
+                      <Smartphone aria-hidden className="size-5" />
+                      <span aria-hidden className={cx('absolute -end-0.5 -bottom-0.5 size-2.5 rounded-full ring-2 ring-card', TONES[tone].dot)} />
                     </span>
                     <SessionStatusBadge status={session.status} />
                   </span>
-                  <span className="mt-1.5 block ps-[18px] text-sm text-muted">{session.phoneNumber ? <Phone value={session.phoneNumber} /> : s.unlinked}</span>
+                  <span dir="auto" className="block truncate text-lg font-semibold">{session.name}</span>
+                  <span className="mt-1 block text-sm text-muted">{session.phoneNumber ? <Phone value={session.phoneNumber} /> : s.unlinked}</span>
                 </Link>
                 <dl className="grid flex-1 grid-cols-[auto_1fr] gap-x-6 gap-y-1 px-5 pb-4 text-sm">
                   <dt className="text-muted">{s.lastActivity}</dt>
@@ -179,7 +180,7 @@ export function SessionsPage() {
                     </dd>
                   )}
                 </dl>
-                <footer className="flex items-center justify-between gap-2 border-t border-line px-5 py-3">
+                <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-line bg-surface/55 px-5 py-3">
                   <Link href={`/sessions/${session.id}`} className={buttonClass(needsLink ? 'white' : 'outline', 'sm')}>
                     {needsLink ? <Smartphone className="size-4" /> : <Settings2 className="size-4" />}
                     {needsLink ? s.link : s.manage}

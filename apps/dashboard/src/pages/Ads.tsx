@@ -49,7 +49,6 @@ import {
   Italic,
   LayoutGrid,
   ListChecks,
-  Lock,
   type LucideIcon,
   Megaphone,
   Moon,
@@ -109,6 +108,7 @@ import { useI18n } from '../i18n';
 import type { Dict } from '../i18n/ar';
 import { debouncedInvalidate, qk } from '../queries';
 import { Link, navigate, useQuery as useSearchParams } from '../router';
+import { FeatureAccess } from './FeatureAccess';
 import type { Session, Template } from '../types';
 import {
   Badge,
@@ -2559,37 +2559,16 @@ function AdsGate({ kind }: { kind: 'soon' | 'upgrade' }) {
   const g = t.ads.gate;
   const soon = kind === 'soon';
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-6">
+    <div className="space-y-6">
       <PageHeader title={t.ads.title} description={t.ads.description} />
-      <section className="animate-fade-up overflow-hidden rounded-xl border border-line bg-card shadow-sm">
-        <div className="relative flex flex-col items-center gap-3 px-6 py-10 text-center">
-          <span aria-hidden className="absolute -top-16 size-48 rounded-full bg-brand/15 blur-3xl" />
-          <span className={cx('relative flex size-14 items-center justify-center rounded-2xl shadow-lg', soon ? 'bg-gradient-to-br from-grad-from to-grad-to text-on-brand' : 'bg-raised text-muted')}>
-            {soon ? <Megaphone className="size-7" /> : <Lock className="size-7" />}
-            <span className="absolute -bottom-1 -end-1 flex size-6 items-center justify-center rounded-full bg-card ring-1 ring-line">
-              {soon ? <Clock className="size-3.5 text-brand" /> : <Lock className="size-3.5 text-muted" />}
-            </span>
-          </span>
-          <h2 className="relative text-lg font-semibold">{soon ? g.soonTitle : g.lockedTitle}</h2>
-          <p className="relative max-w-md text-sm text-muted">{soon ? g.soonText : g.lockedText}</p>
-          {!soon && (
-            <Link href="/subscription" className="relative mt-1">
-              <Button>{g.upgrade}</Button>
-            </Link>
-          )}
-        </div>
-        <div className="border-t border-line bg-raised/30 px-6 py-5 text-start">
-          <p className="mb-3 text-xs font-medium text-muted">{g.featuresTitle}</p>
-          <ul className="grid gap-2.5 sm:grid-cols-2">
-            {g.features.map((f) => (
-              <li key={f} className="flex items-start gap-2 text-sm text-ink-2">
-                <Check className="mt-0.5 size-4 shrink-0 text-brand" />
-                {f}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </section>
+      <FeatureAccess
+        icon={<Megaphone className="size-6" />}
+        title={soon ? g.soonTitle : g.lockedTitle}
+        description={soon ? g.soonText : g.lockedText}
+        featuresLabel={g.featuresTitle}
+        features={g.features}
+        upgradeLabel={soon ? undefined : g.upgrade}
+      />
     </div>
   );
 }
@@ -2644,7 +2623,7 @@ export function AdsPage() {
         description={tab === 'library' ? t.ads.library.subtitle : t.ads.description}
         actions={
           // Phones: the tabs share the full width (a long label wraps) instead of running off the screen.
-          <div role="tablist" className="flex w-full rounded-lg border border-line bg-raised/30 p-1 lg:inline-flex lg:w-auto">
+          <div role="tablist" className="flex w-full gap-1 rounded-2xl border border-line bg-card p-1.5 shadow-sm lg:inline-flex lg:w-auto">
             {tabs.map((id) => {
               const Icon = TAB_ICONS[id];
               return (
@@ -2654,8 +2633,8 @@ export function AdsPage() {
                   aria-selected={tab === id}
                   href={id === 'library' ? '/ads' : id === 'compose' ? (isAdmin ? '/ads?tab=compose' : '/ads') : '/ads?tab=history'}
                   className={cx(
-                    'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-1.5 text-center text-sm leading-tight font-medium transition-all duration-200 lg:flex-none',
-                    tab === id ? 'bg-bg text-ink shadow-sm' : 'text-muted hover:text-ink',
+                    'flex min-h-9 flex-1 items-center justify-center gap-2 rounded-xl px-3 py-1.5 text-center text-sm leading-tight font-medium transition-colors lg:flex-none',
+                    tab === id ? 'bg-brand/10 text-brand' : 'text-muted hover:bg-raised hover:text-ink',
                   )}
                 >
                   <Icon className="hidden size-4 shrink-0 sm:block" />

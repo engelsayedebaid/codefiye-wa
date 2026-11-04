@@ -1643,7 +1643,7 @@ export function AutoReplyPage() {
     <div className="space-y-6">
       <PageHeader title={a.title} description={a.description} />
       <Overview onOpenProviders={openProviders} />
-      <nav aria-label={a.title} className="code-scroll -mx-1 flex gap-1 overflow-x-auto border-b border-line px-1">
+      <nav aria-label={a.title} className="code-scroll flex w-fit max-w-full gap-1 overflow-x-auto rounded-2xl border border-line bg-card p-1.5">
         {TABS.map(({ id, icon: Icon }) => (
           <button
             key={id}
@@ -1651,9 +1651,8 @@ export function AutoReplyPage() {
             onClick={() => setTab(id)}
             aria-current={tab === id ? 'page' : undefined}
             className={cx(
-              'relative flex h-10 shrink-0 items-center gap-2 px-3 text-sm font-medium transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
-              "after:absolute after:inset-x-2 after:-bottom-px after:h-0.5 after:rounded-full after:transition-colors after:content-['']",
-              tab === id ? 'text-ink after:bg-brand' : 'text-muted after:bg-transparent hover:text-ink',
+              'flex h-9 shrink-0 items-center gap-2 rounded-xl px-3.5 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+              tab === id ? 'bg-brand/10 text-brand' : 'text-muted hover:bg-raised hover:text-ink',
             )}
           >
             <Icon className={cx('size-4', tab === id && 'text-brand')} />

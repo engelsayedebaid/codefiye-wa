@@ -428,10 +428,10 @@ export function GuidePage() {
   ];
 
   return (
-    <div className="min-h-svh overflow-x-clip">
+    <div className="studio-site studio-doc min-h-svh overflow-x-clip">
       <SiteHeader />
       <main id="main">
-        <header className="relative isolate overflow-hidden border-b border-line">
+        <header className="studio-doc-cover relative isolate overflow-hidden border-b border-line">
           <div aria-hidden className="hero-aura absolute inset-0 -z-10" />
           <div aria-hidden className="site-grid absolute inset-0 -z-10" />
           <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-20 lg:px-8">
@@ -467,7 +467,7 @@ export function GuidePage() {
         <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 sm:py-16 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-12 lg:px-8 xl:grid-cols-[220px_minmax(0,1fr)_240px]">
           <TocAside title={g.tocTitle} items={toc} active={active} />
 
-          <article className="max-w-3xl min-w-0">
+          <article className="studio-reader max-w-3xl min-w-0">
             <TocFold title={g.tocTitle} items={toc} active={active} className="mb-10" />
             <div className="space-y-16">
               <DocSection id="flow" title={g.flow.title} lead={g.flow.subtitle}>

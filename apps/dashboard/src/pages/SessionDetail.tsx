@@ -128,13 +128,13 @@ export function SessionDetailPage({ id }: { id: string }) {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-3">
-        <button onClick={() => navigate('/sessions')} className="group inline-flex items-center gap-1 text-sm text-muted transition-colors hover:text-ink">
+      <div className="space-y-4 border-b border-line pb-6">
+        <button onClick={() => navigate('/sessions')} className="group inline-flex items-center gap-1.5 text-sm font-medium text-brand transition-colors hover:text-ink">
           <ArrowLeft className={cx('size-4 transition-transform group-hover:-translate-x-0.5 rtl:group-hover:translate-x-0.5', flip)} /> {d.back}
         </button>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-semibold tracking-[-0.015em]">{session.name}</h1>
+          <div className="flex min-w-0 flex-wrap items-center gap-3">
+            <h1 className="min-w-0 text-3xl font-semibold tracking-tight break-words text-ink md:text-4xl">{session.name}</h1>
             <SessionStatusBadge status={session.status} />
           </div>
           <div className="flex flex-wrap gap-2">
@@ -161,7 +161,7 @@ export function SessionDetailPage({ id }: { id: string }) {
 
       <ErrorNote>{error}</ErrorNote>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_1.4fr]">
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
         <div className="space-y-6">
           <Card title={d.linking} className="animate-fade-up" style={delay(60)}>
             {session.status === 'connected' ? (

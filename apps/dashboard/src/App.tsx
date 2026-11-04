@@ -13,15 +13,12 @@ import { afterLoginPath, isAppPath, Link, navigate, usePath } from './router';
 import { Button, buttonClass, LangSwitch, Loading, Logo, ThemeSwitch } from './ui';
 
 /**
- * Loads a code chunk, riding out a dropped connection: offline, it waits for the network to come
- * back instead of failing; other failures get two more tries. What still fails is a deploy that
- * removed the chunk (handled by ChunkErrorBoundary).
+ * Retry a transient chunk failure while online. Offline navigation gets an actionable screen.
  */
 function loadChunk<T>(load: () => Promise<T>, attempts = 3): Promise<T> {
   return load().catch(async (err: unknown) => {
-    if (attempts <= 1) throw err;
-    if (!navigator.onLine) await new Promise((resolve) => window.addEventListener('online', resolve, { once: true }));
-    else await new Promise((resolve) => setTimeout(resolve, 1_000));
+    if (attempts <= 1 || !navigator.onLine) throw err;
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
     return loadChunk(load, attempts - 1);
   });
 }
@@ -87,7 +84,9 @@ function Centered({ children }: { children: ReactNode }) {
         <ThemeSwitch />
         <LangSwitch />
       </div>
-      {children}
+      <div className="ui-panel ui-state-sheet">
+        {children}
+      </div>
     </main>
   );
 }
@@ -123,7 +122,8 @@ class ChunkErrorBoundary extends Component<{ children: ReactNode }, { failed: bo
   }
   override render() {
     if (!this.state.failed) return this.props.children;
-    const t = getDict().app.newVersion;
+    const { newVersion, offline } = getDict().app;
+    const t = navigator.onLine ? newVersion : { title: offline.title, text: offline.text, reload: offline.retry };
     return (
       <Centered>
         <RefreshCw className="size-8 text-brand" />
@@ -229,7 +229,12 @@ const loginRedirect = () => `/login?next=${encodeURIComponent(location.pathname 
 
 /** App pages need a session: the account decides between the dashboard, the login page, or a clear explanation. */
 function AuthGate({ path }: { path: string }) {
-  const me = useQuery({ queryKey: qk.me, queryFn: ({ signal }) => api<Account>('/api/me', { signal }) });
+  const me = useQuery({
+    queryKey: qk.me,
+    queryFn: ({ signal }) => api<Account>('/api/me', { signal, timeoutMs: 10_000 }),
+    networkMode: 'always',
+    retry: false,
+  });
   const graceUntil = me.data?.user?.twoFactorGraceUntil ?? null;
   // The skip lasts 48 hours. When that moment arrives, reload the account so the setup screen
   // comes back on its own, even if nothing else is talking to the API.

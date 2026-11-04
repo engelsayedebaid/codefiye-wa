@@ -50,13 +50,6 @@ type Overview = {
 const RANGES = [7, 14, 30] as const;
 type Range = (typeof RANGES)[number];
 
-/*
- * Laid out like Whop's home: a wide column that opens on one big number over a smooth chart, then
- * round quick actions, today's figures, the first-run steps, the account's numbers and a "discover"
- * row of raised cards; beside it (below it on narrow pages) the plan and the live activity, in
- * Whop's 24px-corner panels. Measured on the page box (a container query), not the screen.
- */
-
 // --- small pieces --------------------------------------------------------------------------------
 
 function Skeleton({ className }: { className?: string }) {
@@ -143,7 +136,7 @@ function Spark({ values, color }: { values: number[]; color: string }) {
 function SectionHead({ title, aside }: { title: ReactNode; aside?: ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <h2 className="truncate text-base font-semibold">{title}</h2>
+      <h2 className="min-w-0 text-lg leading-tight font-semibold">{title}</h2>
       {aside}
     </div>
   );
@@ -158,11 +151,11 @@ function MoreLink({ href, children }: { href: string; children: ReactNode }) {
   );
 }
 
-/** Whop's side panel: 24px corners, a hairline border, its title inset to line up with the rows. */
+/** Compact panels for workspace capacity and recent activity. */
 function Panel({ title, aside, children, index = 0 }: { title: ReactNode; aside?: ReactNode; children: ReactNode; index?: number }) {
   return (
-    <section style={delay(120 + index * 70)} className="animate-fade-up flex min-w-0 flex-col rounded-[24px] border border-line px-3 pt-5 pb-3">
-      <header className="flex min-h-7 items-center justify-between gap-3 px-3 pb-3">
+    <section style={delay(120 + index * 70)} className="workspace-sheet animate-fade-up flex min-w-0 flex-col px-3 pt-5 pb-3">
+      <header className="mx-2 mb-3 flex min-h-8 items-center justify-between gap-3 border-b border-line px-1 pb-3">
         <h2 className="text-base leading-tight font-semibold">{title}</h2>
         {aside}
       </header>
@@ -188,6 +181,32 @@ function initials(name: string) {
 
 // --- hero ----------------------------------------------------------------------------------------
 
+function OverviewHeader({ live }: { live: boolean }) {
+  const { t, fmt, lang } = useI18n();
+  const { account } = useAccount();
+  const d = t.dashboard;
+  const name = account?.user?.name || account?.workspace.name;
+  const now = new Date();
+  const hour = now.getHours();
+  const greeting = hour < 5 ? d.greeting.night : hour < 12 ? d.greeting.morning : hour < 17 ? d.greeting.afternoon : hour < 22 ? d.greeting.evening : d.greeting.night;
+  return (
+    <header className="workspace-masthead animate-fade-up relative isolate overflow-hidden rounded-[1.75rem] p-6 sm:p-8">
+      <div aria-hidden className="workspace-signal" />
+      <div className="relative max-w-3xl">
+        <div className="flex flex-wrap items-center gap-3 text-xs font-medium text-white/80">
+          <span className="workspace-date capitalize">{fmt.dayLong.format(now)}</span>
+          <span className="inline-flex items-center gap-2"><LiveDot on={live} />{d.live}</span>
+        </div>
+        <h1 className="mt-4 text-[clamp(1.8rem,3.1vw,3rem)] leading-tight font-semibold text-balance">
+          {name ? <>{greeting}{lang === 'ar' ? '، ' : ', '}<bdi>{name}</bdi></> : d.overviewTitle}
+        </h1>
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-white/80 sm:text-base">{d.overviewSubtitle}</p>
+        <Actions />
+      </div>
+    </header>
+  );
+}
+
 /**
  * The headline card: a Sent / Received switch (each tab carries its total), the range on the far
  * side, the chosen total as one big number, and the chart drawn for that series. The comparison is
@@ -195,13 +214,9 @@ function initials(name: string) {
  * still filling up, so it would read as a drop every morning. Today gets its own "so far" line.
  */
 function Hero({ overview, days, onDays, loading }: { overview: Overview | null; days: Range; onDays: (d: Range) => void; loading: boolean }) {
-  const { t, fmt, lang } = useI18n();
+  const { t, fmt } = useI18n();
   const d = t.dashboard;
-  const { account } = useAccount();
   const [metric, setMetric] = useState<Metric>('sent');
-  const name = account?.user?.name || account?.workspace.name || '';
-  const hour = new Date().getHours();
-  const greeting = hour < 5 ? d.greeting.night : hour < 12 ? d.greeting.morning : hour < 17 ? d.greeting.afternoon : hour < 22 ? d.greeting.evening : d.greeting.night;
 
   const daily = overview?.messages.daily ?? [];
   const total = (key: Metric) => daily.reduce((sum, p) => sum + p[key], 0);
@@ -210,36 +225,17 @@ function Hero({ overview, days, onDays, loading }: { overview: Overview | null; 
   const recent = sum(daily.length - half, daily.length);
   const previous = sum(daily.length - 2 * half, daily.length - half);
   const shown = useCountUp(total(metric));
-  const live = (overview?.sessions.byStatus.connected ?? 0) > 0;
   const tabs: { key: Metric; dot: string }[] = [
     { key: 'sent', dot: 'bg-series-sent' },
     { key: 'received', dot: 'bg-series-received' },
   ];
 
   return (
-    <section className="animate-fade-up flex w-full flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-1">
-        <p className="min-w-0 truncate text-sm text-muted">
-          <span className="capitalize">{fmt.dayLong.format(new Date())}</span>
-          {name && (
-            <>
-              <span aria-hidden className="mx-1.5">
-                ·
-              </span>
-              {greeting}
-              {lang === 'ar' ? '، ' : ', '}
-              <span className="text-ink-2">{name}</span>
-            </>
-          )}
-        </p>
-        <span className="flex shrink-0 items-center gap-2 text-sm text-muted">
-          <LiveDot on={live} />
-          {d.live}
-        </span>
+    <section className="workspace-sheet animate-fade-up min-w-0 p-5 sm:p-6">
+      <div className="mb-5 flex items-center gap-2 border-b border-line pb-4">
+        <TrendingUp aria-hidden className="size-5 text-brand" />
+        <h2 className="text-lg font-semibold">{d.activity}</h2>
       </div>
-
-      <div className="relative overflow-hidden rounded-[20px] border border-line bg-card">
-        <div className="relative flex flex-col p-5 sm:p-6">
           {/* Series switch on the start side, range on the far side. */}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div role="tablist" aria-label={d.metric} className="inline-flex rounded-xl bg-ink/[0.05] p-1">
@@ -274,10 +270,10 @@ function Hero({ overview, days, onDays, loading }: { overview: Overview | null; 
             </div>
           </div>
 
-          <h1 className="mt-6 text-sm font-medium text-muted">{d.heroTitle(metric, d.ranges[days] ?? String(days))}</h1>
+          <p className="mt-5 text-sm font-medium text-muted">{d.heroTitle(metric, d.ranges[days] ?? String(days))}</p>
           {overview ? (
             <p className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <span className="ltr inline-block text-[34px] leading-[42px] font-semibold tracking-[-0.03em] tabular-nums sm:text-[40px] sm:leading-[48px]">{fmt.number.format(shown)}</span>
+              <span className="ltr inline-block text-[clamp(2.4rem,4vw,3.75rem)] leading-tight font-semibold tracking-[-0.05em] tabular-nums">{fmt.number.format(shown)}</span>
               <span className="text-sm font-medium text-muted">{d.unitMessages}</span>
             </p>
           ) : (
@@ -293,8 +289,6 @@ function Hero({ overview, days, onDays, loading }: { overview: Overview | null; 
           </div>
 
           <div className="relative mt-5 -mx-1">{overview ? <HeroChart key={days} data={daily} focus={metric} loading={loading} height={220} /> : <Skeleton className="h-[220px]" />}</div>
-        </div>
-      </div>
     </section>
   );
 }
@@ -310,19 +304,17 @@ function Actions() {
     { href: '/guide', icon: BookOpen, label: d.quickDocs },
   ];
   return (
-    <nav aria-label={d.quickNewSession} className="animate-fade-up -mt-4 flex flex-wrap gap-2" style={delay(60)}>
+    <nav aria-label={d.quickNewSession} className="mt-6 flex flex-wrap gap-2">
       {actions.map((a) => (
         <Link
           key={a.href}
           href={a.href}
           className={cx(
-            'inline-flex h-10 items-center gap-2 rounded-full ps-3 pe-4 text-sm font-semibold transition-[background-color,transform] duration-150 active:scale-[0.97]',
-            a.primary ? 'bg-brand text-on-brand hover:bg-brand-strong' : 'border border-line bg-card text-ink hover:bg-raised',
+            'inline-flex min-h-10 items-center gap-2 rounded-full px-4 py-1 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white',
+            a.primary ? 'bg-[#c5f2cb] text-[#123b27] hover:bg-white' : 'border border-white/25 bg-white/[0.06] text-white hover:bg-white/15',
           )}
         >
-          <span className={cx('flex size-6 items-center justify-center rounded-full', a.primary ? 'bg-on-brand/15' : 'bg-ink/[0.07]')}>
-            <a.icon className="size-4" />
-          </span>
+          <a.icon className="size-4" />
           {a.label}
         </Link>
       ))}
@@ -353,12 +345,12 @@ function TodayStats({ overview }: { overview: Overview | null }) {
     },
   ];
   return (
-    <div className="grid grid-cols-2 gap-3 @min-[720px]:grid-cols-4">
-      {tiles.map((s, i) => (
-        <div key={s.label} className="animate-fade-up flex min-w-0 flex-col gap-3 rounded-2xl border border-line p-4" style={delay(100 + i * 50)}>
-          <p className="truncate text-xs font-medium text-muted">{s.label}</p>
-          <div className="flex items-end justify-between gap-2">
-            {overview ? <span className={cx('ltr inline-block text-xl leading-none font-semibold tabular-nums', s.tone)}>{s.value}</span> : <Skeleton className="h-6 w-14" />}
+    <div className="workspace-ledger animate-fade-up grid grid-cols-2 @min-[720px]:grid-cols-4" style={delay(60)}>
+      {tiles.map((s) => (
+        <div key={s.label} className="flex min-w-0 flex-col justify-between gap-4 bg-card p-4 sm:p-5">
+          <p className="text-xs font-semibold text-muted">{s.label}</p>
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            {overview ? <span className={cx('ltr inline-block text-[clamp(1.35rem,2.5vw,2.2rem)] leading-none font-semibold tracking-tight tabular-nums', s.tone)}>{s.value}</span> : <Skeleton className="h-6 w-14" />}
             {overview && week.length > 1 && <Spark values={s.spark} color={s.color} />}
           </div>
         </div>
@@ -382,12 +374,12 @@ function Setup({ overview }: { overview: Overview }) {
   const done = steps.filter((x) => x.done).length;
   if (done === steps.length) return null;
   return (
-    <section className="animate-fade-up flex w-full flex-col gap-3" style={delay(100)}>
+    <section className="workspace-sheet animate-fade-up flex w-full flex-col gap-4 p-5 sm:p-6" style={delay(100)}>
       <SectionHead title={s.title} aside={<span className="shrink-0 text-sm text-muted tabular-nums">{s.progress(done, steps.length)}</span>} />
       <div className="h-1 overflow-hidden rounded-full bg-ink/[0.06]">
         <div className="h-full rounded-full bg-brand transition-[width] duration-700" style={{ width: `${(done / steps.length) * 100}%` }} />
       </div>
-      <ol className="grid gap-3">
+      <ol className="grid gap-2">
         {steps.map((step, i) => {
           const copy = s.steps[step.id];
           const current = !step.done && steps.slice(0, i).every((x) => x.done);
@@ -434,7 +426,7 @@ function NumbersList({ overview }: { overview: Overview | null }) {
   const connected = overview?.sessions.byStatus.connected ?? list.filter((s) => s.status === 'connected').length;
 
   return (
-    <section className="animate-fade-up flex w-full flex-col gap-3" style={delay(140)}>
+    <section className="workspace-sheet animate-fade-up flex w-full flex-col gap-4 p-5 sm:p-6" style={delay(140)}>
       <SectionHead
         title={
           <span className="flex items-baseline gap-2">
@@ -460,7 +452,7 @@ function NumbersList({ overview }: { overview: Overview | null }) {
           </Link>
         </div>
       ) : (
-        <ul className="overflow-hidden rounded-2xl border border-line">
+        <ul className="border-t border-line">
           {rows.map((s, i) => {
             const tone = SESSION_STATUS[s.status].tone;
             const seen = s.status === 'connected' ? null : s.lastSeenAt;
@@ -504,14 +496,14 @@ function Discover() {
     { href: '/guide', icon: Code, tint: 'bg-warning/12 text-warning', ...x.api },
   ];
   return (
-    <section className="animate-fade-up flex w-full flex-col gap-3" style={delay(180)}>
+    <section className="animate-fade-up flex w-full flex-col gap-4" style={delay(180)}>
       <SectionHead title={x.title} />
       <div className="grid gap-3 @min-[620px]:grid-cols-2">
         {cards.map((c) => (
           <Link
             key={c.href}
             href={c.href}
-            className="flex items-center gap-3 rounded-2xl border border-line bg-card p-3 transition-colors hover:bg-raised"
+            className="workspace-sheet group flex items-center gap-3 p-4 transition-colors hover:border-brand/45"
           >
             <span className={cx('flex size-10 shrink-0 items-center justify-center rounded-xl', c.tint)}>
               <c.icon className="size-5" />
@@ -520,6 +512,7 @@ function Discover() {
               <span className="block text-sm font-semibold">{c.title}</span>
               <span className="mt-0.5 line-clamp-1 block text-xs text-muted">{c.text}</span>
             </span>
+            <ChevronRight aria-hidden className={cx('size-4 shrink-0 text-faint group-hover:text-brand', flip)} />
           </Link>
         ))}
       </div>
@@ -673,21 +666,18 @@ export function DashboardPage() {
   const overview = query.data ?? null;
 
   return (
-    <div className="@container flex flex-col gap-6">
+    <div className="@container flex flex-col gap-4 sm:gap-5">
+      <OverviewHeader live={(overview?.sessions.byStatus.connected ?? 0) > 0} />
       {query.isError && <LoadError error={query.error} onRetry={() => void query.refetch()} retrying={query.isFetching} />}
-      <div className="grid w-full grid-cols-1 items-start gap-10 pb-16 @min-[960px]:grid-cols-[minmax(0,1fr)_360px] @min-[960px]:gap-x-10">
-        <div className="flex min-w-0 flex-col gap-10">
-          <div className="flex flex-col gap-8">
-            <Hero overview={overview} days={days} onDays={setDays} loading={query.isFetching} />
-            <Actions />
-            <TodayStats overview={overview} />
-          </div>
+      <TodayStats overview={overview} />
+      <div className="grid w-full grid-cols-1 items-start gap-5 pb-12 @min-[860px]:grid-cols-[minmax(0,1fr)_minmax(16rem,30%)]">
+        <div className="flex min-w-0 flex-col gap-5">
+          <Hero overview={overview} days={days} onDays={setDays} loading={query.isFetching} />
           {overview && <Setup overview={overview} />}
           <NumbersList overview={overview} />
           <Discover />
         </div>
-        {/* Sticks beside the long main column on wide pages, under the 56px header. */}
-        <div className="flex min-w-0 flex-col gap-6 @min-[960px]:sticky @min-[960px]:top-20">
+        <div className="flex min-w-0 flex-col gap-5 @min-[860px]:sticky @min-[860px]:top-20">
           <PlanPanel overview={overview} />
           <PulsePanel overview={overview} />
         </div>

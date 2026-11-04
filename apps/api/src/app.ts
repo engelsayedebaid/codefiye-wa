@@ -187,7 +187,28 @@ export async function buildApp(deps: Deps, options: AppOptions) {
     },
     transform: jsonSchemaTransform,
   });
-  await app.register(scalar, { routePrefix: '/docs', configuration: { theme: 'default' } });
+  await app.register(scalar, {
+    routePrefix: '/docs',
+    configuration: {
+      theme: 'default',
+      customCss: `
+        .light-mode {
+          --scalar-color-accent: #087548;
+          --scalar-background-1: #fcfdf9;
+          --scalar-background-2: #f1f6ef;
+          --scalar-background-3: #e3ede3;
+          --scalar-border-color: #ccdbce;
+        }
+        .dark-mode {
+          --scalar-color-accent: #96e9b2;
+          --scalar-background-1: #10251c;
+          --scalar-background-2: #162f24;
+          --scalar-background-3: #213f30;
+          --scalar-border-color: #355443;
+        }
+      `,
+    },
+  });
 
   app.setErrorHandler((err: FastifyError, req, reply) => {
     const send = (status: number, body: Omit<ApiFailure, 'success'>) =>
