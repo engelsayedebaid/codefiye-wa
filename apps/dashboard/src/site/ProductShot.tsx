@@ -77,7 +77,10 @@ export function ProductShot() {
           <aside className="hidden min-h-0 flex-col border-e border-line lg:flex">
             <div className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-3.5">
               <LogoMark className="size-6" />
-              <span className="ltr text-[13px] font-semibold">CodeFiye</span>
+              <span className="ltr inline-flex items-center gap-1.5 text-[13px] font-bold tracking-tight">
+                <span><span className="text-ink">Code</span><span className="text-brand">Fiye</span></span>
+                <span className="rounded border border-brand/30 bg-brand/10 px-1 text-[8px] leading-3.5 font-bold tracking-wider text-brand">WA</span>
+              </span>
             </div>
             <ul className="space-y-0.5 p-2">
               {m.nav.map((label, i) => {

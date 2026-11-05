@@ -488,6 +488,9 @@ type BubbleProps = {
   onResend?: (m: ChatMessage) => void;
   /** A resend of this message is on its way. */
   resending?: boolean;
+  /** Picking several messages (delete / forward): the row toggles it; `selected` draws the check. */
+  selected?: boolean;
+  onToggleSelect?: () => void;
 };
 
 /** Errors where sending again can't help (or makes it worse): no resend button. */
@@ -629,10 +632,13 @@ export const Bubble = memo(function Bubble({
   pending,
   onResend,
   resending,
+  selected = false,
+  onToggleSelect,
 }: BubbleProps) {
   const { t, fmt } = useI18n();
   const c = t.chats;
   const out = m.direction === 'out';
+  const picking = Boolean(onToggleSelect);
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (!copied) return;
@@ -693,16 +699,28 @@ export const Bubble = memo(function Bubble({
     <div
       id={m.waMessageId ? `msg-${m.waMessageId}` : undefined}
       // Room under a bubble for its reactions badge, which hangs below it.
-      className={cx('group/msg flex w-full px-3 md:px-[6%]', out ? 'justify-end' : 'justify-start', first ? 'mt-3' : 'mt-[3px]', reactions && reactions.length > 0 && 'mb-3.5')}
+      className={cx('group/msg flex w-full px-3 md:px-[6%]', out ? 'justify-end' : 'justify-start', first ? 'mt-3' : 'mt-[3px]', reactions && reactions.length > 0 && 'mb-3.5', picking && 'cursor-pointer select-none')}
+      onClick={picking ? onToggleSelect : undefined}
     >
       <div className="relative flex max-w-[min(85%,36rem)]">
+        {picking && (
+          <span
+            className={cx(
+              'absolute top-2 z-10 grid size-5 place-items-center rounded-full border shadow-sm transition-colors',
+              out ? 'end-2' : 'start-2',
+              selected ? 'border-brand bg-brand text-on-brand' : 'border-line-strong bg-card/90 text-transparent',
+            )}
+          >
+            <Check className="size-3" strokeWidth={3} />
+          </span>
+        )}
         <div
           className={cx(
             'pii relative min-w-0 text-[14px] leading-[1.45] text-ink',
             bare ? '' : cx('rounded-[20px]', framed ? 'p-1' : 'px-3.5 pt-2 pb-1.5'),
             !bare && (out ? 'bg-(--chat-out)' : 'bg-(--chat-in)'),
             !bare && first && (out ? 'rounded-se-[6px]' : 'rounded-ss-[6px]'),
-            m.status === 'failed' && 'ring-1 ring-critical/40',
+            selected ? 'ring-2 ring-brand/50' : m.status === 'failed' && 'ring-1 ring-critical/40',
           )}
         >
           {sender && first && !out && (
@@ -795,6 +813,7 @@ export const Bubble = memo(function Bubble({
           screen they stick inside the visible part (sticky top and bottom), so they never need a scroll,
           below the sticky day pill (top-12) and above it, so it never covers them.
         */}
+        {!picking && (
         <div className={cx('pointer-events-none absolute inset-y-0 flex flex-col justify-center', out ? 'end-full me-1' : 'start-full ms-1')}>
         <div
           className={cx(
@@ -837,6 +856,7 @@ export const Bubble = memo(function Bubble({
           )}
         </div>
         </div>
+        )}
       </div>
       {reactions && reactions.length > 0 && <span className="sr-only">{reactions.join(' ')}</span>}
     </div>

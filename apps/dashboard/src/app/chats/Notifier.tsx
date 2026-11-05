@@ -187,7 +187,7 @@ export function NoteStack({ notes, onOpen, onDismiss }: { notes: InboxNote[]; on
       onMouseLeave={() => setOpen(false)}
       onFocus={() => setOpen(true)}
       onBlur={(e) => !e.currentTarget.contains(e.relatedTarget) && setOpen(false)}
-      className="note-stack fixed end-4 top-4 z-[70] w-[23rem] max-w-[calc(100vw-2rem)]"
+      className="note-stack fixed end-4 top-[4.5rem] z-[70] w-[23rem] max-w-[calc(100vw-2rem)]"
     >
       {notes.length > 1 && (
         <div className={cx('mb-2 flex items-center justify-between px-1 transition-all duration-300', expanded ? 'opacity-100' : 'pointer-events-none -translate-y-1 opacity-0')}>

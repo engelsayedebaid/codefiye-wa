@@ -15,8 +15,10 @@ const int8 = { to: 20, from: [20], serialize: (x: number) => String(x), parse: (
  * Bounded waits: a connect that never completes fails after 10s, and connections idle for 5 min
  * are closed (TCP keepalive, on by default, keeps the rest from being dropped silently by NATs).
  * Query time is bounded server-side by `statement_timeout` (migration 0005).
+ * `sslnegotiation: 'direct'` goes straight to TLS: Neon's proxy never answers the
+ * plaintext SSLRequest probe, so the default negotiation hangs until connect_timeout.
  */
-const CONNECTION = { onnotice: () => {}, connect_timeout: 10, idle_timeout: 300, max_lifetime: 30 * 60 } as const;
+const CONNECTION = { onnotice: () => {}, connect_timeout: 10, idle_timeout: 300, max_lifetime: 30 * 60, sslnegotiation: 'direct' } as const;
 
 type Scoped = { unsafe: (...args: unknown[]) => unknown; begin?: (...args: unknown[]) => unknown; savepoint?: (...args: unknown[]) => unknown };
 

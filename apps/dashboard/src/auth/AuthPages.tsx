@@ -2,11 +2,10 @@ import { asciiDigits, phoneWithCountry } from '@wa/shared/phone';
 import { Check, Code2, LayoutDashboard, LifeBuoy, Mail, Smartphone, Wallet } from '../icons';
 import { type FormEvent, type ReactNode, useState } from 'react';
 import { api, ApiRequestError, errorMessage } from '../api';
-import { BRAND } from '../brand';
 import { useI18n } from '../i18n';
 import type { Dict } from '../i18n/ar';
 import { Link } from '../router';
-import { Button, buttonClass, Checkbox, cx, delay, ErrorNote, Field, LangSwitch, LogoMark, ThemeSwitch } from '../ui';
+import { Button, buttonClass, Checkbox, cx, delay, ErrorNote, Field, LangSwitch, Logo, LogoMark, ThemeSwitch } from '../ui';
 import { countryByIso } from './countries';
 import { DialField } from './DialField';
 import { CodeStep, codeError, SEND_CODE_TIMEOUT_MS, type Ticket } from './Otp';
@@ -453,11 +452,8 @@ function SplitAuthLayout({
             ))}
           </g>
         </svg>
-        <Link href="/" aria-label={t.common.home} className="animate-fade-up relative inline-flex w-fit items-center gap-2.5">
-          <LogoMark className="size-9" />
-          <span dir="ltr" className="text-lg font-bold tracking-tight">
-            {BRAND.name}
-          </span>
+        <Link href="/" aria-label={t.common.home} className="brand-on-dark animate-fade-up relative inline-flex w-fit items-center">
+          <Logo markClassName="size-9" />
         </Link>
         <div className="relative mx-auto w-full max-w-lg py-[clamp(1rem,3.5svh,2.5rem)]">
           <div className="animate-fade-up space-y-3" style={delay(80)}>
@@ -490,8 +486,8 @@ function SplitAuthLayout({
       {/* form */}
       <section className="relative flex min-w-0 flex-col bg-card lg:rounded-[1.65rem] lg:border lg:border-line">
         <div className="flex items-center justify-between gap-4 border-b border-line px-5 py-3 sm:px-8 lg:justify-end lg:border-0 lg:py-2">
-          <Link href="/" aria-label={t.common.home} className="inline-flex items-center gap-2 font-semibold lg:hidden">
-            <LogoMark className="size-8" /><bdi>{BRAND.name}</bdi>
+          <Link href="/" aria-label={t.common.home} className="inline-flex items-center lg:hidden">
+            <Logo markClassName="size-8" />
           </Link>
           <div className="flex items-center gap-1"><ThemeSwitch /><LangSwitch /></div>
         </div>

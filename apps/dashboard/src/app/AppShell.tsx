@@ -459,8 +459,12 @@ function Sidebar({
   const nav = useNav();
   return (
     <div className="workspace-rail flex h-full flex-col text-ink">
-      <div className={cx('flex min-h-[4.5rem] shrink-0 items-center border-b border-line px-5', collapsed && 'justify-center px-0')}>
-        <Link href="/dashboard" onClick={onNavigate} className="flex items-center rounded-[10px] p-1 transition-opacity hover:opacity-80">
+      <div className={cx('flex min-h-[4.5rem] shrink-0 items-center border-b border-line/50 px-5', collapsed && 'justify-center px-0')}>
+        <Link
+          href="/dashboard"
+          onClick={onNavigate}
+          className="flex items-center rounded-[10px] p-1 transition-colors duration-200 hover:bg-ink/[0.05]"
+        >
           {collapsed ? <LogoMark className="size-7" /> : <Logo />}
         </Link>
       </div>
@@ -810,7 +814,7 @@ export function AppShell({ children, account }: { children: ReactNode; account: 
         )}
 
         <div className="relative flex min-w-0 flex-1 flex-col">
-          <header className="workspace-toolbar sticky top-0 z-10 flex h-14 min-w-0 shrink-0 items-center gap-2 border-b border-line px-3 sm:px-6">
+          <header className="workspace-toolbar sticky top-0 z-30 flex h-14 min-w-0 shrink-0 items-center gap-2 border-b border-line px-3 sm:px-6">
             <button onClick={toggle} className="-ms-1 flex size-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-ink/[0.06] hover:text-ink" aria-label={t.app.toggleSidebar}>
               <PanelLeft className={cx('size-5', flip)} />
             </button>

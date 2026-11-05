@@ -11,7 +11,8 @@ const MIGRATION_LOCK = 7_262_891;
  * boot; an advisory lock (same single connection) keeps concurrent boots from racing.
  */
 export async function runMigrations(url = databaseUrls().direct) {
-  const sql = postgres(url, { max: 1, onnotice: () => {}, connect_timeout: 10 });
+  // sslnegotiation 'direct': Neon's proxy never answers the plaintext SSLRequest probe.
+  const sql = postgres(url, { max: 1, onnotice: () => {}, connect_timeout: 10, sslnegotiation: 'direct' } as postgres.Options<{}>);
   try {
     // Exempt from the app role's statement_timeout (migration 0005): waiting for another
     // instance's lock or building an index on a large table can legitimately take longer.

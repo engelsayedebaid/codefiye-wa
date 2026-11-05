@@ -116,6 +116,14 @@
   --color-sender-fuchsia: #a21caf;
 }
 
+/* Brand lockup on surfaces that are always dark (auth brand panel, video poster):
+   pin the dark palette locally so Logo keeps its light-on-dark colors in the light theme. */
+.brand-on-dark {
+  --color-ink: #f0f9f0;
+  --color-brand: #b6f3c1;
+  --color-on-brand: #103824;
+}
+
 html {
   color-scheme: light;
   scroll-behavior: smooth;

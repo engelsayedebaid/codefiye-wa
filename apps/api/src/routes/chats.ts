@@ -620,13 +620,15 @@ export function chatRoutes(deps: Deps): FastifyPluginAsyncZod {
               ptt: z.boolean().optional(),
               /** Length of a voice note, shown by WhatsApp before it is played. */
               seconds: z.number().int().min(1).max(3600).optional(),
+              /** Sent through the chats page's Forward action: the bubble shows "Forwarded". */
+              forwarded: z.boolean().optional(),
             })
             .refine((b) => b.text || b.uploadId, { message: 'Write a message or attach a file', path: ['text'] }),
           response: { 200: successSchema(chatMessageDto) },
         },
       },
       async (req) => {
-        const { text, uploadId, quoteId, ptt, seconds } = req.body;
+        const { text, uploadId, quoteId, ptt, seconds, forwarded } = req.body;
         const key = req.headers['idempotency-key'] ?? null;
         const sessionId = req.params.sessionId;
         // Every round trip to the database is felt on Send, so the lookups that don't depend on each
@@ -672,7 +674,7 @@ export function chatRoutes(deps: Deps): FastifyPluginAsyncZod {
         if (quoteId && quoted) content.quote = { id: quoteId, fromMe: quoted.direction === 'out', participant: quoted.participant ?? undefined, text: quoted.text };
         // Typed by a person on the chats page: the worker skips the artificial "typing…" pause.
         // A contact who has written to this number is on WhatsApp: the worker can skip asking again.
-        const stored = { ...content, sentFrom: 'chats' as const, ...(found && found.inbound_count > 0 ? { reachable: true as const } : {}) };
+        const stored = { ...content, sentFrom: 'chats' as const, ...(forwarded ? { forwarded: true } : {}), ...(found && found.inbound_count > 0 ? { reachable: true as const } : {}) };
         const row = await queueOutbound(req.auth.workspaceId, session.id, jid, stored, key);
 
         // Answering a chat reads it, as on WhatsApp. Not worth holding the reply for.

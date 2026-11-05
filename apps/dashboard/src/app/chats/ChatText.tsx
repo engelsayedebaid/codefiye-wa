@@ -5,14 +5,27 @@ import { emojifyNodes } from '../emoji';
 const FORMAT = /```[\s\S]+?```|\*[^*\n]+\*|_[^_\n]+_|~[^~\n]+~/g;
 const LINK = /\bhttps?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]}]/gi;
 
+/** Long links show as `origin/first-path-segment…`; the full URL stays the href and the tooltip. */
+function shortenUrl(url: string): string {
+  if (url.length <= 48) return url;
+  try {
+    const u = new URL(url);
+    const first = u.pathname.split('/').filter(Boolean)[0];
+    return `${u.origin}/${first ? `${first}/` : ''}…`;
+  } catch {
+    return `${url.slice(0, 47)}…`;
+  }
+}
+
 function linkify(text: string, key: string): ReactNode[] {
   const out: ReactNode[] = [];
   let last = 0;
   for (const m of text.matchAll(LINK)) {
     if (m.index! > last) out.push(text.slice(last, m.index));
+    const shown = shortenUrl(m[0]);
     out.push(
-      <a key={`${key}-${m.index}`} href={m[0]} target="_blank" rel="noreferrer noopener" className="text-info underline-offset-2 hover:underline" dir="ltr">
-        {m[0]}
+      <a key={`${key}-${m.index}`} href={m[0]} title={m[0]} target="_blank" rel="noreferrer noopener" className="text-info underline-offset-2 hover:underline" dir="ltr">
+        {shown}
       </a>,
     );
     last = m.index! + m[0].length;

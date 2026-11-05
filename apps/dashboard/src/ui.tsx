@@ -93,26 +93,45 @@ export function LogoMark({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 40 40" fill="none" aria-hidden className={cx('size-8 shrink-0', className)}>
       <defs>
-        <linearGradient id={id} x1="4" y1="2" x2="36" y2="38" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#3BE37F" />
-          <stop offset="1" stopColor="#0E9488" />
+        <linearGradient id={id} x1="8" y1="4" x2="32" y2="36" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#3BE7AE" />
+          <stop offset="0.55" stopColor="#17C07F" />
+          <stop offset="1" stopColor="#0B8F63" />
+        </linearGradient>
+        <linearGradient id={`${id}-gloss`} x1="20" y1="0" x2="20" y2="20" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#fff" stopOpacity="0.38" />
+          <stop offset="1" stopColor="#fff" stopOpacity="0" />
         </linearGradient>
       </defs>
       <rect width="40" height="40" rx="11" fill={`url(#${id})`} />
+      <rect width="40" height="40" rx="11" fill={`url(#${id}-gloss)`} opacity="0.35" />
+      <rect x="0.5" y="0.5" width="39" height="39" rx="10.5" stroke="#fff" strokeOpacity="0.22" />
       <path d="M7 19.5 33 6.5 25.5 33.5 19.5 23Z" fill="#fff" />
-      <path d="M19.5 23 33 6.5" stroke="#0B8F6B" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M19.5 23 33 6.5" stroke="#0A6B4C" strokeOpacity="0.55" strokeWidth="1.8" strokeLinecap="round" />
     </svg>
   );
 }
 
-export function Logo({ className }: { className?: string }) {
-  const [first, ...rest] = BRAND.name.split(' ');
+export function Logo({ className, markClassName }: { className?: string; markClassName?: string }) {
+  const [badge, ...rest] = BRAND.name.split(' ');
+  const word = rest.join(' ');
+  const segments = word.match(/[A-Z][a-z]+|[A-Z]+(?![a-z])|[a-z]+/g) ?? [word];
+  // dir="ltr" on the root: the lockup is one direction-independent unit —
+  // [plane] CodeFiye [WA] always reads left-to-right; the sidebar header
+  // aligns the whole group to the inline-start edge (left in LTR, right in RTL).
   return (
-    <span className={cx('group/logo inline-flex items-center gap-2.5', className)}>
-      <LogoMark className="transition-transform duration-500 group-hover/logo:-rotate-6 group-hover/logo:scale-105" />
-      <span dir="ltr" className="text-lg font-bold tracking-tight whitespace-nowrap">
-        <span className="text-brand">{first}</span>
-        {rest.length > 0 && <span> {rest.join(' ')}</span>}
+    <span dir="ltr" className={cx('group/logo inline-flex items-center gap-2.5', className)}>
+      <LogoMark className={cx('transition-transform duration-500 ease-out group-hover/logo:-rotate-6 group-hover/logo:scale-105', markClassName)} />
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-lg font-bold tracking-tight">
+        <span className="text-ink">
+          {segments.slice(0, -1).map((seg, i) => (
+            <span key={i}>{seg}</span>
+          ))}
+          <span className="text-brand">{segments[segments.length - 1]}</span>
+        </span>
+        <span className="rounded-md border border-brand/30 bg-brand/10 px-1.5 py-0.5 text-[0.6em] leading-none font-bold tracking-[0.09em] text-brand">
+          {badge}
+        </span>
       </span>
     </span>
   );

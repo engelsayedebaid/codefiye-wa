@@ -1,9 +1,8 @@
 import { youtubeWatchUrl } from '@wa/shared/site';
 import { ArrowUpRight, CheckCheck, Play } from '../icons';
 import { useEffect, useState } from 'react';
-import { BRAND } from '../brand';
 import { useI18n } from '../i18n';
-import { buttonClass, cx, flip, LogoMark, Reveal } from '../ui';
+import { buttonClass, cx, flip, Logo, Reveal } from '../ui';
 import { DEMO_ICONS } from './content';
 import { useSiteSettings } from './settings';
 import { SectionHeading, YoutubeIcon } from './SiteChrome';
@@ -35,10 +34,7 @@ function Poster({ ready, onPlay }: { ready: boolean; onPlay: () => void }) {
       </span>
 
       <span className="relative flex h-full flex-col items-center justify-center gap-4 px-6 text-center sm:gap-6">
-        <span className="flex items-center gap-2 text-sm">
-          <LogoMark className="size-6" />
-          <span className="ltr font-semibold">{BRAND.name}</span>
-        </span>
+        <Logo markClassName="size-6" />
         {ready ? (
           <span className="play-ring relative isolate flex size-16 items-center justify-center rounded-full bg-white text-[#06231d] shadow-2xl transition-transform duration-300 group-hover:scale-105 group-focus-visible:ring-4 group-focus-visible:ring-white/50 sm:size-20">
             <Play className="size-7 translate-x-0.5 fill-current sm:size-8" />
@@ -65,7 +61,7 @@ function Poster({ ready, onPlay }: { ready: boolean; onPlay: () => void }) {
       </span>
     </>
   );
-  const rootClass = 'group absolute inset-0 block size-full text-white';
+  const rootClass = 'group brand-on-dark absolute inset-0 block size-full text-white';
   return ready ? (
     <button type="button" onClick={onPlay} aria-label={d.play} className={cx(rootClass, 'cursor-pointer focus-visible:outline-none')}>
       {cover}

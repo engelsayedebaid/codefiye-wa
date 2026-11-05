@@ -13,6 +13,7 @@ import {
   History,
   Info,
   Layers,
+  ListChecks,
   Loader2,
   MailOpen,
   MessageCircle,
@@ -22,6 +23,7 @@ import {
   RotateCw,
   Search,
   Send,
+  Trash2,
   Undo2,
   User,
   Users,
@@ -39,7 +41,8 @@ import { Composer } from './Composer';
 import { useAccount } from '../account';
 import { useCrossSend } from './crossSend';
 import { ForwardChat } from './ForwardChat';
-import { DeleteMessageDialog, EditMessageDialog } from './MessageActions';
+import { ForwardMessages } from './ForwardMessages';
+import { DeleteMessageDialog, DeleteMessagesDialog, EditMessageDialog } from './MessageActions';
 import { type ChatMessage, type ChatNumber, type ChatSummary, chatTitle, isChat, jidPhone, livePresence, mediaUrl, type MessagesPage, type Person, type PresenceState, type Sender, textOf } from './model';
 import { type Draft, discard, enqueue, type Pending, resolveRef, retry, settle, usePending } from './outbox';
 import { CHAT_WALLS, setChatWall, useChatWalls, WALL_SCOPES, type WallScope, wallsFor, wallStyle } from './walls';
@@ -572,6 +575,30 @@ export function Conversation({ sessionId, connected, reconnecting = false, chat,
   const [deleting, setDeleting] = useState<ChatMessage | null>(null);
   const closeEdit = useCallback(() => setEditing(null), []);
   const closeDelete = useCallback(() => setDeleting(null), []);
+  // Picking messages for a bulk delete / forward (the ⋮ menu's "Select messages"); Escape leaves.
+  const [picking, setPicking] = useState(false);
+  const [picked, setPicked] = useState<ReadonlySet<number>>(() => new Set());
+  const [deletingMany, setDeletingMany] = useState(false);
+  const [forwarding, setForwarding] = useState(false);
+  const togglePick = useCallback((id: number) => {
+    setPicked((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+  const exitPick = useCallback(() => {
+    setPicking(false);
+    setPicked(new Set());
+  }, []);
+  useEffect(() => {
+    if (!picking) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && exitPick();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [picking, exitPick]);
+  const pickedMessages = useMemo(() => list.filter((m) => picked.has(m.id)), [list, picked]);
   const notice = useCallback((text: string) => {
     setReactError(text);
     setTimeout(() => setReactError(null), 4_000);
@@ -682,92 +709,132 @@ export function Conversation({ sessionId, connected, reconnecting = false, chat,
   return (
     <div className="chat-root relative flex h-full min-h-0 flex-col">
       {/* header */}
-      <header className="chat-head z-10 flex h-16 shrink-0 items-center gap-1.5 border-b border-line bg-bg/85 px-2 backdrop-blur-md md:px-4">
-        <button type="button" onClick={onBack} className="rounded-full p-2 text-muted hover:bg-raised hover:text-ink lg:hidden" aria-label={c.back}>
-          <ArrowLeft className={cx('size-5', flip)} />
-        </button>
-        <button type="button" onClick={onToggleInfo} className="flex min-w-0 flex-1 items-center gap-3 rounded-xl p-1.5 text-start transition-colors hover:bg-ink/[0.05]">
-          <Avatar name={title} id={chat.jid} picture={picture} group={chat.isGroup} online={livePresence(presence)?.presence === 'available'} />
-          <span className="pii min-w-0">
-            <span className="block truncate text-start font-semibold">
-              {chat.name ? <span dir="auto">{title}</span> : <span className="ltr font-mono">{title}</span>}
-            </span>
-            <span className="block truncate text-xs text-muted">
-              <PresenceLine chat={chat} presence={presence} />
-            </span>
-          </span>
-        </button>
+      <header className="chat-head relative z-10 flex h-[4.5rem] shrink-0 items-center gap-1 border-b border-line/60 bg-bg/80 px-2 backdrop-blur-md md:gap-2 md:px-4">
         <button
           type="button"
-          onClick={onSync}
-          disabled={!connected || syncing}
-          className="rounded-full p-2 text-muted transition-colors hover:bg-raised hover:text-ink disabled:opacity-40"
-          aria-label={c.sync.chat}
-          title={connected ? c.sync.chat : c.sync.offline}
+          onClick={onBack}
+          className="flex size-9 shrink-0 items-center justify-center rounded-[10px] text-muted transition-colors duration-200 outline-none hover:bg-raised hover:text-ink focus-visible:ring-2 focus-visible:ring-ring/50 lg:hidden"
+          aria-label={c.back}
         >
-          <History className={cx('size-5', syncing && 'animate-spin [animation-direction:reverse]')} />
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setSearching((s) => !s);
-            setRawQuery('');
-          }}
-          className={cx('rounded-full p-2 transition-colors hover:bg-raised hover:text-ink', searching ? 'bg-raised text-ink' : 'text-muted')}
-          aria-label={c.searchIn}
-          title={c.searchIn}
-        >
-          <Search className="size-5" />
+          <ArrowLeft className={cx('size-[18px]', flip)} />
         </button>
         <button
           type="button"
           onClick={onToggleInfo}
-          className={cx('hidden rounded-full p-2 transition-colors hover:bg-raised hover:text-ink md:block', infoOpen ? 'bg-raised text-ink' : 'text-muted')}
-          aria-label={c.actions.info}
-          title={c.actions.info}
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl py-1 pe-2 ps-1 text-start transition-colors duration-200 outline-none hover:bg-ink/[0.05] focus-visible:ring-2 focus-visible:ring-ring/50"
         >
-          <Info className="size-5" />
+          <span className="shrink-0 rounded-full ring-1 ring-line/70">
+            <Avatar name={title} id={chat.jid} picture={picture} group={chat.isGroup} online={livePresence(presence)?.presence === 'available'} />
+          </span>
+          <span className="pii min-w-0">
+            <span className="block truncate text-start text-[15px] font-semibold leading-tight tracking-[-0.01em]">
+              {chat.name ? <span dir="auto">{title}</span> : <span className="ltr font-mono">{title}</span>}
+            </span>
+            <span className="mt-0.5 block truncate text-xs leading-tight text-muted">
+              {livePresence(presence) && (livePresence(presence)!.presence === 'composing' || livePresence(presence)!.presence === 'recording') ? (
+                <PresenceLine chat={chat} presence={presence} />
+              ) : chat.isGroup ? (
+                <span>{t.chats.group}</span>
+              ) : (
+                <span className="ltr" dir="ltr">
+                  {chat.phone ?? chat.jid}
+                </span>
+              )}
+            </span>
+          </span>
         </button>
-        <div className="relative">
-          <button type="button" onClick={() => setMenu((o) => !o)} className="rounded-full p-2 text-muted transition-colors hover:bg-raised hover:text-ink" aria-label={c.actions.more} aria-expanded={menu}>
-            <MoreVertical className="size-5" />
+        <div className="flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            onClick={onSync}
+            disabled={!connected || syncing}
+            className="flex size-9 items-center justify-center rounded-[10px] text-muted transition-colors duration-200 outline-none hover:bg-raised hover:text-ink focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50"
+            aria-label={c.sync.chat}
+            title={connected ? c.sync.chat : c.sync.offline}
+          >
+            <History className={cx('size-[18px]', syncing && 'animate-spin [animation-direction:reverse]')} />
           </button>
-          {menu && (
-            <>
-              <div className="fixed inset-0 z-40" onClick={() => setMenu(false)} />
-              <div role="menu" className="animate-scale-in absolute end-0 top-full z-50 mt-1 w-56 origin-top-right rounded-xl border border-line bg-card p-1 shadow-xl">
-                {[
-                  { icon: Pin, label: chat.pinned ? c.actions.unpin : c.actions.pin, run: () => onFlags({ pinned: !chat.pinned }) },
-                  { icon: Archive, label: chat.archived ? c.actions.unarchive : c.actions.archive, run: () => onFlags({ archived: !chat.archived }) },
-                  { icon: MailOpen, label: c.actions.markUnread, run: () => onFlags({ unread: true }) },
-                  { icon: Palette, label: c.actions.wallpaper, run: openWalls },
-                  ...(crossOn ? [{ icon: Forward, label: c.cross.forward, run: () => setForwardOpen(true) }] : []),
-                ].map((item) => (
-                  <button
-                    key={item.label}
-                    role="menuitem"
-                    type="button"
-                    onClick={() => {
-                      setMenu(false);
-                      item.run();
-                    }}
-                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-raised"
-                  >
-                    <item.icon className="size-4 text-muted" /> {item.label}
-                  </button>
-                ))}
-                {chat.phone && (
-                  <a role="menuitem" href={`https://wa.me/${chat.phone.slice(1)}`} target="_blank" rel="noreferrer" className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-raised">
-                    <ExternalLink className="size-4 text-muted" /> {c.actions.openWhatsApp}
-                  </a>
-                )}
-              </div>
-            </>
-          )}
+          <button
+            type="button"
+            onClick={() => {
+              setSearching((s) => !s);
+              setRawQuery('');
+            }}
+            className={cx(
+              'flex size-9 items-center justify-center rounded-[10px] text-muted transition-colors duration-200 outline-none hover:bg-raised hover:text-ink focus-visible:ring-2 focus-visible:ring-ring/50',
+              searching && 'bg-raised text-ink',
+            )}
+            aria-label={c.searchIn}
+            title={c.searchIn}
+          >
+            <Search className="size-[18px]" />
+          </button>
+          <button
+            type="button"
+            onClick={onToggleInfo}
+            className={cx(
+              'hidden size-9 items-center justify-center rounded-[10px] text-muted transition-colors duration-200 outline-none hover:bg-raised hover:text-ink focus-visible:ring-2 focus-visible:ring-ring/50 md:flex',
+              infoOpen && 'bg-raised text-ink',
+            )}
+            aria-label={c.actions.info}
+            title={c.actions.info}
+          >
+            <Info className="size-[18px]" />
+          </button>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setMenu((o) => !o)}
+              className="flex size-9 items-center justify-center rounded-[10px] text-muted transition-colors duration-200 outline-none hover:bg-raised hover:text-ink focus-visible:ring-2 focus-visible:ring-ring/50"
+              aria-label={c.actions.more}
+              aria-expanded={menu}
+            >
+              <MoreVertical className="size-[18px]" />
+            </button>
+            {menu && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setMenu(false)} />
+                <div role="menu" className="animate-scale-in absolute end-0 top-full z-50 mt-1 w-56 origin-top-right rounded-xl border border-line bg-card p-1 shadow-xl">
+                  {[
+                    { icon: Pin, label: chat.pinned ? c.actions.unpin : c.actions.pin, run: () => onFlags({ pinned: !chat.pinned }) },
+                    { icon: Archive, label: chat.archived ? c.actions.unarchive : c.actions.archive, run: () => onFlags({ archived: !chat.archived }) },
+                    { icon: MailOpen, label: c.actions.markUnread, run: () => onFlags({ unread: true }) },
+                    { icon: ListChecks, label: c.select, run: () => setPicking(true) },
+                    { icon: Palette, label: c.actions.wallpaper, run: openWalls },
+                    ...(crossOn ? [{ icon: Forward, label: c.cross.forward, run: () => setForwardOpen(true) }] : []),
+                  ].map((item) => (
+                    <button
+                      key={item.label}
+                      role="menuitem"
+                      type="button"
+                      onClick={() => {
+                        setMenu(false);
+                        item.run();
+                      }}
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-raised"
+                    >
+                      <item.icon className="size-4 text-muted" /> {item.label}
+                    </button>
+                  ))}
+                  {chat.phone && (
+                    <a role="menuitem" href={`https://wa.me/${chat.phone.slice(1)}`} target="_blank" rel="noreferrer" className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-raised">
+                      <ExternalLink className="size-4 text-muted" /> {c.actions.openWhatsApp}
+                    </a>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         </div>
-        <span aria-hidden className="mx-0.5 hidden h-6 w-px bg-line lg:block" />
-        <button type="button" onClick={onBack} className="hidden rounded-full p-2 text-muted transition-colors hover:bg-critical/10 hover:text-critical lg:block" aria-label={c.closeChat} title={c.closeChat}>
-          <X className="size-5" />
+        <span aria-hidden className="mx-1 hidden h-6 w-px shrink-0 bg-line/60 lg:block" />
+        <button
+          type="button"
+          onClick={onBack}
+          className="hidden size-9 shrink-0 items-center justify-center rounded-[10px] text-muted transition-colors duration-200 outline-none hover:bg-critical/10 hover:text-critical focus-visible:ring-2 focus-visible:ring-ring/50 lg:flex"
+          aria-label={c.closeChat}
+          title={c.closeChat}
+        >
+          <X className="size-[18px]" />
         </button>
       </header>
 
@@ -879,6 +946,8 @@ export function Conversation({ sessionId, connected, reconnecting = false, chat,
                             onOpenMedia={openMedia}
                             onJump={jump}
                             onOpenChat={onOpenPhone}
+                            selected={picked.has(item.m.id)}
+                            onToggleSelect={picking ? () => togglePick(item.m.id) : undefined}
                           />
                         </div>
                       ),
@@ -927,6 +996,36 @@ export function Conversation({ sessionId, connected, reconnecting = false, chat,
               <span className="absolute -top-1.5 -end-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1 text-[11px] font-bold text-on-brand">{unseen}</span>
             )}
           </button>
+        )}
+        {picking && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-3 z-30 flex justify-center px-3">
+            <div className="animate-scale-in pointer-events-auto flex items-center gap-0.5 rounded-2xl border border-line bg-card/95 p-1.5 shadow-xl backdrop-blur">
+              <span className="px-2 text-xs font-medium text-muted">{c.selected(picked.size)}</span>
+              <button
+                type="button"
+                disabled={picked.size === 0}
+                onClick={() => setDeletingMany(true)}
+                className="flex cursor-pointer items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-medium text-muted transition-colors hover:bg-raised hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Trash2 className="size-4" /> {c.manage.delete}
+              </button>
+              <button
+                type="button"
+                disabled={picked.size === 0 || !connected}
+                onClick={() => setForwarding(true)}
+                className="flex cursor-pointer items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-medium text-muted transition-colors hover:bg-raised hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Forward className={cx('size-4', flip)} /> {c.forwardTo}
+              </button>
+              <button
+                type="button"
+                onClick={exitPick}
+                className="flex cursor-pointer items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-medium text-muted transition-colors hover:bg-raised hover:text-ink"
+              >
+                <X className="size-4" /> {t.common.cancel}
+              </button>
+            </div>
+          </div>
         )}
       </div>
 
@@ -1001,6 +1100,29 @@ export function Conversation({ sessionId, connected, reconnecting = false, chat,
       {editing && <EditMessageDialog sessionId={sessionId} message={editing} onClose={closeEdit} />}
       {deleting && (
         <DeleteMessageDialog sessionId={sessionId} message={deleting} isGroup={chat.isGroup} connected={connected} onClose={closeDelete} onNotice={notice} />
+      )}
+      {deletingMany && (
+        <DeleteMessagesDialog
+          sessionId={sessionId}
+          messages={pickedMessages}
+          isGroup={chat.isGroup}
+          connected={connected}
+          onClose={() => setDeletingMany(false)}
+          onResult={(ok, fail) => {
+            exitPick();
+            notice(fail ? c.manage.manyPartial(ok, fail) : c.manage.manyDone(ok));
+          }}
+        />
+      )}
+      {forwarding && (
+        <ForwardMessages
+          sessionId={sessionId}
+          messages={pickedMessages}
+          connected={connected}
+          onOpen={onOpenIn}
+          onClose={() => setForwarding(false)}
+          onDone={exitPick}
+        />
       )}
 
       {wallOpen && (

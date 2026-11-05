@@ -124,6 +124,71 @@ export function DeleteMessageDialog({
   );
 }
 
+/**
+ * Delete the picked messages at once. "For everyone" is offered only when every one of them is
+ * still eligible (ours or a group member's, inside WhatsApp's window); "for me" always works.
+ * Each row reports back on its own (message.changed), so partial failures just get counted.
+ */
+export function DeleteMessagesDialog({
+  sessionId,
+  messages,
+  isGroup,
+  connected,
+  onClose,
+  onResult,
+}: {
+  sessionId: string;
+  messages: ChatMessage[];
+  isGroup: boolean;
+  connected: boolean;
+  onClose: () => void;
+  /** (deleted, failed) once the run ends; the dialog closes first. */
+  onResult: (deleted: number, failed: number) => void;
+}) {
+  const { t } = useI18n();
+  const c = t.chats.manage;
+  const [busy, setBusy] = useState<'everyone' | 'me' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const eligible = (m: ChatMessage) => {
+    const out = m.direction === 'out';
+    const at = m.content.timestamp ? m.content.timestamp * 1000 : new Date(m.sentAt ?? m.createdAt).getTime();
+    return connected && Boolean(m.waMessageId) && !m.content.revoked && (out || isGroup) && Date.now() - at < REVOKE_WINDOW_MS;
+  };
+  const allEligible = messages.every(eligible);
+
+  const run = async (scope: 'everyone' | 'me') => {
+    setBusy(scope);
+    setError(null);
+    let ok = 0;
+    let fail = 0;
+    for (const m of messages) {
+      try {
+        await api(`/api/chats/${sessionId}/messages/${m.id}/delete`, { method: 'POST', body: { scope }, timeoutMs: 45_000 });
+        ok += 1;
+      } catch {
+        fail += 1;
+      }
+    }
+    onResult(ok, fail);
+    onClose();
+  };
+
+  return (
+    <Modal title={c.manyTitle(messages.length)} onClose={onClose} size="sm">
+      <div className="space-y-2">
+        {allEligible && (
+          <Choice icon={Users} label={c.forEveryone} hint={c.forEveryoneHint} busy={busy === 'everyone'} disabled={busy !== null} onClick={() => void run('everyone')} />
+        )}
+        <Choice icon={Trash2} label={c.forMe} hint={c.forMeHint} busy={busy === 'me'} disabled={busy !== null} onClick={() => void run('me')} />
+      </div>
+      <ErrorNote>{error}</ErrorNote>
+      <div className="flex justify-end">
+        <Button variant="outline" onClick={onClose}>{t.common.cancel}</Button>
+      </div>
+    </Modal>
+  );
+}
+
 function Choice({ icon: Icon, label, hint, busy, disabled, onClick }: { icon: typeof Trash2; label: string; hint: string; busy: boolean; disabled: boolean; onClick: () => void }) {
   return (
     <button
