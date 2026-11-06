@@ -27,8 +27,7 @@ function Hero() {
   const otp = hero.otpPreview;
   return (
     <section className="studio-hero" aria-labelledby="home-headline">
-      <div className="studio-hero-grid">
-        <div className="min-w-0">
+      <div className="studio-hero-copy">
           <Link href="#pricing" className="studio-announcement">
             <span>{hero.announceTag}</span> {hero.announce}
             <ChevronRight className={cx('size-3.5 shrink-0', flip)} />
@@ -36,8 +35,8 @@ function Hero() {
           <h1 id="home-headline" className="animate-fade-up studio-headline">
             {hero.title} <span>{hero.accent}</span>
           </h1>
-          <p className="mt-5 max-w-xl text-base leading-relaxed text-muted sm:text-lg">{hero.text}</p>
-          <div className="mt-7 flex flex-wrap gap-2.5">
+          <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-muted sm:text-lg">{hero.text}</p>
+          <div className="mt-7 flex flex-wrap justify-center gap-2.5">
             <Link href="/register" className={buttonClass('brand', 'lg')}>
               {hero.cta} <Arrow />
             </Link>
@@ -45,12 +44,12 @@ function Hero() {
               <Play className="size-4" /> {hero.watch}
             </button>
           </div>
-          <ul className="mt-5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
+          <ul className="mt-5 flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs text-muted">
             {hero.trust.map((item) => (
-              <li key={item} className="flex items-center gap-1.5"><Check className="size-3.5 text-brand" />{item}</li>
+              <li key={item} className="flex items-center gap-1.5"><Check className="size-3.5 text-[#c8ff00]" />{item}</li>
             ))}
           </ul>
-        </div>
+      </div>
         <figure className="studio-dispatch animate-fade-up" style={delay(100)}>
           <figcaption className="studio-dispatch-label">
             <span className="inline-flex items-center gap-2"><span aria-hidden className="studio-status-light" />{otp.caption}</span>
@@ -80,7 +79,6 @@ function Hero() {
           </div>
           <div className="studio-endpoint" dir="ltr"><Code2 aria-hidden className="size-4" /> POST /api/send-otp</div>
         </figure>
-      </div>
       <div className="studio-shortcuts">
         <Link href="#platform"><MessageCircle className="size-4" /> {t.landing.platform.inbox.title} <Arrow /></Link>
         <Link href="#developers"><Code2 className="size-4" /> {t.landing.platform.api.title} <Arrow /></Link>
