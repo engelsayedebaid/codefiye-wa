@@ -323,7 +323,7 @@ function FilterBar({ filter, counts, onFilter }: { filter: ChatFilter; counts: P
               onClick={() => onFilter(f)}
               className={cx(
                 'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-3 text-xs whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
-                active ? 'bg-bg font-semibold text-ink shadow-sm light:bg-white' : 'font-medium text-muted hover:text-ink',
+                active ? 'bg-card font-semibold text-ink shadow-sm' : 'font-medium text-muted hover:text-ink',
               )}
             >
               <Icon className="size-3.5" />

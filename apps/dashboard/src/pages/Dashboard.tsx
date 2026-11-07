@@ -247,7 +247,7 @@ function Hero({ overview, days, onDays, loading }: { overview: Overview | null; 
                   onClick={() => setMetric(tab.key)}
                   className={cx(
                     'flex h-8 cursor-pointer items-center gap-2 rounded-lg px-3 text-sm whitespace-nowrap transition-colors',
-                    metric === tab.key ? 'bg-bg font-semibold text-ink shadow-sm light:bg-white' : 'text-muted hover:text-ink',
+                    metric === tab.key ? 'bg-card font-semibold text-ink shadow-sm' : 'text-muted hover:text-ink',
                   )}
                 >
                   <span className={cx('size-2 rounded-full', tab.dot)} />

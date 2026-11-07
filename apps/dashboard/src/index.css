@@ -70,22 +70,22 @@
 }
 
 /*
- * Light theme: warm mint canvas, paper-white panels and a deep WhatsApp green accent.
+ * Light theme: a dim warm-sage canvas and ivory panels, so large surfaces stay off pure white.
  * Unlayered, so it wins over Tailwind's theme layer.
  */
 :root[data-theme='light'] {
-  --color-bg: #f4faf5;
-  --color-surface: #edf2eb;
-  --color-card: #fffffd;
-  --color-raised: #e5f1e8;
-  --color-line: #d8e7dc;
-  --color-line-strong: #bed3c4;
+  --color-bg: #e3e6e0;
+  --color-surface: #d8dcd6;
+  --color-card: #f2f0e9;
+  --color-raised: #dde1da;
+  --color-line: #c9cfc6;
+  --color-line-strong: #b0b8ac;
   --color-ring: #128c5a;
-  --color-ink: #17261d;
-  --color-ink-2: #344b3c;
-  --color-muted: #506559;
-  --color-faint: #5f7264;
-  --color-navy: #ddf4e5;
+  --color-ink: #1b221c;
+  --color-ink-2: #323b34;
+  --color-muted: #596159;
+  --color-faint: #6a726a;
+  --color-navy: #d5e3d6;
   --color-destructive: #d42020;
   --color-destructive-ink: #c81e1e;
 
@@ -171,10 +171,11 @@ html[data-theme='dark'] {
 
 body {
   @apply bg-bg font-sans text-ink antialiased;
-  background-image:
-    radial-gradient(ellipse 55% 34% at 50% -8%, color-mix(in oklab, var(--color-brand) 12%, transparent), transparent 72%),
-    linear-gradient(180deg, color-mix(in oklab, var(--color-card) 28%, transparent), transparent 36rem);
+  background-image: radial-gradient(ellipse 55% 34% at 50% -8%, color-mix(in oklab, var(--color-brand) 12%, transparent), transparent 72%);
   background-attachment: fixed;
+}
+html[data-theme='light'] body {
+  background-image: radial-gradient(ellipse 48% 26% at 50% -12%, color-mix(in oklab, var(--color-brand) 8%, transparent), transparent 70%);
 }
 
 ::selection {
@@ -291,7 +292,7 @@ body {
 [data-theme='light'] .page-wash {
   background-color: var(--color-bg);
   background-image:
-    radial-gradient(ellipse 70% 62% at 0% 0%, color-mix(in oklab, var(--color-brand) 18%, transparent), transparent 72%),
+    radial-gradient(ellipse 70% 62% at 0% 0%, color-mix(in oklab, var(--color-brand) 9%, transparent), transparent 72%),
     radial-gradient(color-mix(in oklab, var(--color-ink) 8%, transparent) 1px, transparent 1.3px);
   background-size:
     100% 100%,
@@ -299,7 +300,7 @@ body {
 }
 [data-theme='light'][dir='rtl'] .page-wash {
   background-image:
-    radial-gradient(ellipse 60% 55% at 100% 0%, color-mix(in oklab, var(--color-brand) 14%, transparent), transparent 70%),
+    radial-gradient(ellipse 60% 55% at 100% 0%, color-mix(in oklab, var(--color-brand) 8%, transparent), transparent 70%),
     radial-gradient(color-mix(in oklab, var(--color-ink) 8%, transparent) 1px, transparent 1.3px);
 }
 
@@ -632,7 +633,7 @@ body {
     border-block: 1px solid var(--color-line);
   }
   [data-theme='light'] .band {
-    background-color: #edf6ef;
+    background-color: #d9ddd6;
   }
 
   .app-canvas {
@@ -894,8 +895,8 @@ body {
   --chat-doodle-ink: rgb(0 0 0 / 0.06);
   --chat-doodle: url('/chat-doodle-light.svg');
   --chat-doodle-size: 420px;
-  --chat-in: #f0f0f0;
-  --chat-out: #d6f5e0;
+  --chat-in: #f2f0e9;
+  --chat-out: #d4e3d4;
   --chat-out-ring: rgb(17 23 20 / 0.06);
 }
 /* Template previews: a WhatsApp conversation in the current theme. */
