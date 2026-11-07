@@ -70,22 +70,22 @@
 }
 
 /*
- * Light theme: a dim warm-sage canvas and ivory panels, so large surfaces stay off pure white.
+ * Light theme: warm stone, a step darker than paper-white, so long sessions don't sit on a lamp.
  * Unlayered, so it wins over Tailwind's theme layer.
  */
 :root[data-theme='light'] {
-  --color-bg: #e3e6e0;
-  --color-surface: #d8dcd6;
-  --color-card: #f2f0e9;
-  --color-raised: #dde1da;
-  --color-line: #c9cfc6;
-  --color-line-strong: #b0b8ac;
+  --color-bg: #e6ddd0;
+  --color-surface: #dbd1c2;
+  --color-card: #efe6d8;
+  --color-raised: #e0d6c6;
+  --color-line: #d2c6b4;
+  --color-line-strong: #b9ab96;
   --color-ring: #128c5a;
-  --color-ink: #1b221c;
-  --color-ink-2: #323b34;
-  --color-muted: #596159;
-  --color-faint: #6a726a;
-  --color-navy: #d5e3d6;
+  --color-ink: #241e16;
+  --color-ink-2: #3d352b;
+  --color-muted: #5e564b;
+  --color-faint: #72695c;
+  --color-navy: #ddd4c2;
   --color-destructive: #d42020;
   --color-destructive-ink: #c81e1e;
 
@@ -633,7 +633,7 @@ html[data-theme='light'] body {
     border-block: 1px solid var(--color-line);
   }
   [data-theme='light'] .band {
-    background-color: #d9ddd6;
+    background-color: #ddd3c4;
   }
 
   .app-canvas {
@@ -890,14 +890,14 @@ html[data-theme='light'] body {
   --chat-out-ring: rgb(52 211 153 / 0.12);
 }
 :root[data-theme='light'] {
-  --chat-wall: var(--color-bg);
-  --chat-dots: rgb(0 0 0 / 0.045);
-  --chat-doodle-ink: rgb(0 0 0 / 0.06);
+  --chat-wall: #d9cebe;
+  --chat-dots: rgb(60 48 32 / 0.06);
+  --chat-doodle-ink: rgb(70 54 36 / 0.09);
   --chat-doodle: url('/chat-doodle-light.svg');
   --chat-doodle-size: 420px;
-  --chat-in: #f2f0e9;
-  --chat-out: #d4e3d4;
-  --chat-out-ring: rgb(17 23 20 / 0.06);
+  --chat-in: #f4eee4;
+  --chat-out: #d3e4c6;
+  --chat-out-ring: rgb(36 30 22 / 0.06);
 }
 /* Template previews: a WhatsApp conversation in the current theme. */
 .wa-wall {
@@ -916,7 +916,8 @@ html[data-theme='light'] body {
   background-color: var(--wall-dark, var(--chat-wall));
 }
 :root[data-theme='light'] :is(.chat-wall, .wall-swatch) {
-  background-color: var(--wall-light, var(--chat-wall));
+  /* Chosen walls are pale pastels; pull them toward ink so the thread isn't the brightest surface. */
+  background-color: color-mix(in oklab, var(--wall-light, var(--chat-wall)) 72%, #3f3428);
 }
 .chat-wall {
   position: relative;
