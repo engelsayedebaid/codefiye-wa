@@ -1,5 +1,5 @@
-import { ArrowUpRight, BookOpen, Building2, Check, CheckCheck, ChevronRight, Code2, Mail, MessageCircle, Play, Plus, ShieldCheck } from '../icons';
-import { useEffect } from 'react';
+import { ArrowUpRight, BookOpen, Building2, Check, CheckCheck, Code2, Mail, MessageCircle, Play, Plus, ShieldCheck, Sparkles } from '../icons';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { BRAND } from '../brand';
 import { useI18n } from '../i18n';
 import { Link, scrollToHash } from '../router';
@@ -10,7 +10,41 @@ import { DemoVideo, playDemo } from './DemoVideo';
 import { Platform } from './Platform';
 import { PlanCards } from './Pricing';
 import { ProductShot } from './ProductShot';
-import { Arrow, SectionHeading, SiteFooter, SiteHeader } from './SiteChrome';
+import { Arrow, SectionHeading, SiteCursor, SiteFooter, SiteHeader } from './SiteChrome';
+
+const FACES = [
+  { src: '/hero-team/3.webp', halo: '#ffe6c6', flip: true },
+  { src: '/hero-team/1.webp', halo: '#cee5ff', flip: false },
+  { src: '/hero-team/2.webp', halo: '#ffb2d7', flip: false },
+];
+
+/** The three portraits trade places: each one slides into the next seat and the front one changes. */
+function FaceStack() {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const id = setInterval(() => setTick((n) => n + 1), 1700);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <span className="studio-faces" aria-hidden>
+      {FACES.map((face, index) => {
+        const slot = (index + tick) % FACES.length;
+        return (
+          <span
+            key={face.src}
+            className="studio-face"
+            style={{ '--slot': slot, '--halo': face.halo, zIndex: slot + 1, transition: slot === 0 ? 'none' : undefined } as CSSProperties}
+          >
+            <span className="studio-face-photo">
+              <img src={face.src} alt="" style={face.flip ? { transform: 'scaleX(-1)' } : undefined} />
+            </span>
+          </span>
+        );
+      })}
+    </span>
+  );
+}
 
 /** A small brand check, for the short lists on the page. */
 function Tick({ className }: { className?: string }) {
@@ -28,29 +62,44 @@ function Hero() {
   return (
     <section className="studio-hero" aria-labelledby="home-headline">
       <div className="studio-hero-copy">
-          <Link href="#pricing" className="studio-announcement">
-            <span>{hero.announceTag}</span> {hero.announce}
-            <ChevronRight className={cx('size-3.5 shrink-0', flip)} />
-          </Link>
+        <Link href="#pricing" className="studio-announcement">
+          <span className="studio-announcement-copy">
+            <Sparkles aria-hidden className="size-3.5" />
+            {hero.announce}
+          </span>
+          <span className="studio-announcement-link">
+            {hero.announceCta} <ArrowUpRight aria-hidden className="size-3.5" />
+          </span>
+        </Link>
+        <div className="studio-hero-grid">
           <h1 id="home-headline" className="animate-fade-up studio-headline">
-            {hero.title} <span>{hero.accent}</span>
+            <span className="studio-headline-lead"><span className="studio-headline-words">{hero.title}</span> <FaceStack /></span>
+            <span className="studio-headline-accent">{hero.accent}</span>
           </h1>
-          <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-muted sm:text-lg">{hero.text}</p>
-          <div className="mt-7 flex flex-wrap justify-center gap-2.5">
-            <Link href="/register" className={buttonClass('brand', 'lg')}>
-              {hero.cta} <Arrow />
-            </Link>
-            <button type="button" onClick={playDemo} className={buttonClass('outline', 'lg')}>
-              <Play className="size-4" /> {hero.watch}
-            </button>
+          <div className="studio-hero-aside animate-fade-up" style={delay(60)}>
+            <p>
+              {hero.text.split('\n').map((line) => (
+                <span key={line} className="studio-hero-line">{line}</span>
+              ))}
+            </p>
+            <div className="studio-hero-actions mt-6 gap-3">
+              <Link href="/register" className={buttonClass('brand', 'lg')}>
+                {hero.cta} <Arrow />
+              </Link>
+              <button type="button" onClick={playDemo} className={buttonClass('outline', 'lg')}>
+                <Play className="size-4" /> {hero.watch}
+              </button>
+            </div>
+            <ul className="studio-hero-trust mt-4 gap-x-4 gap-y-1 text-xs text-muted">
+              {hero.trust.map((item) => (
+                <li key={item} className="flex items-center gap-1.5"><Check className="size-3.5 text-brand" />{item}</li>
+              ))}
+            </ul>
           </div>
-          <ul className="mt-5 flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs text-muted">
-            {hero.trust.map((item) => (
-              <li key={item} className="flex items-center gap-1.5"><Check className="size-3.5 text-[#c8ff00]" />{item}</li>
-            ))}
-          </ul>
+        </div>
       </div>
-        <figure className="studio-dispatch animate-fade-up" style={delay(100)}>
+      <div className="studio-hero-frame animate-fade-up" style={delay(100)}>
+        <figure className="studio-dispatch">
           <figcaption className="studio-dispatch-label">
             <span className="inline-flex items-center gap-2"><span aria-hidden className="studio-status-light" />{otp.caption}</span>
             <bdi>OTP</bdi>
@@ -79,10 +128,11 @@ function Hero() {
           </div>
           <div className="studio-endpoint" dir="ltr"><Code2 aria-hidden className="size-4" /> POST /api/send-otp</div>
         </figure>
-      <div className="studio-shortcuts">
-        <Link href="#platform"><MessageCircle className="size-4" /> {t.landing.platform.inbox.title} <Arrow /></Link>
-        <Link href="#developers"><Code2 className="size-4" /> {t.landing.platform.api.title} <Arrow /></Link>
-        <Link href="/guide"><ShieldCheck className="size-4" /> {hero.otpTitle} <Arrow /></Link>
+        <div className="studio-shortcuts">
+          <Link href="#platform"><MessageCircle className="size-4" /> {t.landing.platform.inbox.title} <Arrow /></Link>
+          <Link href="#developers"><Code2 className="size-4" /> {t.landing.platform.api.title} <Arrow /></Link>
+          <Link href="/guide"><ShieldCheck className="size-4" /> {hero.otpTitle} <Arrow /></Link>
+        </div>
       </div>
     </section>
   );
@@ -379,6 +429,7 @@ export function Landing() {
 
   return (
     <div className="studio-site overflow-x-clip">
+      <SiteCursor />
       <SiteHeader />
       <main id="main">
         <Hero />

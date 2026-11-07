@@ -6,7 +6,7 @@ import { BRAND } from '../brand';
 import { useI18n } from '../i18n';
 import { Link } from '../router';
 import { buttonClass, CopyField, cx, delay, flip, Reveal } from '../ui';
-import { Arrow, SiteFooter, SiteHeader } from './SiteChrome';
+import { Arrow, SiteCursor, SiteFooter, SiteHeader } from './SiteChrome';
 import { TocAside, TocFold, useActiveSection } from './TocNav';
 
 const origin = typeof window !== 'undefined' ? window.location.origin : 'https://api.example.com';
@@ -429,6 +429,7 @@ export function GuidePage() {
 
   return (
     <div className="studio-site studio-doc min-h-svh overflow-x-clip">
+      <SiteCursor />
       <SiteHeader />
       <main id="main">
         <header className="studio-doc-cover relative isolate overflow-hidden border-b border-line">

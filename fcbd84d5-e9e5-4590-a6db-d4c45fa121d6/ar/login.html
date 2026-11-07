@@ -1,0 +1,318 @@
+<!doctype html>
+<!--
+  `translate="no"` alongside the `<meta name="google" content="notranslate">`
+  further down, because the two are not the same thing.
+
+  The meta tag is a Google-specific hint: it covers Chrome's own Translate
+  and Google's crawler, and that is where the crash reports came from, so
+  it was the right first move. `translate="no"` is the HTML standard
+  attribute, which Edge, Safari and Firefox translation honour as well,
+  and which well-behaved translator EXTENSIONS check before touching a
+  subtree. Same policy, applied everywhere rather than in one browser.
+
+  It costs the marketing pages nothing new: the meta tag already opted
+  this document out of translation in Chrome, so this only extends the
+  decision that was already made to the other browsers.
+
+  What it does NOT cover: an extension that rewrites the DOM without
+  asking. Nothing in HTML can stop that.
+-->
+<html lang="en" translate="no">
+  <head><style id="cf-hide-watermarks">
+[id*="buy-theme" i],[class*="buy-theme" i],[id*="demo-bar" i],[class*="demo-bar" i],
+[id*="xts-demo" i],[class*="xts-demo" i],[class*="prebuilt-website" i],
+[class*="theme-stats" i],[class*="websites-count" i],
+iframe[src*="themeforest"],iframe[src*="envato"],
+a[href*="themeforest.net"],a[href*="envato.com"]{display:none!important}
+</style>
+    <meta charset="UTF-8" />
+
+    <!-- Favicons. The .ico comes FIRST and is what link-preview scrapers
+         (WhatsApp, Telegram, Slack) fetch from ../img/001-favicon.ico — they don't
+         read SVG favicons, so without it the preview showed a broken-image
+         icon next to the domain. SVG is the crisp modern default; PNGs are
+         the legacy raster fallback. -->
+    <link rel="icon" href="../img/001-favicon.ico" sizes="48x48" />
+    <link rel="icon" type="image/svg+xml" href="../img/002-favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="../img/003-favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="../img/004-favicon-16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="../img/005-apple-touch-icon.png" />
+    <link rel="mask-icon" href="../img/002-favicon.svg" color="#22E6A4" />
+
+    <!-- viewport-fit=cover is what unlocks env(safe-area-inset-*) on iOS,
+         so the mobile top bar can extend under the notch with the
+         hamburger sitting in a safe spot. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
+    <!-- Theme color drives the URL/status-bar tint on mobile + the
+         PWA splash screen. Two values let it follow light/dark mode. -->
+    <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0B0D12" media="(prefers-color-scheme: dark)" />
+    <meta name="color-scheme" content="light dark" />
+
+    <!-- Primary description — shown in Google snippets + WhatsApp previews. -->
+    <meta
+      name="description"
+      content="Taskatk is project, task and time-tracking software with Taskatk AI built in: ask about your work, turn files into tasks and let it make the changes you approve."
+    />
+    <meta
+      name="keywords"
+      content="task management, project management, kanban, time tracking, team collaboration, AI project management, AI task management, AI assistant for teams, Taskatk, Taskatk AI, تسكاتك, تاسكاتك, تسكاتك AI, إدارة مهام, إدارة مشاريع, إدارة المهام بالذكاء الاصطناعي, مساعد ذكاء اصطناعي للفرق"
+    />
+    <meta name="author" content="Taskatk" />
+
+    <!-- Disable Google/Chrome auto-translate on the SPA. The app is
+         already bilingual (Arabic + English) via the in-app toggle, so
+         browser-level translation adds nothing but reproducibly crashes
+         React: Translate swaps text nodes directly in the DOM without
+         React's knowledge, then the next reconciliation tries to
+         removeChild a node that no longer exists → `NotFoundError:
+         The object can not be found here`. Recurring reports from
+         users on Arabic Chrome confirmed the signature. -->
+    <meta name="google" content="notranslate" />
+
+    <link rel="canonical" href="https://taskatk.app/" />
+
+    <!-- hreflang alternates — tells Google to surface the Arabic
+         version to ar-* users and the English version to en-* users,
+         instead of showing one variant to everyone. `?lang=en` is the
+         opt-in flag the pre-paint script below honours; without an
+         hreflang for it Google would treat the same URL as a single
+         language target. `x-default` is the fallback for any locale
+         we don't explicitly list. -->
+    <link rel="alternate" hreflang="en" href="https://taskatk.app/" />
+    <link rel="alternate" hreflang="ar" href="../index.html" />
+    <link rel="alternate" hreflang="x-default" href="https://taskatk.app/" />
+
+    <!-- OpenGraph — preview cards in WhatsApp, LinkedIn, Slack, Discord. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Taskatk" />
+    <!-- English-only title. Arabic search coverage is served through
+         the hreflang="ar" alternate that points at /ar, so we don't
+         need to inline the Arabic translation here — mixing both in
+         one line made social previews (WhatsApp, LinkedIn, Slack)
+         read as a run-on English/Arabic string. -->
+    <meta property="og:title" content="Taskatk | Project & Task Management for Teams" />
+    <meta
+      property="og:description"
+      content="Taskatk is project, task and time-tracking software with Taskatk AI built in: ask about your work, turn files into tasks and let it make the changes you approve."
+    />
+    <meta property="og:url" content="https://taskatk.app/" />
+    <meta property="og:image" content="../img/018-og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Taskatk product preview" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:locale:alternate" content="ar_AR" />
+
+    <!-- Twitter Card — separate spec from OG but most fields overlap. -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Taskatk | Project & Task Management for Teams" />
+    <meta
+      name="twitter:description"
+      content="Taskatk is project, task and time-tracking software with Taskatk AI built in: ask about your work, turn files into tasks and let it make the changes you approve."
+    />
+    <meta name="twitter:image" content="../img/018-og-image.png" />
+
+    <!-- PWA manifest intentionally NOT linked here.
+         Chrome would otherwise prompt the user with
+           "taskatk.app wants to: Access other apps and services on this device"
+         every visit while the site is treated as installable. The
+         manifest file (`public/manifest.webmanifest`) is kept in the
+         repo so we can re-enable the PWA shell later by restoring this
+         line + the apple-mobile-web-app-* meta tags. Push notifications
+         still work via the service worker (registered manually when the
+         user opts in from Settings → Notifications); only the
+         install-banner behavior is suppressed. -->
+    <meta name="application-name" content="Taskatk" />
+
+    <!-- Web fonts.
+         Cairo (the Arabic body face) is now SELF-HOSTED from
+         ../fonts/002-cairo--.woff2 instead of fonts.gstatic.com.
+         Reasoning: every fresh visitor used to pay DNS + TLS to
+         Google's font CDN before a single Arabic glyph could render,
+         so the page flashed in the system Arabic fallback (Geeza Pro,
+         etc.) and then visibly swapped to Cairo a beat later — the
+         exact symptom users kept reporting. Same-origin font files
+         skip the DNS hop entirely, ship over the warm connection
+         that's already serving the SPA bundle, and can be preloaded
+         with `<link rel="preload">` so the browser dispatches the
+         fetch during HTML parse instead of waiting for the CSS to
+         declare it. The @font-face declarations live in `src/index.css`
+         and use `unicode-range` so the arabic file is only requested
+         when the page actually renders arabic glyphs (English admin
+         screens skip it entirely).
+
+         What's still on Google Fonts: Inter + Plus Jakarta Sans
+         (Latin). These render only Latin text, are smaller than the
+         Arabic file, and Google's CDN is fine for them in this
+         tier — keeping them remote means we don't have to commit
+         binary woff2 files for every weight to the repo. If they
+         ever become the bottleneck, the same self-hosting recipe
+         applies.
+
+         `preconnect` still warms the TCP + TLS handshake to Google
+         Fonts so the Latin CSS + font fetches don't pay that RTT
+         cost. `crossorigin` on `fonts.gstatic.com` is required —
+         font files are CORS-fetched and the preconnect must match
+         the request's credentials mode or it's discarded.
+
+         The arabic woff2 preload uses `crossorigin` even though the
+         file is same-origin: the CSSOM @font-face fetch is always
+         treated as crossorigin per spec, so the preload has to match
+         or the browser double-fetches the file. Without that flag
+         the preload would actually slow things down. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Preload Norsal SemiBold — it's the primary Arabic face for
+         every heading and CTA on the landing (Tailwind font-bold,
+         font-extrabold, and font-semibold all resolve to this weight
+         range per the @font-face declaration in index.css). Preloading
+         it kicks the fetch off during HTML parse so it's ready when
+         the first paint lands, instead of waiting for the CSS to be
+         parsed before discovering the font. Cairo (preloaded
+         previously) is the safety-net fallback — kept loadable on
+         demand by the @font-face declarations but NOT preloaded,
+         because if Norsal works (the expected case) Cairo bytes are
+         pure waste. `crossorigin` matches the CSSOM @font-face fetch
+         credentials mode so the preload isn't double-fetched. -->
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      href="../fonts/001-Norsal-SemiBold.woff2"
+      crossorigin
+    />
+    <!-- Poppins is the app's Latin face (inside AppShell, with Norsal for
+         Arabic; see `html[data-surface="app"]` in src/index.css). Inter and
+         Plus Jakarta Sans stay for the landing and sign-in pages. Only the
+         CSS is fetched up front: each face's files load when a page
+         actually draws text in it, so the landing never downloads Poppins
+         and the app never downloads Inter. -->
+    <link
+      rel="preload"
+      as="style"
+      href="../css/001-css2.css"
+    />
+    <link
+      rel="preload" as="style"
+      href="../css/001-css2.css"
+    / onload="this.onload=null;this.rel='stylesheet'">
+    <title>Taskatk | Project & Task Management for Teams</title>
+
+    <!-- JSON-LD structured data — feeds Google rich snippets.
+         SoftwareApplication is the right schema for a SaaS product;
+         BreadcrumbList helps Google understand the public hierarchy. -->
+    
+
+    <!-- Standalone Organization block — search engines that key on
+         @type=Organization for knowledge-panel enrichment find this
+         directly instead of parsing it out of SoftwareApplication.publisher.
+         English is primary now that / serves the English canonical;
+         Arabic surfaces as alternateName so Google still ranks the
+         brand for tasakatk-in-Arabic queries. -->
+    
+
+    <!-- WebSite block with SearchAction — makes Taskatk eligible for
+         the Google sitelinks search box (a search input directly under
+         the brand result on SERP). potentialAction points at the SPA's
+         `?q=` handler so the search box is functional if surfaced. -->
+    
+
+    <!-- Pre-paint theme + direction setup.
+         Without this, React renders with the default light theme, then
+         a useEffect flips `.dark` on once the persisted theme loads —
+         producing a visible flash between light and dark on every
+         navigation/refresh. This blocking script reads the same
+         localStorage key the zustand persist middleware writes to
+         (`flowspace-state-v3`) and applies the theme + RTL direction
+         to `<html>` BEFORE the first paint. -->
+    
+    <!-- Boot watchdog (owner's iPhone, 2026-10-21).
+         The service worker used to answer every /assets/* request from
+         Cache Storage, and on iPhone Safari that store can wedge: the
+         requests never settle and the page sits on its loader on every
+         route, while a private tab opens at once. The worker no longer
+         touches the network (public/sw.js, registered as /sw.js?v=2), but a
+         device still controlled by the OLD worker cannot load the code that
+         would replace it. So: if the old worker controls this page and the
+         loader is still up after 15 seconds, unregister it, drop its
+         caches, and reload once (at most every ten minutes). The new
+         worker never arms this, and neither does the desktop app, which
+         registers none. -->
+    
+
+    <!-- No Google tag here, on purpose. This file is the shell of every
+         route (the signed-in app, the portals and their tokens included),
+         of the desktop app's window, and of every prerendered page, and a
+         tag here would run on all of them before any code could decide.
+         Google Analytics and the Ads conversion start from
+         src/lib/analytics.ts, on the marketing pages and the sign-up
+         funnel only, and are told a scrubbed address (owner, 2026-11-04). -->
+    
+    <link rel="modulepreload" crossorigin href="/assets/rolldown-runtime-BYbx6iT9.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-dnd-wxetfF5_.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-react-DfsTOuI0.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-motion-C6jOpLn6.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-echo-BBvxaRz1.js">
+    <link rel="modulepreload" crossorigin href="/assets/utils-CWzAmCZM.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-icons-BqQpyStl.js">
+    <link rel="modulepreload" crossorigin href="/assets/api-CyG0xy1B.js">
+    <link rel="modulepreload" crossorigin href="/assets/i18n-DqTKKSRZ.js">
+    <link rel="modulepreload" crossorigin href="/assets/planNames-DlSJ8Qv8.js">
+    <link rel="modulepreload" crossorigin href="/assets/auth-CnvZXeV2.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-datefns-DqH7Tg0Z.js">
+    <link rel="modulepreload" crossorigin href="/assets/AiIcon-Bx3M80qP.js">
+    <link rel="modulepreload" crossorigin href="/assets/Logo-BBHQ6t3j.js">
+    <link rel="modulepreload" crossorigin href="/assets/dialogBehaviour-BZQgQ9uX.js">
+    <link rel="modulepreload" crossorigin href="/assets/Modal-DSfH7T9K.js">
+    <link rel="modulepreload" crossorigin href="/assets/Popover-w1W0eq0G.js">
+    <link rel="modulepreload" crossorigin href="/assets/Primitives-B2exA7Nu.js">
+    <link rel="modulepreload" crossorigin href="/assets/SearchField-BjsgHV2H.js">
+    <link rel="modulepreload" crossorigin href="/assets/SelectedCheck-CrOVZ5GZ.js">
+    <link rel="modulepreload" crossorigin href="/assets/Skeleton-DeQLtuR-.js">
+    <link rel="modulepreload" crossorigin href="/assets/Tag-BvFKYdKi.js">
+    <link rel="modulepreload" crossorigin href="/assets/tooltipCard-Ckjxh3AN.js">
+    <link rel="modulepreload" crossorigin href="/assets/assistantApi-tYERFZEQ.js">
+    <link rel="modulepreload" crossorigin href="/assets/signupSource-4QoEQfYB.js">
+    <link rel="modulepreload" crossorigin href="/assets/visitorTracking-BsKKxVbK.js">
+    <link rel="modulepreload" crossorigin href="/assets/queries-fjIW9umj.js">
+    <link rel="modulepreload" crossorigin href="/assets/countWords-B2rSH_Hv.js">
+    <link rel="modulepreload" crossorigin href="/assets/directCheckout-jV0R8bwu.js">
+    <link rel="modulepreload" crossorigin href="/assets/reveal-BsRWNcES.js">
+    <link rel="preload" as="style" crossorigin href="../css/002-index-g8xRoU7m.css" onload="this.onload=null;this.rel='stylesheet'">
+  </head>
+  <body>
+    <!-- Instant splash. iPhone Safari on first-load spent 2-4s on a blank
+         document while it downloaded + parsed the JS bundle + lazy-fetched
+         the LandingPage chunk. Users reported it as a "hang" — because to
+         them a blank screen for 3s IS a hang. This inline splash paints
+         within one frame of HTML parse (no JS or extra assets), and React
+         replaces the whole #root subtree on mount, so it disappears the
+         instant the SPA is ready. Kept dependency-free: inline SVG, inline
+         styles, tiny CSS spinner. The colours track the pre-paint theme
+         script above so the splash bg matches the app the user is about
+         to see (no light/dark flash on mount). -->
+    <div id="root">
+      <div id="__boot" aria-hidden="true" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#0b0d12;color:#e6e7ea;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif">
+        <!-- Matches src/components/ui/BrandLoader.tsx: 32px emblem +
+             60px ring with the same 1.1s spin + 1.6s emblem pulse.
+             Kept in raw HTML/CSS so there's no visual "flip" when
+             React mounts and swaps this out for the real component. -->
+        <div style="position:relative;width:60px;height:60px">
+          <span style="position:absolute;inset:0;border:2px solid rgba(255,255,255,.1);border-top-color:#22E6A4;border-radius:9999px;animation:__b_spin 1.1s linear infinite"></span>
+          <svg viewBox="0 0 85 88" width="32" height="33" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style="position:absolute;inset:0;margin:auto;animation:__b_pulse 1.6s ease-in-out infinite"><path d="M0 73.3694L13.8483 87.3511L47.4558 53.761V87.3511H66.7928V43.4453H29.6388L0 73.3694Z" fill="#e6e7ea"/><path d="M84.0742 13.8395L70.0322 0.00662994L35.9547 33.2393V0.00662994H16.3472V43.4453H54.0209L84.0742 13.8395Z" fill="#22E6A4"/></svg>
+        </div>
+      </div>
+    </div>
+    <style>
+      @media (prefers-color-scheme: light) {
+        #__boot { background:#fff !important; color:#111 !important; }
+        #__boot span { border-color:rgba(0,0,0,.08) !important; border-top-color:#22E6A4 !important; }
+        #__boot svg path:first-of-type { fill:#111 !important; }
+      }
+      @keyframes __b_spin { to { transform:rotate(360deg) } }
+      @keyframes __b_pulse { 0%,100% { opacity:1 } 50% { opacity:.55 } }
+    </style>
+  </body>
+</html>

@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="ar" translate="no" class="dark" data-motion="" dir="rtl"><head><style id="cf-hide-watermarks">
+[id*="buy-theme" i],[class*="buy-theme" i],[id*="demo-bar" i],[class*="demo-bar" i],
+[id*="xts-demo" i],[class*="xts-demo" i],[class*="prebuilt-website" i],
+[class*="theme-stats" i],[class*="websites-count" i],
+iframe[src*="themeforest"],iframe[src*="envato"],
+a[href*="themeforest.net"],a[href*="envato.com"]{display:none!important}
+</style>
+    <meta charset="UTF-8">
+
+    <!-- Favicons. The .ico comes FIRST and is what link-preview scrapers
+         (WhatsApp, Telegram, Slack) fetch from ../img/001-favicon.ico — they don't
+         read SVG favicons, so without it the preview showed a broken-image
+         icon next to the domain. SVG is the crisp modern default; PNGs are
+         the legacy raster fallback. -->
+    <link rel="icon" href="../img/001-favicon.ico" sizes="48x48">
+    <link rel="icon" type="image/svg+xml" href="../img/002-favicon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="../img/003-favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="../img/004-favicon-16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="../img/005-apple-touch-icon.png">
+    <link rel="mask-icon" href="../img/002-favicon.svg" color="#22E6A4">
+
+    <!-- viewport-fit=cover is what unlocks env(safe-area-inset-*) on iOS,
+         so the mobile top bar can extend under the notch with the
+         hamburger sitting in a safe spot. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+
+    <!-- Theme color drives the URL/status-bar tint on mobile + the
+         PWA splash screen. Two values let it follow light/dark mode. -->
+    <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#0B0D12" media="(prefers-color-scheme: dark)">
+    <meta name="color-scheme" content="light dark">
+
+    <!-- Primary description — shown in Google snippets + WhatsApp previews. -->
+    <meta name="description" content="شروط استرداد اشتراكات تسكاتك: مهلة 14 يومًا للاشتراك الأول، وسياسة التجديدات والإضافات وطريقة تقديم الطلب.">
+    <meta name="keywords" content="task management, project management, kanban, time tracking, team collaboration, AI project management, AI task management, AI assistant for teams, Taskatk, Taskatk AI, تسكاتك, تاسكاتك, تسكاتك AI, إدارة مهام, إدارة مشاريع, إدارة المهام بالذكاء الاصطناعي, مساعد ذكاء اصطناعي للفرق">
+    <meta name="author" content="Taskatk">
+
+    <!-- Disable Google/Chrome auto-translate on the SPA. The app is
+         already bilingual (Arabic + English) via the in-app toggle, so
+         browser-level translation adds nothing but reproducibly crashes
+         React: Translate swaps text nodes directly in the DOM without
+         React's knowledge, then the next reconciliation tries to
+         removeChild a node that no longer exists → `NotFoundError:
+         The object can not be found here`. Recurring reports from
+         users on Arabic Chrome confirmed the signature. -->
+    <meta name="google" content="notranslate">
+
+    <link rel="canonical" href="refund-policy.html">
+
+    <!-- hreflang alternates — tells Google to surface the Arabic
+         version to ar-* users and the English version to en-* users,
+         instead of showing one variant to everyone. `?lang=en` is the
+         opt-in flag the pre-paint script below honours; without an
+         hreflang for it Google would treat the same URL as a single
+         language target. `x-default` is the fallback for any locale
+         we don't explicitly list. -->
+    <link rel="alternate" hreflang="en" href="https://taskatk.app/">
+    <link rel="alternate" hreflang="ar" href="../index.html">
+    <link rel="alternate" hreflang="x-default" href="https://taskatk.app/">
+
+    <!-- OpenGraph — preview cards in WhatsApp, LinkedIn, Slack, Discord. -->
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Taskatk">
+    <!-- English-only title. Arabic search coverage is served through
+         the hreflang="ar" alternate that points at /ar, so we don't
+         need to inline the Arabic translation here — mixing both in
+         one line made social previews (WhatsApp, LinkedIn, Slack)
+         read as a run-on English/Arabic string. -->
+    <meta property="og:title" content="سياسة الاسترداد · Taskatk">
+    <meta property="og:description" content="شروط استرداد اشتراكات تسكاتك: مهلة 14 يومًا للاشتراك الأول، وسياسة التجديدات والإضافات وطريقة تقديم الطلب.">
+    <meta property="og:url" content="https://taskatk.app/">
+    <meta property="og:image" content="../img/018-og-image.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="Taskatk product preview">
+    <meta property="og:locale" content="ar_AR">
+    <meta property="og:locale:alternate" content="en_US">
+
+    <!-- Twitter Card — separate spec from OG but most fields overlap. -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="سياسة الاسترداد · Taskatk">
+    <meta name="twitter:description" content="شروط استرداد اشتراكات تسكاتك: مهلة 14 يومًا للاشتراك الأول، وسياسة التجديدات والإضافات وطريقة تقديم الطلب.">
+    <meta name="twitter:image" content="../img/018-og-image.png">
+
+    <!-- PWA manifest intentionally NOT linked here.
+         Chrome would otherwise prompt the user with
+           "taskatk.app wants to: Access other apps and services on this device"
+         every visit while the site is treated as installable. The
+         manifest file (`public/manifest.webmanifest`) is kept in the
+         repo so we can re-enable the PWA shell later by restoring this
+         line + the apple-mobile-web-app-* meta tags. Push notifications
+         still work via the service worker (registered manually when the
+         user opts in from Settings → Notifications); only the
+         install-banner behavior is suppressed. -->
+    <meta name="application-name" content="Taskatk">
+
+    <!-- Web fonts.
+         Cairo (the Arabic body face) is now SELF-HOSTED from
+         ../fonts/002-cairo--.woff2 instead of fonts.gstatic.com.
+         Reasoning: every fresh visitor used to pay DNS + TLS to
+         Google's font CDN before a single Arabic glyph could render,
+         so the page flashed in the system Arabic fallback (Geeza Pro,
+         etc.) and then visibly swapped to Cairo a beat later — the
+         exact symptom users kept reporting. Same-origin font files
+         skip the DNS hop entirely, ship over the warm connection
+         that's already serving the SPA bundle, and can be preloaded
+         with `<link rel="preload">` so the browser dispatches the
+         fetch during HTML parse instead of waiting for the CSS to
+         declare it. The @font-face declarations live in `src/index.css`
+         and use `unicode-range` so the arabic file is only requested
+         when the page actually renders arabic glyphs (English admin
+         screens skip it entirely).
+
+         What's still on Google Fonts: Inter + Plus Jakarta Sans
+         (Latin). These render only Latin text, are smaller than the
+         Arabic file, and Google's CDN is fine for them in this
+         tier — keeping them remote means we don't have to commit
+         binary woff2 files for every weight to the repo. If they
+         ever become the bottleneck, the same self-hosting recipe
+         applies.
+
+         `preconnect` still warms the TCP + TLS handshake to Google
+         Fonts so the Latin CSS + font fetches don't pay that RTT
+         cost. `crossorigin` on `fonts.gstatic.com` is required —
+         font files are CORS-fetched and the preconnect must match
+         the request's credentials mode or it's discarded.
+
+         The arabic woff2 preload uses `crossorigin` even though the
+         file is same-origin: the CSSOM @font-face fetch is always
+         treated as crossorigin per spec, so the preload has to match
+         or the browser double-fetches the file. Without that flag
+         the preload would actually slow things down. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+    <!-- Preload Norsal SemiBold — it's the primary Arabic face for
+         every heading and CTA on the landing (Tailwind font-bold,
+         font-extrabold, and font-semibold all resolve to this weight
+         range per the @font-face declaration in index.css). Preloading
+         it kicks the fetch off during HTML parse so it's ready when
+         the first paint lands, instead of waiting for the CSS to be
+         parsed before discovering the font. Cairo (preloaded
+         previously) is the safety-net fallback — kept loadable on
+         demand by the @font-face declarations but NOT preloaded,
+         because if Norsal works (the expected case) Cairo bytes are
+         pure waste. `crossorigin` matches the CSSOM @font-face fetch
+         credentials mode so the preload isn't double-fetched. -->
+    <link rel="preload" as="font" type="font/woff2" href="../fonts/001-Norsal-SemiBold.woff2" crossorigin="">
+    <!-- Poppins is the app's Latin face (inside AppShell, with Norsal for
+         Arabic; see `html[data-surface="app"]` in src/index.css). Inter and
+         Plus Jakarta Sans stay for the landing and sign-in pages. Only the
+         CSS is fetched up front: each face's files load when a page
+         actually draws text in it, so the landing never downloads Poppins
+         and the app never downloads Inter. -->
+    <link rel="preload" as="style" href="../css/001-css2.css">
+    <link rel="preload" as="style" href="../css/001-css2.css" onload="this.onload=null;this.rel='stylesheet'">
+    <title>سياسة الاسترداد · Taskatk</title>
+
+    <!-- JSON-LD structured data — feeds Google rich snippets.
+         SoftwareApplication is the right schema for a SaaS product;
+         BreadcrumbList helps Google understand the public hierarchy. -->
+    
+
+    <!-- Standalone Organization block — search engines that key on
+         @type=Organization for knowledge-panel enrichment find this
+         directly instead of parsing it out of SoftwareApplication.publisher.
+         English is primary now that / serves the English canonical;
+         Arabic surfaces as alternateName so Google still ranks the
+         brand for tasakatk-in-Arabic queries. -->
+    
+
+    <!-- WebSite block with SearchAction — makes Taskatk eligible for
+         the Google sitelinks search box (a search input directly under
+         the brand result on SERP). potentialAction points at the SPA's
+         `?q=` handler so the search box is functional if surfaced. -->
+    
+
+    <!-- Pre-paint theme + direction setup.
+         Without this, React renders with the default light theme, then
+         a useEffect flips `.dark` on once the persisted theme loads —
+         producing a visible flash between light and dark on every
+         navigation/refresh. This blocking script reads the same
+         localStorage key the zustand persist middleware writes to
+         (`flowspace-state-v3`) and applies the theme + RTL direction
+         to `<html>` BEFORE the first paint. -->
+    
+    <!-- Boot watchdog (owner's iPhone, 2026-10-21).
+         The service worker used to answer every /assets/* request from
+         Cache Storage, and on iPhone Safari that store can wedge: the
+         requests never settle and the page sits on its loader on every
+         route, while a private tab opens at once. The worker no longer
+         touches the network (public/sw.js, registered as /sw.js?v=2), but a
+         device still controlled by the OLD worker cannot load the code that
+         would replace it. So: if the old worker controls this page and the
+         loader is still up after 15 seconds, unregister it, drop its
+         caches, and reload once (at most every ten minutes). The new
+         worker never arms this, and neither does the desktop app, which
+         registers none. -->
+    
+
+    <!-- No Google tag here, on purpose. This file is the shell of every
+         route (the signed-in app, the portals and their tokens included),
+         of the desktop app's window, and of every prerendered page, and a
+         tag here would run on all of them before any code could decide.
+         Google Analytics and the Ads conversion start from
+         src/lib/analytics.ts, on the marketing pages and the sign-up
+         funnel only, and are told a scrubbed address (owner, 2026-11-04). -->
+    
+    <link rel="modulepreload" crossorigin="" href="/assets/rolldown-runtime-BYbx6iT9.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/vendor-dnd-wxetfF5_.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/vendor-react-DfsTOuI0.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/vendor-motion-C6jOpLn6.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/vendor-echo-BBvxaRz1.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/utils-CWzAmCZM.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/vendor-icons-BqQpyStl.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/api-CyG0xy1B.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/i18n-DqTKKSRZ.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/planNames-DlSJ8Qv8.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/auth-CnvZXeV2.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/vendor-datefns-DqH7Tg0Z.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/AiIcon-Bx3M80qP.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/Logo-BBHQ6t3j.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/dialogBehaviour-BZQgQ9uX.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/Modal-DSfH7T9K.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/Popover-w1W0eq0G.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/Primitives-B2exA7Nu.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/SearchField-BjsgHV2H.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/SelectedCheck-CrOVZ5GZ.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/Skeleton-DeQLtuR-.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/Tag-BvFKYdKi.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/tooltipCard-Ckjxh3AN.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/assistantApi-tYERFZEQ.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/signupSource-4QoEQfYB.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/visitorTracking-BsKKxVbK.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/queries-fjIW9umj.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/countWords-B2rSH_Hv.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/directCheckout-jV0R8bwu.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/reveal-BsRWNcES.js">
+    <link rel="preload" as="style" crossorigin="" href="../css/002-index-g8xRoU7m.css" onload="this.onload=null;this.rel='stylesheet'">
+  <link rel="modulepreload" crossorigin="" href="/assets/AIFeatureVisuals-CGZydRvE.js"><link rel="modulepreload" crossorigin="" href="/assets/aiLayout-B9R7gPYy.js"><link rel="modulepreload" crossorigin="" href="/assets/ContactPage-04ASiV7H.js"><link rel="modulepreload" crossorigin="" href="/assets/PublicTopBar-BKIwFFeh.js"><link rel="modulepreload" crossorigin="" href="/assets/LegalPages-C8uJmlhv.js"><link rel="modulepreload" crossorigin="" href="/assets/UseCasesPage-BqXdEw6J.js"><link rel="modulepreload" crossorigin="" href="/assets/index-BZXn0SWK.js"><link rel="stylesheet" crossorigin="" href="../css/002-index-g8xRoU7m.css"></head>
+  <body>
+    <!-- Instant splash. iPhone Safari on first-load spent 2-4s on a blank
+         document while it downloaded + parsed the JS bundle + lazy-fetched
+         the LandingPage chunk. Users reported it as a "hang" — because to
+         them a blank screen for 3s IS a hang. This inline splash paints
+         within one frame of HTML parse (no JS or extra assets), and React
+         replaces the whole #root subtree on mount, so it disappears the
+         instant the SPA is ready. Kept dependency-free: inline SVG, inline
+         styles, tiny CSS spinner. The colours track the pre-paint theme
+         script above so the splash bg matches the app the user is about
+         to see (no light/dark flash on mount). -->
+    <div id="root"><div class="min-h-screen bg-bg-public text-text"><div aria-hidden="true" class="pointer-events-none fixed left-0 top-0 z-[99999] h-8 w-8 rounded-full border-[1.5px] border-white opacity-0 mix-blend-difference transition-opacity duration-300 will-change-transform"></div><div aria-hidden="true" class="pointer-events-none fixed left-0 top-0 z-[99999] h-2 w-2 rounded-full bg-white opacity-0 mix-blend-difference transition-opacity duration-300 will-change-transform"></div><header class="sticky top-0 z-30 border-b border-border bg-bg-public/80 backdrop-blur-xl"><div class="mx-auto flex items-center justify-between px-5 py-3.5 max-w-3xl"><a class="flex items-center gap-2" href="/" data-discover="true"><svg width="456" height="88" viewBox="0 0 456 88" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="تاسكاتك" class="block h-6 w-auto text-text"><path d="M0 73.3694L13.8483 87.3511L47.4558 53.761V87.3511H66.7928V43.4453H29.6388L0 73.3694Z" fill="currentColor"></path><path d="M84.0742 13.8395L70.0322 0.00662994L35.9547 33.2393V0.00662994H16.3472V43.4453H54.0209L84.0742 13.8395Z" fill="#22E6A4"></path><path d="M123.82 71.3057V81.6757C118.94 85.8237 114.304 86.5557 111.01 86.5557C100.884 86.5557 95.2722 79.4797 95.2722 69.4757V38.8537H88.0742V24.4577H101.616V24.0917C98.5662 22.7497 95.2722 20.3097 95.2722 14.8197V7.98769H109.912V24.4577H123.82V38.8537H109.912V63.7417C109.912 68.6217 111.986 73.1357 117.354 73.1357C120.526 73.1357 122.6 72.0377 123.82 71.3057ZM168.765 85.5797L165.105 75.6977C162.543 82.0417 154.613 87.1657 143.877 87.1657C132.897 87.1657 122.893 81.1877 122.893 69.2317C122.893 58.4957 133.019 47.8817 155.467 49.7117L154.247 46.2957C150.953 37.3897 141.315 38.7317 128.505 38.8537V24.4577C151.197 24.4577 164.007 22.1397 170.107 40.1957L185.479 85.5797H168.765ZM161.567 66.0597L158.761 58.6177C150.221 57.8857 142.901 59.7157 142.901 67.1577C142.901 73.1357 147.781 76.4297 152.661 76.4297C157.419 76.4297 162.055 73.1357 161.567 66.0597ZM208.936 35.1937C202.47 35.1937 199.786 37.7557 199.786 40.6837C199.786 51.2977 234.434 45.9297 234.434 66.9137C234.434 78.5037 223.698 86.7997 207.106 86.7997C196.004 86.7997 186.488 83.0177 181.242 78.7477L184.292 64.8397C188.928 69.7197 197.834 73.6237 206.74 73.6237C213.694 73.6237 218.94 71.3057 218.94 67.1577C218.94 56.6657 184.292 62.6437 184.292 41.2937C184.292 30.4357 193.32 23.3597 208.082 23.3597C218.208 23.3597 228.456 26.6537 233.458 31.4117L230.042 44.5877C227.114 41.1717 218.94 35.1937 208.936 35.1937ZM255.955 0.179688V49.5897L279.257 24.4577H299.631L270.839 52.7617L300.729 85.5797H280.965L255.955 55.5677V85.5797H240.339V0.179688H255.955ZM340.766 85.5797L337.106 75.6977C334.544 82.0417 326.614 87.1657 315.878 87.1657C304.898 87.1657 294.894 81.1877 294.894 69.2317C294.894 58.4957 305.02 47.8817 327.468 49.7117L326.248 46.2957C322.954 37.3897 313.316 38.7317 300.506 38.8537V24.4577C323.198 24.4577 336.008 22.1397 342.108 40.1957L357.48 85.5797H340.766ZM333.568 66.0597L330.762 58.6177C322.222 57.8857 314.902 59.7157 314.902 67.1577C314.902 73.1357 319.782 76.4297 324.662 76.4297C329.42 76.4297 334.056 73.1357 333.568 66.0597ZM387.216 71.3057V81.6757C382.336 85.8237 377.7 86.5557 374.406 86.5557C364.28 86.5557 358.668 79.4797 358.668 69.4757V38.8537H351.47V24.4577H365.012V24.0917C361.962 22.7497 358.668 20.3097 358.668 14.8197V7.98769H373.308V24.4577H387.216V38.8537H373.308V63.7417C373.308 68.6217 375.382 73.1357 380.75 73.1357C383.922 73.1357 385.996 72.0377 387.216 71.3057ZM410.323 0.179688V49.5897L433.625 24.4577H453.999L425.207 52.7617L455.097 85.5797H435.333L410.323 55.5677V85.5797H394.707V0.179688H410.323Z" fill="currentColor"></path></svg></a><div class="flex items-center gap-1.5"><button aria-label="تبديل المظهر" title="تبديل المظهر" class="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-surface text-muted transition-[color,background-color,border-color,fill,stroke,scale] hover:bg-surface-2 hover:text-text"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true" data-icon="sun-03" class="icon"><path d="M12.75 2C12.75 1.59 12.41 1.25 12 1.25C11.59 1.25 11.25 1.59 11.25 2V3.5C11.25 3.91 11.59 4.25 12 4.25C12.41 4.25 12.75 3.91 12.75 3.5V2Z"></path><path d="M5.46 4.4C5.17 4.11 4.69 4.11 4.4 4.4C4.11 4.69 4.11 5.17 4.4 5.46L5.46 6.52C5.75 6.81 6.23 6.81 6.52 6.52C6.81 6.23 6.81 5.75 6.52 5.46L5.46 4.4Z"></path><path d="M19.6 5.46C19.89 5.17 19.89 4.69 19.6 4.4C19.31 4.11 18.83 4.11 18.54 4.4L17.48 5.46C17.19 5.75 17.19 6.23 17.48 6.52C17.77 6.81 18.25 6.81 18.54 6.52L19.6 5.46Z"></path><path d="M2 11.25C1.59 11.25 1.25 11.59 1.25 12C1.25 12.41 1.59 12.75 2 12.75H3.5C3.91 12.75 4.25 12.41 4.25 12C4.25 11.59 3.91 11.25 3.5 11.25H2Z"></path><path d="M20.5 11.25C20.09 11.25 19.75 11.59 19.75 12C19.75 12.41 20.09 12.75 20.5 12.75H22C22.41 12.75 22.75 12.41 22.75 12C22.75 11.59 22.41 11.25 22 11.25H20.5Z"></path><path d="M18.54 17.48C18.25 17.19 17.77 17.19 17.48 17.48C17.19 17.77 17.19 18.25 17.48 18.54L18.54 19.6C18.83 19.89 19.31 19.89 19.6 19.6C19.89 19.31 19.89 18.83 19.6 18.54L18.54 17.48Z"></path><path d="M6.52 18.54C6.81 18.25 6.81 17.77 6.52 17.48C6.23 17.19 5.75 17.19 5.46 17.48L4.4 18.54C4.11 18.83 4.11 19.31 4.4 19.6C4.69 19.89 5.17 19.89 5.46 19.6L6.52 18.54Z"></path><path d="M12.75 20.5C12.75 20.09 12.41 19.75 12 19.75C11.59 19.75 11.25 20.09 11.25 20.5V22C11.25 22.41 11.59 22.75 12 22.75C12.41 22.75 12.75 22.41 12.75 22V20.5Z"></path><path fill-rule="evenodd" clip-rule="evenodd" d="M12 6.25C8.82 6.25 6.25 8.82 6.25 12C6.25 15.18 8.82 17.75 12 17.75C15.18 17.75 17.75 15.18 17.75 12C17.75 8.82 15.18 6.25 12 6.25ZM7.75 12C7.75 9.65 9.65 7.75 12 7.75C14.35 7.75 16.25 9.65 16.25 12C16.25 14.35 14.35 16.25 12 16.25C9.65 16.25 7.75 14.35 7.75 12Z"></path></svg></button><button aria-label="تبديل اللغة" title="تبديل اللغة" class="flex h-9 items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 text-[12px] font-semibold text-muted transition-[color,background-color,border-color,fill,stroke,scale] hover:bg-surface-2 hover:text-text"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true" data-icon="translate" class="icon"><path d="M8.45 5C8.45 4.59 8.11 4.25 7.7 4.25C7.29 4.25 6.95 4.59 6.95 5V5.08H5C4.59 5.08 4.25 5.41 4.25 5.83C4.25 6.24 4.59 6.58 5 6.58H8.42C8.23 6.97 8.01 7.36 7.75 7.73L7.75 7.73C7.54 7.45 7.41 7.23 7.36 7.14C7.19 6.76 6.74 6.6 6.37 6.77C5.99 6.95 5.83 7.4 6 7.77C6.11 8.01 6.33 8.33 6.53 8.61C6.61 8.72 6.7 8.84 6.79 8.96C6.31 9.51 5.8 10.02 5.33 10.45C5.02 10.73 5 11.2 5.28 11.51C5.56 11.81 6.04 11.83 6.34 11.55C6.8 11.13 7.3 10.64 7.8 10.09L8.38 10.69C8.67 10.99 9.14 11 9.44 10.71C9.74 10.43 9.75 9.95 9.46 9.65L8.75 8.91C9.27 8.2 9.73 7.42 10.04 6.58H11C11.41 6.58 11.75 6.24 11.75 5.83C11.75 5.41 11.41 5.08 11 5.08H8.45V5Z"></path><path fill-rule="evenodd" clip-rule="evenodd" d="M16.69 12.71C16.58 12.43 16.3 12.25 16 12.25C15.7 12.25 15.42 12.43 15.31 12.71L12.81 18.71C12.65 19.09 12.83 19.53 13.21 19.69C13.59 19.85 14.03 19.67 14.19 19.29L14.83 17.75H17.17L17.81 19.29C17.97 19.67 18.41 19.85 18.79 19.69C19.17 19.53 19.35 19.09 19.19 18.71L16.69 12.71ZM16 14.95L16.54 16.25H15.46L16 14.95Z"></path><path fill-rule="evenodd" clip-rule="evenodd" d="M7.95 1.25H8.05C9.42 1.25 10.52 1.25 11.39 1.37C12.29 1.49 13.05 1.75 13.65 2.35C14.25 2.95 14.51 3.71 14.63 4.61C14.75 5.48 14.75 6.58 14.75 7.95V9.25C15.12 9.25 15.52 9.25 15.95 9.25H16.05C17.42 9.25 18.52 9.25 19.39 9.37C20.29 9.49 21.05 9.75 21.65 10.35C22.25 10.95 22.51 11.71 22.63 12.61C22.75 13.48 22.75 14.58 22.75 15.95V16.05C22.75 17.42 22.75 18.52 22.63 19.39C22.51 20.29 22.25 21.05 21.65 21.65C21.05 22.25 20.29 22.51 19.39 22.63C18.52 22.75 17.42 22.75 16.05 22.75H15.95C14.58 22.75 13.48 22.75 12.61 22.63C11.71 22.51 10.95 22.25 10.35 21.65C9.75 21.05 9.49 20.29 9.37 19.39C9.25 18.52 9.25 17.42 9.25 16.05V15.95C9.25 15.52 9.25 15.12 9.25 14.75H7.95C6.58 14.75 5.48 14.75 4.61 14.63C3.71 14.51 2.95 14.25 2.35 13.65C1.75 13.05 1.49 12.29 1.37 11.39C1.25 10.52 1.25 9.42 1.25 8.05V7.95C1.25 6.58 1.25 5.48 1.37 4.61C1.49 3.71 1.75 2.95 2.35 2.35C2.95 1.75 3.71 1.49 4.61 1.37C5.48 1.25 6.58 1.25 7.95 1.25ZM9.3 13.25C9.32 13.02 9.34 12.81 9.37 12.61C9.49 11.71 9.75 10.95 10.35 10.35C10.95 9.75 11.71 9.49 12.61 9.37C12.81 9.34 13.02 9.32 13.25 9.3V8C13.25 6.56 13.25 5.56 13.15 4.81C13.05 4.07 12.87 3.69 12.59 3.41C12.31 3.13 11.93 2.95 11.19 2.85C10.44 2.75 9.44 2.75 8 2.75C6.56 2.75 5.56 2.75 4.81 2.85C4.07 2.95 3.69 3.13 3.41 3.41C3.13 3.69 2.95 4.07 2.85 4.81C2.75 5.56 2.75 6.56 2.75 8C2.75 9.44 2.75 10.44 2.85 11.19C2.95 11.93 3.13 12.31 3.41 12.59C3.69 12.87 4.07 13.05 4.81 13.15C5.56 13.25 6.56 13.25 8 13.25H9.3ZM11.41 11.41C11.69 11.13 12.07 10.95 12.81 10.85C13.56 10.75 14.56 10.75 16 10.75C17.44 10.75 18.44 10.75 19.19 10.85C19.93 10.95 20.31 11.13 20.59 11.41C20.87 11.69 21.05 12.07 21.15 12.81C21.25 13.56 21.25 14.56 21.25 16C21.25 17.44 21.25 18.44 21.15 19.19C21.05 19.93 20.87 20.31 20.59 20.59C20.31 20.87 19.93 21.05 19.19 21.15C18.44 21.25 17.44 21.25 16 21.25C14.56 21.25 13.56 21.25 12.81 21.15C12.07 21.05 11.69 20.87 11.41 20.59C11.13 20.31 10.95 19.93 10.85 19.19C10.75 18.44 10.75 17.44 10.75 16C10.75 14.56 10.75 13.56 10.85 12.81C10.95 12.07 11.13 11.69 11.41 11.41Z"></path><path d="M4 15.75C4.41 15.75 4.75 16.09 4.75 16.5C4.75 17.22 4.75 17.7 4.79 18.07C4.82 18.42 4.89 18.59 4.96 18.69C5.05 18.83 5.17 18.95 5.31 19.04C5.41 19.11 5.58 19.18 5.93 19.21C6.3 19.25 6.78 19.25 7.5 19.25C7.91 19.25 8.25 19.59 8.25 20C8.25 20.41 7.91 20.75 7.5 20.75H7.46C6.79 20.75 6.23 20.75 5.78 20.7C5.31 20.66 4.87 20.55 4.47 20.29C4.17 20.09 3.91 19.83 3.71 19.53C3.45 19.13 3.34 18.69 3.3 18.22C3.25 17.77 3.25 17.21 3.25 16.54L3.25 16.5C3.25 16.09 3.59 15.75 4 15.75Z"></path><path d="M19.25 7.5C19.25 7.91 19.59 8.25 20 8.25C20.41 8.25 20.75 7.91 20.75 7.5L20.75 7.46C20.75 6.79 20.75 6.23 20.7 5.78C20.66 5.31 20.55 4.87 20.29 4.47C20.09 4.17 19.83 3.91 19.53 3.71C19.13 3.45 18.69 3.34 18.22 3.3C17.77 3.25 17.21 3.25 16.54 3.25L16.5 3.25C16.09 3.25 15.75 3.59 15.75 4C15.75 4.41 16.09 4.75 16.5 4.75C17.22 4.75 17.7 4.75 18.07 4.79C18.42 4.82 18.59 4.89 18.69 4.96C18.83 5.05 18.95 5.17 19.04 5.31C19.11 5.41 19.18 5.58 19.21 5.93C19.25 6.3 19.25 6.78 19.25 7.5Z"></path></svg><span lang="en" class="tabular-nums">EN</span></button></div></div></header><main class="mx-auto max-w-3xl px-5 py-12 md:py-16"><div><a class="inline-flex items-center gap-1.5 text-[13px] font-semibold text-muted transition-colors hover:text-text" href="/" data-discover="true"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true" data-icon="arrow-left-02" class="icon icon-rtl-mirror"><path d="M3.25 12C3.25 12.37 3.42 12.72 3.57 12.98C3.74 13.26 3.97 13.55 4.22 13.83C4.72 14.4 5.37 15.01 6.01 15.56C6.65 16.12 7.28 16.63 7.76 17C8 17.18 8.19 17.33 8.33 17.44C8.4 17.49 8.46 17.53 8.5 17.56L8.54 17.59L8.55 17.6L8.55 17.6C8.89 17.85 9.36 17.78 9.6 17.45C9.85 17.11 9.78 16.64 9.44 16.4L9.43 16.39L9.39 16.36C9.36 16.33 9.3 16.29 9.24 16.24C9.1 16.14 8.91 15.99 8.68 15.81C8.22 15.45 7.6 14.96 6.99 14.43C6.38 13.89 5.78 13.34 5.34 12.84C5.32 12.81 5.29 12.78 5.26 12.75L20 12.75C20.41 12.75 20.75 12.41 20.75 12C20.75 11.58 20.41 11.25 20 11.25L5.27 11.25C5.29 11.22 5.32 11.19 5.34 11.16C5.78 10.67 6.38 10.11 6.99 9.57C7.6 9.04 8.22 8.55 8.68 8.19C8.91 8.01 9.1 7.86 9.24 7.76C9.3 7.71 9.36 7.67 9.39 7.64L9.43 7.61L9.44 7.6C9.78 7.36 9.85 6.89 9.6 6.56C9.36 6.22 8.89 6.15 8.55 6.4L8.55 6.4L8.54 6.41L8.5 6.44C8.46 6.47 8.4 6.51 8.33 6.56C8.19 6.67 8 6.82 7.76 7C7.28 7.38 6.65 7.89 6.01 8.44C5.37 8.99 4.72 9.6 4.22 10.17C3.97 10.45 3.74 10.74 3.57 11.02C3.42 11.28 3.25 11.62 3.25 11.99"></path></svg>العودة للرئيسية</a></div><h1 class="mt-6 text-[30px] font-extrabold tracking-tight md:text-[36px]">سياسة الاسترداد</h1><p class="mt-2 text-[12.5px] font-medium uppercase tracking-wide text-faint">آخر تحديث: 31 مايو 2026</p><p class="mt-5 text-[15px] leading-relaxed text-muted">توضح هذه السياسة الحالات التي يمكن فيها استرداد المدفوعات الخاصة باشتراكات Taskatk، وكيفية تقديم طلب الاسترداد، وآلية معالجته.</p><div class="mt-10 space-y-9"><section><h2 class="text-[17px] font-bold text-text">1. نطاق السياسة</h2><div class="mt-2.5 space-y-3"><p class="text-[14.5px] leading-relaxed text-muted">تنطبق هذه السياسة على المدفوعات الخاصة بالباقات المدفوعة والإضافات في Taskatk عبر مزوّدي الدفع المعتمدين لدينا. أما الباقات المجانية والعروض المجانية والفترات التجريبية فلا تتضمن أي مدفوعات، وبالتالي تقع خارج نطاقها.</p></div></section><section><h2 class="text-[17px] font-bold text-text">2. الاشتراك الأول: استرداد خلال 14 يومًا</h2><div class="mt-2.5 space-y-3"><p class="text-[14.5px] leading-relaxed text-muted">إذا لم تكن راضيًا عن أول عملية شراء لباقة مدفوعة، يحق لك طلب استرداد كامل للمبلغ خلال أربعة عشر (14) يومًا من تاريخ الدفع، بشرط عدم وجود مخالفة جوهرية لشروط الاستخدام على الحساب.</p></div></section><section><h2 class="text-[17px] font-bold text-text">3. التجديدات</h2><div class="mt-2.5 space-y-3"><p class="text-[14.5px] leading-relaxed text-muted">تتجدد الاشتراكات وفق دورة الفوترة الخاصة بها. المبالغ المحصَّلة عن دورة فوترة بدأت بالفعل غير قابلة للاسترداد. يمكنك إلغاء التجديد القادم في أي وقت قبل بدايته، ويستمر وصولك إلى الخدمة حتى نهاية الفترة المدفوعة.</p></div></section><section><h2 class="text-[17px] font-bold text-text">4. العروض والفترات التجريبية والمجانية</h2><div class="mt-2.5 space-y-3"><p class="text-[14.5px] leading-relaxed text-muted">الفترات التجريبية والعروض المجانية لا تتضمن أي مدفوعات، وبالتالي لا ينطبق عليها الاسترداد. وإذا تم شراء الباقة بسعر ترويجي (مخفَّض)، يُحتسب الاسترداد، حيثما ينطبق، على المبلغ المدفوع فعليًا.</p></div></section><section><h2 class="text-[17px] font-bold text-text">5. الإضافات</h2><div class="mt-2.5 space-y-3"><p class="text-[14.5px] leading-relaxed text-muted">تُفعَّل المقاعد والمساحات الإضافية فور الدفع، وتُعد غير قابلة للاسترداد بعد التفعيل، إلا في حال وجود خلل تقني جوهري من جانبنا حال دون استخدامها.</p></div></section><section><h2 class="text-[17px] font-bold text-text">6. الأعطال الجوهرية في الخدمة</h2><div class="mt-2.5 space-y-3"><p class="text-[14.5px] leading-relaxed text-muted">إذا تعذّر عليك استخدام الخدمة بسبب انقطاع ممتد أو خلل جوهري يُعزى إلينا، فسنقدّم، بحسب الحالة، استردادًا كاملًا أو جزئيًا أو رصيدًا في الحساب.</p></div></section><section><h2 class="text-[17px] font-bold text-text">7. كيفية تقديم طلب الاسترداد</h2><div class="mt-2.5 space-y-3"><p class="text-[14.5px] leading-relaxed text-muted">قدِّم طلبك عبر صفحة «تواصل معنا» أو بمراسلة <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="64171114140b1610241005170f05100f4a051414">[email&#160;protected]</a>، مع ذكر البريد الإلكتروني للحساب ورقم الفاتورة وسبب الطلب.</p></div></section><section><h2 class="text-[17px] font-bold text-text">8. معالجة الطلب</h2><div class="mt-2.5 space-y-3"><p class="text-[14.5px] leading-relaxed text-muted">تُعاد المبالغ الموافَق على استردادها إلى وسيلة الدفع الأصلية وبالعملة نفسها خلال خمسة (5) إلى أربعة عشر (14) يوم عمل، بحسب مزوّد الدفع والبنك المُصدِر. وقد تُخصم رسوم بوابة الدفع غير القابلة للرد حيثما ينطبق ذلك.</p></div></section><section><h2 class="text-[17px] font-bold text-text">9. إساءة الاستخدام</h2><div class="mt-2.5 space-y-3"><p class="text-[14.5px] leading-relaxed text-muted">نحتفظ بحق رفض طلبات الاسترداد المتكررة أو الاحتيالية أو المرتبطة بمخالفة شروط الاستخدام.</p></div></section><section><h2 class="text-[17px] font-bold text-text">10. التعديلات على هذه السياسة</h2><div class="mt-2.5 space-y-3"><p class="text-[14.5px] leading-relaxed text-muted">قد نقوم بتحديث هذه السياسة من وقت لآخر. النسخة المنشورة في هذه الصفحة هي النسخة المعتمدة، وسيُعلن عن أي تغييرات جوهرية داخل الخدمة.</p></div></section></div><div class="mt-12 rounded-2xl border border-border bg-surface-2/50 p-5"><p class="text-[14px] leading-relaxed text-muted">لأي استفسار حول هذا المستند، تواصل معنا على <a href="/cdn-cgi/l/email-protection#f784828787988583b78396849c96839cd9968787" class="font-semibold text-brand hover:underline"><bdi><span class="__cf_email__" data-cfemail="1b686e6b6b74696f5b6f7a68707a6f70357a6b6b">[email&#160;protected]</span></bdi></a>.</p></div><nav class="mt-10 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-border pt-6"><a class="text-[13px] font-semibold transition-colors text-muted hover:text-text" href="/terms" data-discover="true">شروط الاستخدام</a><a class="text-[13px] font-semibold transition-colors text-muted hover:text-text" href="/privacy" data-discover="true">سياسة الخصوصية</a><a class="text-[13px] font-semibold transition-colors text-muted hover:text-text" href="/cookies" data-discover="true">سياسة ملفات تعريف الارتباط</a><a class="text-[13px] font-semibold transition-colors text-text" href="/refund-policy" data-discover="true">سياسة الاسترداد</a></nav></main></div><div role="dialog" aria-label="تفضيلات ملفات تعريف الارتباط" aria-live="polite" class="fixed inset-x-0 bottom-0 z-[1110] flex justify-center p-3 sm:p-4" style="padding-bottom: max(0.75rem, env(safe-area-inset-bottom));"><div class="relative flex w-full max-w-2xl flex-col gap-3 rounded-2xl border border-border bg-bg-elevated/95 p-4 shadow-[0_20px_60px_-15px_rgb(0_0_0/calc(0.45*var(--shadow-ink)))] backdrop-blur-md sm:flex-row sm:items-center sm:gap-4 sm:p-5"><button type="button" aria-label="إغلاق" class="absolute end-3 top-3 flex h-7 w-7 items-center justify-center rounded-lg text-faint transition-[color,background-color,border-color,fill,stroke,scale] hover:bg-surface-2 hover:text-text sm:hidden"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true" data-icon="cancel-01" class="icon"><path fill-rule="evenodd" clip-rule="evenodd" d="M4.47 4.47C4.76 4.18 5.24 4.18 5.53 4.47L12 10.94L18.47 4.47C18.76 4.18 19.24 4.18 19.53 4.47C19.82 4.76 19.82 5.24 19.53 5.53L13.06 12L19.53 18.47C19.82 18.76 19.82 19.24 19.53 19.53C19.24 19.82 18.76 19.82 18.47 19.53L12 13.06L5.53 19.53C5.24 19.82 4.76 19.82 4.47 19.53C4.18 19.24 4.18 18.76 4.47 18.47L10.94 12L4.47 5.53C4.18 5.24 4.18 4.76 4.47 4.47Z"></path></svg></button><span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-soft text-brand"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true" data-icon="cookie" class="icon"><path d="M12.01 12C12.01 12.55 11.56 13 11.01 13H11C10.45 13 10 12.55 10 12C10 11.45 10.45 11 11 11H11.01C11.56 11 12.01 11.45 12.01 12Z"></path><path d="M6.01 11C6.56 11 7.01 10.55 7.01 10C7.01 9.45 6.56 9 6.01 9H6C5.45 9 5 9.45 5 10C5 10.55 5.45 11 6 11H6.01Z"></path><path d="M13.01 18C13.01 18.55 12.56 19 12.01 19H12C11.45 19 11 18.55 11 18C11 17.45 11.45 17 12 17H12.01C12.56 17 13.01 17.45 13.01 18Z"></path><path d="M10.53 6.53C10.82 6.24 10.82 5.76 10.53 5.47C10.24 5.18 9.76 5.18 9.47 5.47L8.47 6.47C8.18 6.76 8.18 7.24 8.47 7.53C8.76 7.82 9.24 7.82 9.53 7.53L10.53 6.53Z"></path><path d="M17.53 13.47C17.82 13.76 17.82 14.24 17.53 14.53L16.53 15.53C16.24 15.82 15.76 15.82 15.47 15.53C15.18 15.24 15.18 14.76 15.47 14.47L16.47 13.47C16.76 13.18 17.24 13.18 17.53 13.47Z"></path><path d="M6.47 15.53C6.18 15.24 6.18 14.76 6.47 14.47C6.76 14.18 7.24 14.18 7.53 14.47L8.53 15.47C8.82 15.76 8.82 16.24 8.53 16.53C8.24 16.82 7.76 16.82 7.47 16.53L6.47 15.53Z"></path><path fill-rule="evenodd" clip-rule="evenodd" d="M1.25 11.99C1.25 5.55 7.12 0.65 13.26 1.31C13.83 1.37 14.52 1.52 14.81 2.19C14.93 2.47 14.93 2.76 14.92 2.98C14.91 3.18 14.88 3.41 14.85 3.64L14.84 3.72C14.74 4.52 15.02 5.25 15.47 5.6C15.57 5.68 15.68 5.77 15.78 5.87C15.88 5.98 16.01 6.15 16.07 6.39C16.12 6.62 16.08 6.83 16.04 6.97C16 7.1 15.93 7.23 15.88 7.34C15.74 7.66 15.78 8.06 16.06 8.45C16.35 8.83 16.8 9.1 17.27 9.12C17.43 9.12 17.61 9.13 17.77 9.16C17.94 9.18 18.15 9.23 18.34 9.37C18.55 9.51 18.67 9.7 18.75 9.86C18.83 10.01 18.89 10.19 18.95 10.36C19.17 11.03 19.76 11.49 20.44 11.61C20.55 11.62 20.67 11.64 20.79 11.66C20.97 11.69 21.15 11.72 21.29 11.75C21.54 11.8 21.84 11.87 22.11 12.04C22.42 12.24 22.63 12.54 22.71 12.92C22.78 13.26 22.75 13.62 22.68 14C21.73 18.98 17.34 22.75 12.06 22.75C6.09 22.75 1.25 17.94 1.25 11.99ZM13.11 2.8C7.8 2.24 2.75 6.49 2.75 11.99C2.75 17.1 6.91 21.25 12.06 21.25C16.61 21.25 20.39 18 21.2 13.72C21.25 13.49 21.25 13.35 21.25 13.28L21.24 13.28L21.22 13.28C21.17 13.26 21.1 13.24 21 13.22C20.87 13.19 20.75 13.18 20.6 13.15C20.48 13.13 20.35 13.11 20.18 13.08C19.04 12.88 17.93 12.1 17.52 10.82C17.49 10.73 17.47 10.67 17.45 10.63C17.4 10.62 17.32 10.62 17.2 10.61C16.22 10.57 15.37 10.04 14.85 9.33C14.34 8.63 14.1 7.67 14.5 6.75C13.57 5.99 13.2 4.7 13.35 3.53L13.36 3.46C13.39 3.21 13.42 3.05 13.42 2.91C13.42 2.89 13.42 2.87 13.42 2.85C13.36 2.84 13.26 2.82 13.11 2.8Z"></path></svg></span><div class="min-w-0 flex-1"><p class="text-[13px] font-bold text-text">نستخدم ملفات تعريف الارتباط لإبقائك مسجّل الدخول</p><p class="mt-0.5 text-[12px] leading-relaxed text-muted">الكوكيز الأساسية تحفظ جلستك آمنة. الكوكيز الاختيارية للتحليلات تساعدنا في تحسين المنتج. <a rel="noopener" class="font-semibold text-brand underline-offset-2 hover:underline" href="/cookies" target="_blank" data-discover="true">اعرف المزيد</a></p></div><div class="flex shrink-0 items-center gap-2"><button type="button" class="rounded-lg border border-border bg-surface px-3.5 py-2 text-[12.5px] font-semibold text-text transition-[color,background-color,border-color,fill,stroke,scale] hover:bg-surface-2">الأساسية فقط</button><button type="button" class="rounded-lg bg-emerald-500 px-3.5 py-2 text-[12.5px] font-bold text-white shadow-sm transition-[color,background-color,border-color,fill,stroke,scale] hover:bg-emerald-600">قبول الكل</button></div></div></div></div>
+    <style>
+      @media (prefers-color-scheme: light) {
+        #__boot { background:#fff !important; color:#111 !important; }
+        #__boot span { border-color:rgba(0,0,0,.08) !important; border-top-color:#22E6A4 !important; }
+        #__boot svg path:first-of-type { fill:#111 !important; }
+      }
+      @keyframes __b_spin { to { transform:rotate(360deg) } }
+      @keyframes __b_pulse { 0%,100% { opacity:1 } 50% { opacity:.55 } }
+    </style>
+  
+
+</body></html>

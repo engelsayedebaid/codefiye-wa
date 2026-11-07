@@ -4,7 +4,7 @@ import { useI18n } from '../i18n';
 import type { Dict } from '../i18n/ar';
 import { Link } from '../router';
 import { delay, Reveal } from '../ui';
-import { Arrow, ContactDetails, SiteFooter, SiteHeader } from './SiteChrome';
+import { Arrow, ContactDetails, SiteCursor, SiteFooter, SiteHeader } from './SiteChrome';
 import { TocAside, TocFold, useActiveSection } from './TocNav';
 
 /** The three policy pages share one layout; the Central Bank of Egypt's rules for online payments ask for all three on the site. */
@@ -41,6 +41,7 @@ function LegalPage({ page }: { page: LegalKey }) {
 
   return (
     <div className="studio-site studio-doc min-h-svh overflow-x-clip">
+      <SiteCursor />
       <SiteHeader />
       <main id="main">
         <header className="studio-doc-cover relative isolate overflow-hidden border-b border-line">

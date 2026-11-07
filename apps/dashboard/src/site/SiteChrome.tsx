@@ -1,6 +1,7 @@
 import { phoneHref } from '@wa/shared/site';
 import { ArrowRight, BookOpen, ChevronDown, Code2, Globe, Layers, LayoutGrid, Mail, MapPin, Menu, Phone, Tags, X } from '../icons';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { sessionHint } from '../api';
 import { BRAND } from '../brand';
 import { CurrencySwitch } from '../currency';
@@ -14,6 +15,69 @@ import './editorial.css';
 /** "Forward" arrow: right in LTR, left in RTL, nudging forward on hover. */
 export function Arrow({ className }: { className?: string }) {
   return <ArrowRight className={cx('size-4 transition-transform duration-300 group-hover:translate-x-0.5 rtl:group-hover:-translate-x-0.5', flip, className)} />;
+}
+
+/** A dot on the pointer, and a ring that eases after it and grows in place over a link. */
+export function SiteCursor() {
+  const ring = useRef<HTMLDivElement>(null);
+  const shape = useRef<HTMLDivElement>(null);
+  const dot = useRef<HTMLDivElement>(null);
+  const [on, setOn] = useState(false);
+
+  useEffect(() => {
+    const fine = matchMedia('(pointer: fine)').matches;
+    const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const root = document.querySelector('.studio-site');
+    if (!fine || calm || !root) return;
+    root.classList.add('has-cursor');
+    const aim = { x: -100, y: -100 };
+    const at = { x: -100, y: -100 };
+    let shown = false;
+    let frame = 0;
+    const tick = () => {
+      at.x += (aim.x - at.x) * 0.2;
+      at.y += (aim.y - at.y) * 0.2;
+      if (ring.current) ring.current.style.transform = `translate3d(${at.x}px, ${at.y}px, 0)`;
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    const place = (event: PointerEvent) => {
+      aim.x = event.clientX;
+      aim.y = event.clientY;
+      if (dot.current) dot.current.style.transform = `translate3d(${event.clientX}px, ${event.clientY}px, 0)`;
+      const hot = event.target instanceof Element && Boolean(event.target.closest('a, button, summary, label, [role="button"]'));
+      shape.current?.classList.toggle('is-hot', hot);
+      if (!shown) {
+        shown = true;
+        at.x = event.clientX;
+        at.y = event.clientY;
+        setOn(true);
+      }
+    };
+    const hide = () => {
+      shown = false;
+      setOn(false);
+    };
+    window.addEventListener('pointermove', place, { passive: true });
+    document.documentElement.addEventListener('pointerleave', hide);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener('pointermove', place);
+      document.documentElement.removeEventListener('pointerleave', hide);
+      root.classList.remove('has-cursor');
+    };
+  }, []);
+
+  if (typeof document === 'undefined') return null;
+  return createPortal(
+    <>
+      <div ref={ring} className={cx('site-cursor-ring', on && 'is-on')}>
+        <div ref={shape} className="site-cursor-ring-shape" />
+      </div>
+      <div ref={dot} className={cx('site-cursor-dot', on && 'is-on')} />
+    </>,
+    document.body,
+  );
 }
 
 /** The YouTube mark (Lucide ships no brand icons). */

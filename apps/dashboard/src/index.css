@@ -70,22 +70,22 @@
 }
 
 /*
- * Light theme: warm stone, a step darker than paper-white, so long sessions don't sit on a lamp.
+ * Light theme: the mint canvas, with paper a step off pure white so it doesn't glare.
  * Unlayered, so it wins over Tailwind's theme layer.
  */
 :root[data-theme='light'] {
-  --color-bg: #e6ddd0;
-  --color-surface: #dbd1c2;
-  --color-card: #efe6d8;
-  --color-raised: #e0d6c6;
-  --color-line: #d2c6b4;
-  --color-line-strong: #b9ab96;
+  --color-bg: #eef5f0;
+  --color-surface: #e5efe8;
+  --color-card: #f7fbf8;
+  --color-raised: #e3f0e6;
+  --color-line: #d3e4d8;
+  --color-line-strong: #b7d0c0;
   --color-ring: #128c5a;
-  --color-ink: #241e16;
-  --color-ink-2: #3d352b;
-  --color-muted: #5e564b;
-  --color-faint: #72695c;
-  --color-navy: #ddd4c2;
+  --color-ink: #17261d;
+  --color-ink-2: #344b3c;
+  --color-muted: #506559;
+  --color-faint: #5f7264;
+  --color-navy: #ddf4e5;
   --color-destructive: #d42020;
   --color-destructive-ink: #c81e1e;
 
@@ -171,11 +171,10 @@ html[data-theme='dark'] {
 
 body {
   @apply bg-bg font-sans text-ink antialiased;
-  background-image: radial-gradient(ellipse 55% 34% at 50% -8%, color-mix(in oklab, var(--color-brand) 12%, transparent), transparent 72%);
+  background-image:
+    radial-gradient(ellipse 55% 34% at 50% -8%, color-mix(in oklab, var(--color-brand) 12%, transparent), transparent 72%),
+    linear-gradient(180deg, color-mix(in oklab, var(--color-card) 28%, transparent), transparent 36rem);
   background-attachment: fixed;
-}
-html[data-theme='light'] body {
-  background-image: radial-gradient(ellipse 48% 26% at 50% -12%, color-mix(in oklab, var(--color-brand) 8%, transparent), transparent 70%);
 }
 
 ::selection {
@@ -292,7 +291,7 @@ html[data-theme='light'] body {
 [data-theme='light'] .page-wash {
   background-color: var(--color-bg);
   background-image:
-    radial-gradient(ellipse 70% 62% at 0% 0%, color-mix(in oklab, var(--color-brand) 9%, transparent), transparent 72%),
+    radial-gradient(ellipse 70% 62% at 0% 0%, color-mix(in oklab, var(--color-brand) 18%, transparent), transparent 72%),
     radial-gradient(color-mix(in oklab, var(--color-ink) 8%, transparent) 1px, transparent 1.3px);
   background-size:
     100% 100%,
@@ -300,8 +299,105 @@ html[data-theme='light'] body {
 }
 [data-theme='light'][dir='rtl'] .page-wash {
   background-image:
-    radial-gradient(ellipse 60% 55% at 100% 0%, color-mix(in oklab, var(--color-brand) 8%, transparent), transparent 70%),
+    radial-gradient(ellipse 60% 55% at 100% 0%, color-mix(in oklab, var(--color-brand) 14%, transparent), transparent 70%),
     radial-gradient(color-mix(in oklab, var(--color-ink) 8%, transparent) 1px, transparent 1.3px);
+}
+
+/* Connection recovery: a quiet network diagram instead of a generic centered error box. */
+.offline-stage::before,
+.offline-stage::after {
+  content: '';
+  position: absolute;
+  border-radius: 9999px;
+  pointer-events: none;
+  filter: blur(1px);
+}
+.offline-stage::before {
+  width: 24rem;
+  height: 24rem;
+  inset-inline-start: -12rem;
+  bottom: -10rem;
+  border: 1px solid color-mix(in oklab, var(--color-brand) 12%, transparent);
+  box-shadow:
+    0 0 0 4rem color-mix(in oklab, var(--color-brand) 2.5%, transparent),
+    0 0 0 8rem color-mix(in oklab, var(--color-brand) 2%, transparent);
+}
+.offline-stage::after {
+  width: 18rem;
+  height: 18rem;
+  inset-inline-end: -9rem;
+  top: 14%;
+  background: color-mix(in oklab, var(--color-brand) 7%, transparent);
+  filter: blur(65px);
+}
+.offline-card {
+  isolation: isolate;
+}
+.offline-visual {
+  background:
+    radial-gradient(circle at 50% 50%, color-mix(in oklab, var(--color-brand) 10%, transparent), transparent 34%),
+    linear-gradient(145deg, color-mix(in oklab, var(--color-brand) 7%, var(--color-surface)), var(--color-card));
+}
+.offline-visual::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: .45;
+  background-image: radial-gradient(color-mix(in oklab, var(--color-ink) 13%, transparent) .8px, transparent .8px);
+  background-size: 18px 18px;
+  mask-image: radial-gradient(circle, black, transparent 72%);
+}
+.offline-orbit {
+  position: absolute;
+  border: 1px dashed color-mix(in oklab, var(--color-brand) 28%, transparent);
+  border-radius: 9999px;
+}
+.offline-orbit-lg {
+  width: 19rem;
+  height: 19rem;
+}
+.offline-orbit-sm {
+  width: 13.5rem;
+  height: 13.5rem;
+  border-style: solid;
+  border-color: color-mix(in oklab, var(--color-brand) 12%, transparent);
+}
+.offline-cloud {
+  z-index: 1;
+}
+.offline-signal-dot {
+  position: absolute;
+  z-index: 2;
+  width: .6rem;
+  height: .6rem;
+  border: 2px solid var(--color-card);
+  border-radius: 9999px;
+  background: var(--color-brand);
+  box-shadow: 0 0 0 .3rem color-mix(in oklab, var(--color-brand) 12%, transparent);
+}
+.offline-signal-dot-one {
+  translate: -8.1rem -4.8rem;
+}
+.offline-signal-dot-two {
+  translate: 8.7rem 2.8rem;
+}
+.offline-signal-dot-three {
+  translate: -3.6rem 8.4rem;
+  background: var(--color-warning);
+  box-shadow: 0 0 0 .3rem color-mix(in oklab, var(--color-warning) 12%, transparent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .offline-orbit-lg {
+    animation: offline-orbit 28s linear infinite;
+  }
+  .offline-orbit-sm {
+    animation: offline-orbit 20s linear infinite reverse;
+  }
+}
+
+@keyframes offline-orbit {
+  to { rotate: 1turn; }
 }
 
 .code-scroll {
@@ -633,7 +729,7 @@ html[data-theme='light'] body {
     border-block: 1px solid var(--color-line);
   }
   [data-theme='light'] .band {
-    background-color: #ddd3c4;
+    background-color: #e7f2ea;
   }
 
   .app-canvas {
@@ -890,14 +986,14 @@ html[data-theme='light'] body {
   --chat-out-ring: rgb(52 211 153 / 0.12);
 }
 :root[data-theme='light'] {
-  --chat-wall: #d9cebe;
-  --chat-dots: rgb(60 48 32 / 0.06);
-  --chat-doodle-ink: rgb(70 54 36 / 0.09);
+  --chat-wall: #efeae2;
+  --chat-dots: rgb(0 0 0 / 0.045);
+  --chat-doodle-ink: rgb(0 0 0 / 0.06);
   --chat-doodle: url('/chat-doodle-light.svg');
   --chat-doodle-size: 420px;
-  --chat-in: #f4eee4;
-  --chat-out: #d3e4c6;
-  --chat-out-ring: rgb(36 30 22 / 0.06);
+  --chat-in: #fff;
+  --chat-out: #d9fdd3;
+  --chat-out-ring: rgb(17 23 20 / 0.06);
 }
 /* Template previews: a WhatsApp conversation in the current theme. */
 .wa-wall {
@@ -916,8 +1012,7 @@ html[data-theme='light'] body {
   background-color: var(--wall-dark, var(--chat-wall));
 }
 :root[data-theme='light'] :is(.chat-wall, .wall-swatch) {
-  /* Chosen walls are pale pastels; pull them toward ink so the thread isn't the brightest surface. */
-  background-color: color-mix(in oklab, var(--wall-light, var(--chat-wall)) 72%, #3f3428);
+  background-color: var(--wall-light, var(--chat-wall));
 }
 .chat-wall {
   position: relative;

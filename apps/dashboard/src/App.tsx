@@ -170,18 +170,57 @@ function SuspendedScreen({ reason }: { reason: string | null }) {
 function OfflineScreen({ error, onRetry, retrying }: { error: unknown; onRetry: () => void; retrying: boolean }) {
   const { t } = useI18n();
   const o = t.app.offline;
+  const detail = errorMessage(error);
+  const generic = new Set([t.common.networkError, t.common.unexpectedError, t.errors.unavailable, t.errors.server(null), t.errors.timeout, o.title]);
+  const specific = generic.has(detail) ? null : detail;
   return (
-    <Centered>
-      <CloudOff className="size-10 text-muted" />
-      <div className="max-w-md space-y-2">
-        <h1 className="text-xl font-medium">{o.title}</h1>
-        <p className="text-sm text-muted">{o.text}</p>
-        <p className="text-xs text-faint">{errorMessage(error)}</p>
-      </div>
-      <Button loading={retrying} onClick={onRetry}>
-        {o.retry}
-      </Button>
-    </Centered>
+    <main className="offline-stage page-wash relative min-h-svh overflow-hidden p-4 sm:p-6">
+      <header className="relative z-10 mx-auto flex w-full max-w-6xl items-center justify-between">
+        <Logo className="animate-fade-in" />
+        <div className="flex items-center gap-1 rounded-full border border-line/80 bg-card/80 p-1 shadow-sm backdrop-blur-xl">
+          <ThemeSwitch />
+          <LangSwitch />
+        </div>
+      </header>
+
+      <section className="relative z-10 mx-auto grid min-h-[calc(100svh-5.5rem)] w-full max-w-5xl place-items-center py-10">
+        <div className="offline-card animate-fade-up grid w-full overflow-hidden rounded-[2rem] border border-line bg-card shadow-[0_28px_80px_-44px_rgb(3_50_29/0.48)] md:grid-cols-[0.82fr_1.18fr]">
+          <div className="offline-visual relative hidden min-h-[28rem] place-items-center overflow-hidden border-e border-line md:grid" aria-hidden>
+            <span className="offline-orbit offline-orbit-lg" />
+            <span className="offline-orbit offline-orbit-sm" />
+            <span className="offline-signal-dot offline-signal-dot-one" />
+            <span className="offline-signal-dot offline-signal-dot-two" />
+            <span className="offline-signal-dot offline-signal-dot-three" />
+            <div className="offline-cloud relative grid size-28 place-items-center rounded-[2rem] border border-brand/20 bg-card text-brand shadow-[0_18px_50px_-24px_rgb(5_92_56/0.5)]">
+              <CloudOff className="size-11" />
+              <span className="absolute -bottom-2.5 rounded-full border border-line bg-card px-3 py-1 text-[10px] font-bold tracking-[0.16em] text-muted">•••</span>
+            </div>
+          </div>
+
+          <div className="flex min-h-[28rem] flex-col justify-center px-6 py-10 text-start sm:px-10 md:px-14">
+            <span className="mb-7 grid size-12 place-items-center rounded-2xl border border-brand/15 bg-brand/10 text-brand md:hidden">
+              <CloudOff className="size-5" />
+            </span>
+            <div className="mb-5 flex items-center gap-2.5">
+              <span className="relative flex size-2.5">
+                <span className="absolute inline-flex size-full animate-ping rounded-full bg-warning opacity-40" />
+                <span className="relative inline-flex size-2.5 rounded-full bg-warning" />
+              </span>
+              <span className="h-px w-8 bg-line" />
+            </div>
+            <h1 className="max-w-lg text-balance text-3xl font-semibold leading-tight tracking-[-0.035em] sm:text-4xl">{o.title}</h1>
+            <p className="mt-4 max-w-md text-pretty text-sm leading-7 text-muted sm:text-[0.95rem]">{o.text}</p>
+            {specific && <p className="mt-5 max-w-md rounded-2xl border border-line bg-surface px-4 py-3 text-xs leading-relaxed text-ink-2">{specific}</p>}
+            <div className="mt-8 flex items-center gap-3">
+              <Button className="min-w-40 rounded-full" loading={retrying} icon={!retrying ? <RefreshCw className="size-4" /> : undefined} onClick={onRetry}>
+                {o.retry}
+              </Button>
+              <span className="hidden h-px flex-1 bg-line sm:block" aria-hidden />
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
   );
 }
 
