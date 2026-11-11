@@ -29,6 +29,9 @@ const GuidePage = lazy(() => loadChunk(() => import('./site/Guide')).then((m) =>
 const PrivacyPage = lazy(() => loadChunk(() => import('./site/Legal')).then((m) => ({ default: m.PrivacyPage })));
 const TermsPage = lazy(() => loadChunk(() => import('./site/Legal')).then((m) => ({ default: m.TermsPage })));
 const RefundPage = lazy(() => loadChunk(() => import('./site/Legal')).then((m) => ({ default: m.RefundPage })));
+const ShippingPage = lazy(() => loadChunk(() => import('./site/Legal')).then((m) => ({ default: m.ShippingPage })));
+const AboutPage = lazy(() => loadChunk(() => import('./site/Company')).then((m) => ({ default: m.AboutPage })));
+const ContactPage = lazy(() => loadChunk(() => import('./site/Company')).then((m) => ({ default: m.ContactPage })));
 const LoginPage = lazy(() => loadChunk(() => import('./auth/AuthPages')).then((m) => ({ default: m.LoginPage })));
 const RegisterPage = lazy(() => loadChunk(() => import('./auth/AuthPages')).then((m) => ({ default: m.RegisterPage })));
 const ForgotPasswordPage = lazy(() => loadChunk(() => import('./auth/AuthPages')).then((m) => ({ default: m.ForgotPasswordPage })));
@@ -340,6 +343,9 @@ export function App() {
   else if (path === '/privacy') page = <PrivacyPage />;
   else if (path === '/terms') page = <TermsPage />;
   else if (path === '/refund') page = <RefundPage />;
+  else if (path === '/shipping' || path === '/delivery') page = <ShippingPage />;
+  else if (path === '/about' || path === '/about-us') page = <AboutPage />;
+  else if (path === '/contact' || path === '/contact-us') page = <ContactPage />;
   else if (path === '/login')
     page = (
       <GuestOnly>

@@ -1,4 +1,4 @@
-import { Ban, CalendarDays, Clock, CreditCard, Eye, FileText, Gift, HeartHandshake, Landmark, LockKeyhole, Mail, Repeat, RotateCcw, ShieldCheck, type LucideIcon } from '../icons';
+import { Ban, CalendarDays, Clock, CreditCard, Eye, FileText, Gift, Globe, HeartHandshake, Landmark, LockKeyhole, Mail, Repeat, RotateCcw, ShieldCheck, Zap, type LucideIcon } from '../icons';
 import { BRAND } from '../brand';
 import { useI18n } from '../i18n';
 import type { Dict } from '../i18n/ar';
@@ -7,16 +7,20 @@ import { delay, Reveal } from '../ui';
 import { Arrow, ContactDetails, SiteCursor, SiteFooter, SiteHeader } from './SiteChrome';
 import { TocAside, TocFold, useActiveSection } from './TocNav';
 
-/** The three policy pages share one layout; the Central Bank of Egypt's rules for online payments ask for all three on the site. */
-type LegalKey = 'privacy' | 'terms' | 'refund';
-type LegalDoc = Dict['privacy'] | Dict['terms'] | Dict['refund'];
+/**
+ * The policy pages share one layout. The Central Bank of Egypt's rules for online payments ask for
+ * privacy, terms and refund on the site; the payment gateway's review also asks for delivery.
+ */
+type LegalKey = 'privacy' | 'terms' | 'refund' | 'shipping';
+type LegalDoc = Dict['privacy'] | Dict['terms'] | Dict['refund'] | Dict['shipping'];
 
-const LEGAL_PATHS: Record<LegalKey, string> = { privacy: '/privacy', terms: '/terms', refund: '/refund' };
+const LEGAL_PATHS: Record<LegalKey, string> = { privacy: '/privacy', terms: '/terms', refund: '/refund', shipping: '/shipping' };
 
 const HIGHLIGHT_ICONS: Record<LegalKey, LucideIcon[]> = {
   privacy: [ShieldCheck, Eye, LockKeyhole, Ban],
   terms: [Gift, HeartHandshake, CreditCard, Landmark],
   refund: [Gift, RotateCcw, Repeat, Clock],
+  shipping: [Zap, Globe, Mail, Clock],
 };
 
 /** A list item written as "Label: text" shows its label in bold. */
@@ -152,3 +156,4 @@ function LegalPage({ page }: { page: LegalKey }) {
 export const PrivacyPage = () => <LegalPage page="privacy" />;
 export const TermsPage = () => <LegalPage page="terms" />;
 export const RefundPage = () => <LegalPage page="refund" />;
+export const ShippingPage = () => <LegalPage page="shipping" />;

@@ -68,7 +68,7 @@ function Hero() {
             {hero.announce}
           </span>
           <span className="studio-announcement-link">
-            {hero.announceCta} <ArrowUpRight aria-hidden className="size-3.5" />
+            {hero.announceCta} <ArrowUpRight aria-hidden className={cx('size-3.5', flip)} />
           </span>
         </Link>
         <div className="studio-hero-grid">
@@ -341,9 +341,9 @@ function PricingSection() {
                 <p className="mt-0.5 text-sm text-muted">{s.higherText}</p>
               </div>
             </div>
-            <a href={`mailto:${BRAND.supportEmail}`} className={buttonClass('outline', 'lg')}>
+            <Link href="/contact" className={buttonClass('outline', 'lg')}>
               {s.higherCta} <Arrow />
-            </a>
+            </Link>
           </div>
         </Reveal>
       </div>
@@ -363,10 +363,10 @@ function Faq() {
             <p className="font-semibold">{s.contactTitle}</p>
             <p className="mt-1 text-sm text-muted">{s.contactText}</p>
             <div className="mt-5 flex flex-wrap gap-2">
-              <a href={`mailto:${BRAND.supportEmail}`} className={buttonClass('white', 'md')}>
+              <Link href="/contact" className={buttonClass('white', 'md')}>
                 <Mail className="size-4" />
                 {s.contactCta}
-              </a>
+              </Link>
               <Link href="/guide" className={buttonClass('outline', 'md')}>
                 {s.docsCta}
               </Link>
@@ -409,9 +409,9 @@ function FinalCta() {
             <Link href="/register" className={buttonClass('white', 'lg', 'h-12 px-7 font-semibold')}>
               {s.cta} <Arrow />
             </Link>
-            <a href={`mailto:${BRAND.supportEmail}`} className={buttonClass('outline', 'lg', 'h-12 px-6')}>
+            <Link href="/contact" className={buttonClass('outline', 'lg', 'h-12 px-6')}>
               {s.contact}
-            </a>
+            </Link>
           </div>
           <p className="mt-5 text-sm text-faint">{s.note}</p>
         </div>

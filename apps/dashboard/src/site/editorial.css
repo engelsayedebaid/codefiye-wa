@@ -244,6 +244,16 @@
   mix-blend-mode: difference;
   transition: opacity .2s;
 }
+@media (hover: none), (pointer: coarse), (max-width: 64rem) {
+  .site-cursor-ring,
+  .site-cursor-dot {
+    display: none !important;
+  }
+  .studio-site.has-cursor,
+  .studio-site.has-cursor * {
+    cursor: auto !important;
+  }
+}
 .studio-hero {
   position: relative;
   isolation: isolate;
@@ -364,10 +374,10 @@
 .studio-announcement {
   display: inline-flex;
   align-items: center;
-  flex-wrap: wrap;
-  row-gap: .3rem;
+  flex-wrap: nowrap;
   max-width: 100%;
-  padding: .28rem .3rem .28rem .85rem;
+  padding-block: .28rem;
+  padding-inline: .85rem .3rem;
   border: 1px solid rgb(255 255 255 / 0.12);
   border-radius: 999px;
   background: rgb(255 255 255 / 0.045);
@@ -382,17 +392,38 @@
   display: inline-flex;
   align-items: center;
   gap: .5rem;
+  min-width: 0;
   padding-inline-end: .85rem;
 }
 .studio-announcement-copy svg { flex: none; color: #22e6a4; }
 .studio-announcement-link {
   display: inline-flex;
   align-items: center;
+  flex-shrink: 0;
   gap: .3rem;
   padding: .32rem .7rem;
   border-inline-start: 1px solid rgb(255 255 255 / 0.14);
   color: #22e6a4;
   font-weight: 650;
+  white-space: nowrap;
+}
+@media (max-width: 36rem) {
+  .studio-announcement {
+    padding-block: .22rem;
+    padding-inline: .6rem .25rem;
+    font-size: clamp(.68rem, 2.8vw, .78rem);
+  }
+  .studio-announcement-copy {
+    gap: .35rem;
+    padding-inline-end: .55rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .studio-announcement-link {
+    gap: .2rem;
+    padding: .24rem .5rem;
+  }
 }
 .studio-headline-lead {
   display: block;

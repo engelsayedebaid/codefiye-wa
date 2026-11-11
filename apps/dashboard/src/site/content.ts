@@ -26,7 +26,7 @@ import {
  */
 
 /** Header links: `#…` are landing-page sections (SiteHeader points them back to `/` elsewhere). */
-export const NAV_HREFS = ['#platform', '#solutions', '#developers', '#pricing', '/guide'];
+export const NAV_HREFS = ['#platform', '#solutions', '#developers', '#pricing', '/guide', '/about', '/contact'];
 
 export const LANGUAGES = ['Node.js', 'Python', 'PHP', 'Laravel', 'Go', 'Java', 'C#', 'Ruby', 'Flutter', 'cURL', 'n8n', 'Make'];
 
@@ -48,6 +48,6 @@ export type PricedPlan = OfferedPlan;
 export const FOOTER_HREFS = [
   ['#platform', '#demo', '#solutions', '#pricing'],
   ['/guide', '/docs', '/dashboard'],
-  ['#faq', 'mailto:', '/register', '/login'],
-  ['/privacy', '/terms', '/refund'],
+  ['/about', '/contact', '#faq', '/register', '/login'],
+  ['/privacy', '/terms', '/refund', '/shipping'],
 ];

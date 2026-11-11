@@ -8,8 +8,9 @@ import { qk } from './queries';
 import { cx } from './ui';
 
 /**
- * The currency the visitor sees prices in, remembered per browser. Visitors in Egypt start in EGP
- * (the Central Bank asks for prices in pounds), everyone else in USD; anyone can switch.
+ * The currency the visitor sees prices in, remembered per browser. Everyone starts in EGP — the
+ * Central Bank and the payment gateway ask for prices in Egyptian pounds, and payment is always in
+ * pounds — and anyone can switch.
  */
 const CURRENCY_KEY = 'wa.currency';
 
@@ -20,12 +21,7 @@ function readCurrency(): string {
   } catch {
     // storage unavailable
   }
-  try {
-    if (Intl.DateTimeFormat().resolvedOptions().timeZone === 'Africa/Cairo') return 'EGP';
-  } catch {
-    // no Intl time zones
-  }
-  return 'USD';
+  return 'EGP';
 }
 
 let current = readCurrency();

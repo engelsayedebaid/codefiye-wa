@@ -30,8 +30,8 @@ export type EgpQuote = {
   floored: boolean;
 };
 
-export const DEFAULT_EGP_QUOTE: EgpQuote = { effective: 0, live: null, liveAt: null, source: null, floored: false };
-export const DEFAULT_CURRENCY_RATES: CurrencyRates = { rates: { USD: 1 }, updatedAt: null, egp: DEFAULT_EGP_QUOTE };
+export const DEFAULT_EGP_QUOTE: EgpQuote = { effective: 55, live: null, liveAt: null, source: null, floored: true };
+export const DEFAULT_CURRENCY_RATES: CurrencyRates = { rates: { USD: 1, EGP: 55 }, updatedAt: null, egp: DEFAULT_EGP_QUOTE };
 
 /** The customer's EGP rate: the market rate, never below the admin's floor (and the floor alone when no rate is loaded). */
 export function egpQuote(floor: number, live: number | null, liveAt: string | null, source: FxSource | null): EgpQuote {

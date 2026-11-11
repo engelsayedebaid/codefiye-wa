@@ -1,5 +1,5 @@
 import { phoneHref } from '@wa/shared/site';
-import { ArrowRight, BookOpen, ChevronDown, Code2, Globe, Layers, LayoutGrid, Mail, MapPin, Menu, Phone, Tags, X } from '../icons';
+import { ArrowRight, BookOpen, Building2, ChevronDown, Code2, Globe, Layers, LayoutGrid, Mail, MapPin, Menu, Phone, Tags, X } from '../icons';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { sessionHint } from '../api';
@@ -42,6 +42,10 @@ export function SiteCursor() {
     };
     frame = requestAnimationFrame(tick);
     const place = (event: PointerEvent) => {
+      if (event.pointerType && event.pointerType !== 'mouse') {
+        hide();
+        return;
+      }
       aim.x = event.clientX;
       aim.y = event.clientY;
       if (dot.current) dot.current.style.transform = `translate3d(${event.clientX}px, ${event.clientY}px, 0)`;
@@ -128,7 +132,7 @@ function useSiteHref() {
   return (href: string) => (href.startsWith('#') && !home ? `/${href}` : href);
 }
 
-const navIcons = [LayoutGrid, Layers, Code2, Tags, BookOpen];
+const navIcons = [LayoutGrid, Layers, Code2, Tags, BookOpen, Building2, Mail];
 
 function SitePreferences() {
   const { lang, t } = useI18n();
@@ -328,7 +332,7 @@ export function SiteFooter() {
             <Logo />
           </Link>
           <p className="mt-4 text-sm leading-relaxed text-muted">{t.brand.about}</p>
-          <ContactDetails className="mt-5" />
+          <ContactDetails className="mt-5" withEmail />
           <div className="mt-6 flex flex-wrap items-center gap-2">
             {site.youtubeChannelUrl && (
               <a href={site.youtubeChannelUrl} target="_blank" rel="noreferrer" className={socialClass}>
