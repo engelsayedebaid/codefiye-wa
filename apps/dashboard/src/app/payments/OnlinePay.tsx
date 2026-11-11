@@ -1,68 +1,173 @@
 import type { KashierMethod } from '@wa/shared/kashier';
 import { useMutation } from '@tanstack/react-query';
-import { AlertTriangle, Check, CreditCard, ExternalLink, Landmark, Loader2, Lock, ShieldCheck, Smartphone } from '../../icons';
-import { type FormEvent, type ReactNode, useEffect, useRef, useState } from 'react';
+import {
+  AlertTriangle,
+  ArrowRight,
+  CalendarDays,
+  Check,
+  CreditCard,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  Info,
+  Landmark,
+  Loader2,
+  Lock,
+  ShieldCheck,
+  Smartphone,
+  User,
+  Wallet,
+} from '../../icons';
+import { type FormEvent, type ReactNode, useEffect, useId, useState } from 'react';
 import { api, ApiRequestError, errorMessage } from '../../api';
 import { useI18n } from '../../i18n';
-import { Button, cx, Field, flip } from '../../ui';
+import { cx, flip } from '../../ui';
 import { type OnlinePayment, type OpenedCheckout, PaymentResult, WalletPanel } from './OnlineCheckout';
-import { CardMarks, KashierMark } from './Trust';
+import { CardMarks } from './Trust';
 
 /**
  * Each method in the colours of the company behind it, as a customer would recognise it on a shop's
  * checkout: a glyph and, where there is one, a wordmark. No artwork of theirs is shipped — colours and names only.
  */
-const BRAND: Record<KashierMethod, { bg: string; fg?: string; mark?: string; icon?: typeof Smartphone }> = {
-  card: { bg: 'bg-[#1a1f71]', icon: CreditCard },
-  wallet: { bg: 'bg-[#e60000]', icon: Smartphone },
+const BRAND: Record<KashierMethod, { bg: string; fg?: string; mark?: string; textMark?: string; textColor?: string; icon?: typeof Smartphone }> = {
+  card: { bg: 'bg-brand text-on-brand', icon: CreditCard },
+  wallet: { bg: 'bg-[#e60000]', icon: Wallet },
   bank_installments: { bg: 'bg-[#0f4c81]', icon: Landmark },
-  valu: { bg: 'bg-[#6a1b9a]', mark: 'valU' },
-  souhoola: { bg: 'bg-[#00a651]', mark: 'سهولة' },
-  aman: { bg: 'bg-[#1565c0]', mark: 'أمان' },
-  contact: { bg: 'bg-[#00aeef]', mark: 'contact' },
+  valu: { bg: 'bg-[#6a1b9a]', mark: 'valU', textMark: 'valU', textColor: 'text-[#6a1b9a] dark:text-[#c084fc]' },
+  souhoola: { bg: 'bg-[#00a651]', mark: 'سهولة', textMark: 'سهولة', textColor: 'text-[#008f45] dark:text-[#4ade80]' },
+  aman: { bg: 'bg-[#00897b]', mark: 'أمان', textMark: 'أمان', textColor: 'text-[#00897b] dark:text-[#2dd4bf]' },
+  contact: { bg: 'bg-[#00aeef]', mark: 'contact', textMark: 'contact', textColor: 'text-[#0284c7] dark:text-[#38bdf8]' },
 };
-
-/** Egypt's wallet networks, as four dots in their colours (Vodafone, Orange, Etisalat, WE). */
-const WALLET_NETWORKS = ['bg-[#e60000]', 'bg-[#ff7900]', 'bg-[#5cb531]', 'bg-[#5b2a86]'];
 
 export function BrandGlyph({ method, size = 'md' }: { method: KashierMethod; size?: 'sm' | 'md' }) {
   const b = BRAND[method];
   const dims = size === 'sm' ? 'size-8 rounded-lg [&>svg]:size-4 text-[10px]' : 'size-11 rounded-xl [&>svg]:size-5 text-[11px]';
   return (
-    <span className={cx('flex shrink-0 items-center justify-center font-black tracking-tight text-white shadow-sm', dims, b.bg, b.fg)}>
+    <span className={cx('flex shrink-0 items-center justify-center font-black tracking-tight text-white shadow-xs', dims, b.bg, b.fg)}>
       {b.icon ? <b.icon /> : <span className="px-1 leading-none">{b.mark}</span>}
     </span>
   );
 }
 
-/** One payment method, Stripe-style: a radio row that opens into its own form when picked. */
-export function MethodTile({ method, active, onPick, children }: { method: KashierMethod; active: boolean; onPick: () => void; children?: ReactNode }) {
+/** Visual mark inside a payment method tile: crisp icon for card/wallet/bank, recognizable typographic mark for BNPL. */
+function MethodTileMark({ method, active }: { method: KashierMethod; active: boolean }) {
+  const b = BRAND[method];
+  if (b.textMark) {
+    return <span className={cx('text-base leading-none font-extrabold tracking-tight', b.textColor)}>{b.textMark}</span>;
+  }
+  const Icon = b.icon ?? CreditCard;
+  return (
+    <span
+      className={cx(
+        'flex size-8 items-center justify-center rounded-lg transition-colors',
+        active ? 'bg-brand/15 text-brand' : 'bg-ink/[0.04] text-ink-2',
+      )}
+    >
+      <Icon className="size-5" />
+    </span>
+  );
+}
+
+/** Single payment method option card with keyboard radio accessibility and clear selected state. */
+function MethodTile({ method, active, onPick, name, disabled }: { method: KashierMethod; active: boolean; onPick: () => void; name: string; disabled: boolean }) {
   const { t } = useI18n();
   const x = t.admin.payments.kashier;
   const o = t.subscription.payment.online;
-  const hint = method === 'wallet' ? o.wallet.networks : o.card.hints[method];
+  const label = method === 'card' ? o.card.title : x.methodNames[method];
   return (
-    <div className={cx('overflow-hidden rounded-xl border transition-all', active ? 'border-brand shadow-[0_0_0_1px_var(--color-brand)]' : 'border-line hover:border-line-strong')}>
-      <button type="button" role="radio" aria-checked={active} onClick={onPick} className={cx('flex w-full items-center gap-3 p-3 text-start transition-colors', active ? 'bg-brand/[0.06]' : 'hover:bg-raised/30')}>
-        <span className={cx('flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors', active ? 'border-brand bg-brand text-on-brand' : 'border-line-strong')}>{active && <Check className="size-3" />}</span>
-        <BrandGlyph method={method} size="sm" />
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm font-semibold">{x.methodNames[method]}</span>
-          <span className="flex items-center gap-1.5 text-xs text-muted">
-            {method === 'wallet' && (
-              <span className="flex items-center gap-0.5">
-                {WALLET_NETWORKS.map((c) => (
-                  <span key={c} className={cx('size-2 rounded-full', c)} />
-                ))}
-              </span>
-            )}
-            <span className="truncate">{hint}</span>
+    <label className={cx('relative min-w-0', disabled ? 'cursor-not-allowed' : 'cursor-pointer')}>
+      <input type="radio" name={name} value={method} checked={active} onChange={onPick} disabled={disabled} className="peer sr-only" />
+      <span
+        data-active={active || undefined}
+        data-disabled={disabled || undefined}
+        className={cx(
+          'checkout-method-tile h-full peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--co-accent-ink)]',
+          disabled && !active && 'opacity-55',
+        )}
+      >
+        {active && (
+          <span
+            aria-hidden="true"
+            className="animate-scale-in absolute start-2.5 top-2.5 flex size-5 items-center justify-center rounded-full bg-brand text-on-brand shadow-xs"
+          >
+            <Check className="size-3" strokeWidth={3} />
           </span>
+        )}
+        <MethodTileMark method={method} active={active} />
+        <span className={cx('block text-xs leading-snug font-semibold sm:text-[13px]', active ? 'text-brand' : 'text-ink')}>
+          {label}
         </span>
-        {method === 'card' && <CardMarks className="hidden sm:inline-flex" />}
-      </button>
-      {active && children && <div className="animate-fade-up border-t border-line/70 bg-card p-4">{children}</div>}
-    </div>
+      </span>
+    </label>
+  );
+}
+
+/** Payment method selector grid for all enabled Kashier methods. */
+export function PaymentMethodSelector({
+  methods,
+  active,
+  disabled,
+  onSelect,
+}: {
+  methods: KashierMethod[];
+  active: KashierMethod | null;
+  disabled: boolean;
+  onSelect: (method: KashierMethod) => void;
+}) {
+  const { t } = useI18n();
+  const o = t.subscription.payment.online;
+  const groupName = useId();
+  return (
+    <fieldset className="min-w-0 space-y-3">
+      <legend className="text-sm font-bold text-ink">{o.chooseMethod}</legend>
+      <div
+        className={cx(
+          'grid grid-cols-2 gap-2.5 sm:gap-3',
+          methods.length === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-4',
+        )}
+      >
+        {methods.map((m) => (
+          <MethodTile key={m} name={groupName} method={m} active={m === active} disabled={disabled} onPick={() => onSelect(m)} />
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
+/** Prominent primary payment confirmation button with lock icon, dynamic EGP total, and directional arrow. */
+export function CheckoutSubmitButton({
+  label,
+  loading,
+  disabled,
+  type = 'submit',
+  onClick,
+  icon,
+}: {
+  label: string;
+  loading?: boolean;
+  disabled?: boolean;
+  type?: 'submit' | 'button';
+  onClick?: () => void;
+  icon?: ReactNode;
+}) {
+  return (
+    <button type={type} disabled={disabled || loading} onClick={onClick} className="checkout-cta group">
+      {loading ? (
+        <Loader2 className="size-5 animate-spin" />
+      ) : (
+        (icon ?? <Lock className="size-4.5 shrink-0 opacity-90" />)
+      )}
+      <span>{label}</span>
+      {!loading && (
+        <ArrowRight
+          aria-hidden="true"
+          className={cx(
+            'ms-1 size-4.5 shrink-0 opacity-90 transition-transform duration-150 group-hover:translate-x-0.5 rtl:group-hover:-translate-x-0.5',
+            flip,
+          )}
+        />
+      )}
+    </button>
   );
 }
 
@@ -91,19 +196,6 @@ const KASHIER_ORIGIN = /^https:\/\/([a-z0-9-]+\.)*kashier\.io$/;
 /** 3-D Secure ends with Kashier's `merchantStoreRedirect` message, or any redirection of its frame to our return link. */
 const THREE_DS_DONE = new Set(['merchantStoreRedirect', 'urlRedirection', 'paymentSuccess']);
 
-function BrandMark({ brand }: { brand: CardBrand }) {
-  if (!brand) return <CreditCard className="size-5 text-muted" />;
-  const pill = 'flex h-6 items-center rounded-[5px] border border-black/10 bg-white px-1.5 shadow-sm';
-  if (brand === 'visa') return <span className={pill}><span className="text-[11px] leading-none font-black tracking-tight text-[#1a1f71] italic">VISA</span></span>;
-  if (brand === 'meeza') return <span className={pill}><span className="text-[10px] leading-none font-extrabold tracking-tight text-[#5b2d90]">meeza</span></span>;
-  return (
-    <span className={cx(pill, 'gap-0')}>
-      <span className="size-3.5 rounded-full bg-[#eb001b]" />
-      <span className="-ms-1.5 size-3.5 rounded-full bg-[#f79e1b] opacity-90" />
-    </span>
-  );
-}
-
 type SignedOrder = {
   host: string;
   merchantId: string;
@@ -116,7 +208,17 @@ type SignedOrder = {
   description: string;
   customer: { reference: string; email: string };
 };
-type DirectAnswer = { status?: string; response?: { status?: string; authentication?: { redirectUrl?: string; redirectHtml?: string }; transactionResponseMessage?: { en?: string; ar?: string } | string; transactionResponseCode?: string }; messages?: { en?: string; ar?: string }; message?: string };
+type DirectAnswer = {
+  status?: string;
+  response?: {
+    status?: string;
+    authentication?: { redirectUrl?: string; redirectHtml?: string };
+    transactionResponseMessage?: { en?: string; ar?: string } | string;
+    transactionResponseCode?: string;
+  };
+  messages?: { en?: string; ar?: string };
+  message?: string;
+};
 
 /**
  * The card form. The card details go from this browser straight to Kashier's Direct API with the order
@@ -124,13 +226,32 @@ type DirectAnswer = { status?: string; response?: { status?: string; authenticat
  * opens in a frame right here; the outcome is confirmed with the server (`PaymentResult`), never taken
  * from the browser's side of things.
  */
-export function CardPanel({ planId, months, amountLabel, test, onNeedsPhone, onDone, onFallback }: { planId: string; months: number; amountLabel: string; test: boolean; onNeedsPhone: () => void; onDone: () => void; onFallback: () => void }) {
+export function CardPanel({
+  planId,
+  months,
+  amountLabel,
+  test,
+  onNeedsPhone,
+  onDone,
+  onFallback,
+  onLockedChange,
+}: {
+  planId: string;
+  months: number;
+  amountLabel: string;
+  test: boolean;
+  onNeedsPhone: () => void;
+  onDone: () => void;
+  onFallback: () => void;
+  onLockedChange: (locked: boolean) => void;
+}) {
   const { t, lang } = useI18n();
   const o = t.subscription.payment.online;
   const c = o.card;
   const [number, setNumber] = useState('');
   const [expiry, setExpiry] = useState('');
   const [cvc, setCvc] = useState('');
+  const [showCvc, setShowCvc] = useState(false);
   const [name, setName] = useState('');
   const [errors, setErrors] = useState<Partial<Record<'number' | 'expiry' | 'cvc' | 'name', string>>>({});
   const [busy, setBusy] = useState(false);
@@ -140,6 +261,8 @@ export function CardPanel({ planId, months, amountLabel, test, onNeedsPhone, onD
   const [nudge, setNudge] = useState(0);
   const digits = number.replace(/\D/g, '');
   const brand = cardBrandOf(digits);
+  const locked = busy || payment !== null;
+  useEffect(() => onLockedChange(locked), [locked, onLockedChange]);
 
   // A message from Kashier's 3-D Secure frame: only a hint that it is over; the server confirms. `nudge` re-polls at once.
   useEffect(() => {
@@ -269,70 +392,147 @@ export function CardPanel({ planId, months, amountLabel, test, onNeedsPhone, onD
   }
 
   return (
-    <form onSubmit={pay} className="space-y-4" autoComplete="on">
-      <Field
-        label={c.number}
-        value={groupCard(digits)}
-        onChange={(e) => {
-          setNumber(e.target.value.replace(/\D/g, '').slice(0, 19));
-          setErrors((er) => ({ ...er, number: undefined }));
-        }}
-        inputMode="numeric"
-        autoComplete="cc-number"
-        dir="ltr"
-        placeholder="1234 5678 9012 3456"
-        autoFocus
-        aside={<BrandMark brand={brand} />}
-        error={errors.number ? [errors.number] : undefined}
-      />
-      <div className="grid grid-cols-2 gap-3">
-        <Field
-          label={c.expiry}
-          value={expiry}
-          onChange={(e) => {
-            const d = e.target.value.replace(/\D/g, '').slice(0, 4);
-            setExpiry(d.length > 2 ? `${d.slice(0, 2)} / ${d.slice(2)}` : d);
-            setErrors((er) => ({ ...er, expiry: undefined }));
-          }}
-          inputMode="numeric"
-          autoComplete="cc-exp"
-          dir="ltr"
-          placeholder="MM / YY"
-          error={errors.expiry ? [errors.expiry] : undefined}
-        />
-        <Field
-          label={c.cvc}
-          value={cvc}
-          onChange={(e) => {
-            setCvc(e.target.value.replace(/\D/g, '').slice(0, 4));
-            setErrors((er) => ({ ...er, cvc: undefined }));
-          }}
-          inputMode="numeric"
-          autoComplete="cc-csc"
-          dir="ltr"
-          placeholder="123"
-          type="password"
-          error={errors.cvc ? [errors.cvc] : undefined}
-        />
+    <form onSubmit={pay} className="space-y-5" autoComplete="on" noValidate>
+      <div className="checkout-form-well space-y-4 p-4 sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-bold text-ink sm:text-base">{c.sectionTitle}</h3>
+          <span className="inline-flex items-center gap-1 text-xs text-muted">
+            <Lock className="size-3.5 text-[var(--co-accent-ink)]" />
+            {o.trust.ssl}
+          </span>
+        </div>
+
+        {/* Card number */}
+        <label className="grid gap-1.5">
+          <span className="text-xs font-semibold text-ink-2 sm:text-[13px]">{c.number}</span>
+          <span className="relative block" dir="ltr">
+            <span className="pointer-events-none absolute inset-y-0 start-0 flex w-10 items-center justify-center text-muted">
+              <CreditCard className="size-4.5" />
+            </span>
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="cc-number"
+              dir="ltr"
+              placeholder="1234 5678 9012 3456"
+              value={groupCard(digits)}
+              disabled={busy}
+              aria-invalid={errors.number ? true : undefined}
+              onChange={(e) => {
+                setNumber(e.target.value.replace(/\D/g, '').slice(0, 19));
+                setErrors((er) => ({ ...er, number: undefined }));
+              }}
+              className="checkout-input ps-10 pe-32 font-mono tracking-wider"
+            />
+            <span className="pointer-events-none absolute inset-y-0 end-2.5 flex items-center">
+              <CardMarks activeBrand={brand} />
+            </span>
+          </span>
+          {errors.number && <span className="text-xs font-medium text-destructive-ink">{errors.number}</span>}
+        </label>
+
+        {/* Expiration date & CVV */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <label className="grid content-start gap-1.5">
+            <span className="text-xs font-semibold text-ink-2 sm:text-[13px]">{c.expiry}</span>
+            <span className="relative block" dir="ltr">
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="cc-exp"
+                dir="ltr"
+                placeholder="MM / YY"
+                value={expiry}
+                disabled={busy}
+                aria-invalid={errors.expiry ? true : undefined}
+                onChange={(e) => {
+                  const d = e.target.value.replace(/\D/g, '').slice(0, 4);
+                  setExpiry(d.length > 2 ? `${d.slice(0, 2)} / ${d.slice(2)}` : d);
+                  setErrors((er) => ({ ...er, expiry: undefined }));
+                }}
+                className="checkout-input ps-3.5 pe-10 font-mono tracking-wider"
+              />
+              <span className="pointer-events-none absolute inset-y-0 end-0 flex w-10 items-center justify-center text-muted">
+                <CalendarDays className="size-4" />
+              </span>
+            </span>
+            {errors.expiry && <span className="text-xs font-medium text-destructive-ink">{errors.expiry}</span>}
+          </label>
+
+          <label className="grid content-start gap-1.5">
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-ink-2 sm:text-[13px]">
+              <span>{c.cvc}</span>
+              <span title={c.cvcTooltip} aria-label={c.cvcTooltip} className="inline-flex text-muted">
+                <Info className="size-3.5" />
+              </span>
+            </span>
+            <span className="relative block" dir="ltr">
+              <input
+                type={showCvc ? 'text' : 'password'}
+                inputMode="numeric"
+                autoComplete="cc-csc"
+                dir="ltr"
+                placeholder="123"
+                value={cvc}
+                disabled={busy}
+                aria-invalid={errors.cvc ? true : undefined}
+                onChange={(e) => {
+                  setCvc(e.target.value.replace(/\D/g, '').slice(0, 4));
+                  setErrors((er) => ({ ...er, cvc: undefined }));
+                }}
+                className="checkout-input ps-3.5 pe-10 font-mono tracking-wider"
+              />
+              <button
+                type="button"
+                onClick={() => setShowCvc((s) => !s)}
+                onMouseDown={(e) => e.preventDefault()}
+                disabled={busy}
+                aria-label={showCvc ? t.common.hidePassword : t.common.showPassword}
+                aria-pressed={showCvc}
+                title={showCvc ? t.common.hidePassword : t.common.showPassword}
+                className="absolute inset-y-0 end-0 flex w-10 items-center justify-center rounded-e-xl text-muted transition-colors hover:text-ink focus-visible:text-ink focus-visible:outline-none"
+              >
+                {showCvc ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+              </button>
+            </span>
+            {errors.cvc && <span className="text-xs font-medium text-destructive-ink">{errors.cvc}</span>}
+          </label>
+        </div>
+
+        {/* Name on card */}
+        <label className="grid gap-1.5">
+          <span className="text-xs font-semibold text-ink-2 sm:text-[13px]">{c.name}</span>
+          <span className="relative block" dir="ltr">
+            <input
+              type="text"
+              autoComplete="cc-name"
+              dir="ltr"
+              placeholder="AHMED MOHAMED"
+              value={name}
+              disabled={busy}
+              aria-invalid={errors.name ? true : undefined}
+              onChange={(e) => {
+                setName(e.target.value);
+                setErrors((er) => ({ ...er, name: undefined }));
+              }}
+              className="checkout-input ps-3.5 pe-10 tracking-wide uppercase"
+            />
+            <span className="pointer-events-none absolute inset-y-0 end-0 flex w-10 items-center justify-center text-muted">
+              <User className="size-4" />
+            </span>
+          </span>
+          {errors.name && <span className="text-xs font-medium text-destructive-ink">{errors.name}</span>}
+        </label>
+
+        {test && <p className="ltr rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning">{c.testHint}</p>}
+        <p className="flex items-start gap-1.5 text-xs text-muted">
+          <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-[var(--co-accent-ink)]" />
+          <span>{c.direct}</span>
+        </p>
       </div>
-      <Field
-        label={c.name}
-        value={name}
-        onChange={(e) => {
-          setName(e.target.value);
-          setErrors((er) => ({ ...er, name: undefined }));
-        }}
-        autoComplete="cc-name"
-        dir="ltr"
-        placeholder="AHMED MOHAMED"
-        error={errors.name ? [errors.name] : undefined}
-      />
-      {test && <p className="ltr text-xs text-warning">{c.testHint}</p>}
-      <p className="flex items-start gap-1.5 text-xs text-muted">
-        <Lock className="mt-0.5 size-3.5 shrink-0 text-brand" /> {c.direct}
-      </p>
+
       {problem && (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-destructive-ink/10 px-3 py-2 text-sm text-destructive-ink">
+        <div role="alert" className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-destructive-ink/25 bg-destructive-ink/10 px-3.5 py-2.5 text-sm text-destructive-ink">
           <AlertTriangle className="size-4 shrink-0" />
           <span className="min-w-0 flex-1">{problem.text}</span>
           {problem.unreachable && (
@@ -342,12 +542,8 @@ export function CardPanel({ planId, months, amountLabel, test, onNeedsPhone, onD
           )}
         </div>
       )}
-      <Button type="submit" variant="brand" size="lg" className="w-full" loading={busy} icon={busy ? undefined : <Lock className="size-4" />}>
-        {busy ? c.sending : o.payNow(amountLabel)}
-      </Button>
-      <div className="flex justify-center">
-        <KashierMark />
-      </div>
+
+      <CheckoutSubmitButton label={busy ? c.sending : o.payNow(amountLabel)} loading={busy} />
     </form>
   );
 }
@@ -355,7 +551,23 @@ export function CardPanel({ planId, months, amountLabel, test, onNeedsPhone, onD
 // --- the other methods: Kashier's own window ------------------------------------------------------
 
 /** Installments and buy-now-pay-later run on the provider's own pages: Kashier's checkout opens in our frame on them. */
-export function FramePanel({ method, planId, months, amountLabel, onNeedsPhone, onOpened }: { method: KashierMethod; planId: string; months: number; amountLabel: string; onNeedsPhone: () => void; onOpened: (c: OpenedCheckout) => void }) {
+export function FramePanel({
+  method,
+  planId,
+  months,
+  amountLabel,
+  onNeedsPhone,
+  onOpened,
+  onLockedChange,
+}: {
+  method: Exclude<KashierMethod, 'card' | 'wallet'>;
+  planId: string;
+  months: number;
+  amountLabel: string;
+  onNeedsPhone: () => void;
+  onOpened: (c: OpenedCheckout) => void;
+  onLockedChange: (locked: boolean) => void;
+}) {
   const { t, lang } = useI18n();
   const o = t.subscription.payment.online;
   const x = t.admin.payments.kashier;
@@ -366,20 +578,33 @@ export function FramePanel({ method, planId, months, amountLabel, onNeedsPhone, 
       if (err instanceof ApiRequestError && err.code === 'phone_unverified') onNeedsPhone();
     },
   });
+  useEffect(() => onLockedChange(open.isPending), [open.isPending, onLockedChange]);
   return (
-    <div className="space-y-3">
-      <p className="text-sm text-muted">{x.methodHints[method]}</p>
-      <p className="flex items-start gap-1.5 text-xs text-muted">
-        <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-brand" /> {o.viaKashier}
-      </p>
+    <div className="space-y-5">
+      <div className="checkout-form-well space-y-3 p-4 sm:p-5">
+        <div className="flex items-center gap-3">
+          <BrandGlyph method={method} size="sm" />
+          <div>
+            <h3 className="text-sm font-bold text-ink">{x.methodNames[method]}</h3>
+            <p className="text-xs text-muted">{o.card.hints[method]}</p>
+          </div>
+        </div>
+        <p className="text-sm leading-relaxed text-ink-2">{x.methodHints[method]}</p>
+        <p className="flex items-start gap-1.5 text-xs text-muted">
+          <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-[var(--co-accent-ink)]" /> {o.viaKashier}
+        </p>
+      </div>
       {open.isError && (
-        <p className="flex items-start gap-2 rounded-lg bg-destructive-ink/10 px-3 py-2 text-sm text-destructive-ink">
+        <p role="alert" className="flex items-start gap-2 rounded-xl border border-destructive-ink/25 bg-destructive-ink/10 px-3.5 py-2.5 text-sm text-destructive-ink">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" /> {errorMessage(open.error)}
         </p>
       )}
-      <Button variant="brand" size="lg" className="w-full" loading={open.isPending} onClick={() => open.mutate()} icon={open.isPending ? undefined : <Lock className="size-4" />}>
-        {open.isPending ? o.opening : `${o.continueTo(x.methodNames[method])} · ${amountLabel}`}
-      </Button>
+      <CheckoutSubmitButton
+        type="button"
+        loading={open.isPending}
+        onClick={() => open.mutate()}
+        label={open.isPending ? o.opening : `${o.continueTo(x.methodNames[method])} — ${amountLabel}`}
+      />
     </div>
   );
 }
@@ -387,8 +612,8 @@ export function FramePanel({ method, planId, months, amountLabel, onNeedsPhone, 
 // --- the whole payment side ----------------------------------------------------------------------
 
 /**
- * The payment column of the request dialog when Kashier takes payments: the methods as tiles, each
- * opening into its own form — card and wallet on our page, the rest in Kashier's frame.
+ * All available methods stay visible above a separate form. Pending payments lock the choices
+ * and the order duration without removing alternatives or unmounting their confirmation flow.
  */
 export function OnlinePaymentPanel({
   methods,
@@ -399,6 +624,7 @@ export function OnlinePaymentPanel({
   onNeedsPhone,
   onDone,
   onOpened,
+  onLockedChange,
 }: {
   methods: KashierMethod[];
   planId: string;
@@ -408,40 +634,55 @@ export function OnlinePaymentPanel({
   onNeedsPhone: () => void;
   onDone: () => void;
   onOpened: (c: OpenedCheckout) => void;
+  onLockedChange: (locked: boolean) => void;
 }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const o = t.subscription.payment.online;
   const [picked, setPicked] = useState<KashierMethod | null>(null);
-  const active = picked ?? methods[0] ?? null;
-  // Once a payment is under way (a wallet request sent, 3-D Secure open), the other tiles step aside.
-  const [locked, setLocked] = useState(false);
-  const panelRef = useRef<HTMLDivElement>(null);
-  const fallback = () => {
-    if (!active) return;
-    const el = panelRef.current?.querySelector<HTMLButtonElement>('[data-fallback]');
-    el?.click();
-  };
+  const active = picked && methods.includes(picked) ? picked : methods[0] ?? null;
+  const [paymentLocked, setPaymentLocked] = useState(false);
+  const fallback = useMutation({
+    mutationFn: () => api<OpenedCheckout>('/api/payments/kashier', { method: 'POST', body: { planId, months, locale: lang, method: 'card' }, timeoutMs: 30_000 }),
+    onSuccess: onOpened,
+    onError: (err) => {
+      if (err instanceof ApiRequestError && err.code === 'phone_unverified') onNeedsPhone();
+    },
+  });
+  const locked = paymentLocked || fallback.isPending;
+  useEffect(() => onLockedChange(locked), [locked, onLockedChange]);
 
   return (
-    <div ref={panelRef} className="space-y-3">
-      <p className="text-sm font-semibold">{o.payWith}</p>
-      <div role="radiogroup" aria-label={o.chooseMethod} className="space-y-2">
-        {methods
-          .filter((m) => !locked || m === active)
-          .map((m) => (
-            <MethodTile key={m} method={m} active={m === active} onPick={() => !locked && setPicked(m)}>
-              {m === 'card' ? (
-                <CardPanel planId={planId} months={months} amountLabel={amountLabel} test={test} onNeedsPhone={onNeedsPhone} onDone={onDone} onFallback={fallback} />
-              ) : m === 'wallet' ? (
-                <WalletPanel planId={planId} months={months} amountLabel={amountLabel} test={test} onNeedsPhone={onNeedsPhone} onDone={onDone} onStarted={() => setLocked(true)} onReset={() => setLocked(false)} />
-              ) : (
-                <FramePanel method={m} planId={planId} months={months} amountLabel={amountLabel} onNeedsPhone={onNeedsPhone} onOpened={onOpened} />
-              )}
-            </MethodTile>
-          ))}
-      </div>
-      {/* The card form's fallback when the browser can't reach Kashier: the same payment in Kashier's own frame. */}
-      <HiddenFrameOpener method="card" planId={planId} months={months} onNeedsPhone={onNeedsPhone} onOpened={onOpened} />
+    <div className="space-y-5">
+      <PaymentMethodSelector
+        methods={methods}
+        active={active}
+        disabled={locked}
+        onSelect={(m) => {
+          setPicked(m);
+          fallback.reset();
+        }}
+      />
+      {locked && (
+        <p role="status" className="flex items-start gap-2 rounded-xl border border-[var(--co-accent-border)] bg-[var(--co-accent-soft)] p-3 text-xs leading-relaxed text-ink-2">
+          <Lock className="mt-0.5 size-4 shrink-0 text-[var(--co-accent-ink)]" />
+          {o.methodLocked}
+        </p>
+      )}
+      {active && (
+        <section key={active} aria-label={o.paymentDetails} className="animate-fade-up">
+          <fieldset disabled={fallback.isPending} className="min-w-0">
+            {active === 'card' ? (
+              <CardPanel planId={planId} months={months} amountLabel={amountLabel} test={test} onNeedsPhone={onNeedsPhone} onDone={onDone} onFallback={() => fallback.mutate()} onLockedChange={setPaymentLocked} />
+            ) : active === 'wallet' ? (
+              <WalletPanel planId={planId} months={months} amountLabel={amountLabel} test={test} onNeedsPhone={onNeedsPhone} onDone={onDone} onLockedChange={setPaymentLocked} />
+            ) : (
+              <FramePanel method={active} planId={planId} months={months} amountLabel={amountLabel} onNeedsPhone={onNeedsPhone} onOpened={onOpened} onLockedChange={setPaymentLocked} />
+            )}
+          </fieldset>
+          {fallback.isPending && <p role="status" className="mt-3 text-sm text-muted">{o.opening}</p>}
+          {fallback.isError && <p role="alert" className="mt-3 text-sm text-destructive-ink">{errorMessage(fallback.error)}</p>}
+        </section>
+      )}
       {!methods.length && (
         <p className="flex items-center gap-2 text-sm text-muted">
           <Loader2 className="size-4 animate-spin" /> {t.common.loading}
@@ -449,16 +690,4 @@ export function OnlinePaymentPanel({
       )}
     </div>
   );
-}
-
-function HiddenFrameOpener({ method, planId, months, onNeedsPhone, onOpened }: { method: KashierMethod; planId: string; months: number; onNeedsPhone: () => void; onOpened: (c: OpenedCheckout) => void }) {
-  const { lang } = useI18n();
-  const open = useMutation({
-    mutationFn: () => api<OpenedCheckout>('/api/payments/kashier', { method: 'POST', body: { planId, months, locale: lang, method }, timeoutMs: 30_000 }),
-    onSuccess: onOpened,
-    onError: (err) => {
-      if (err instanceof ApiRequestError && err.code === 'phone_unverified') onNeedsPhone();
-    },
-  });
-  return <button type="button" data-fallback hidden onClick={() => open.mutate()} />;
 }

@@ -355,6 +355,7 @@ export {
   Columns2,
   Columns3,
   Cpu,
+  Crown,
   Dumbbell,
   Focus,
   Forward,

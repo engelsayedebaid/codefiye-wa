@@ -2,7 +2,7 @@ import type { KashierMethod, KashierPublicConfig } from '@wa/shared/kashier';
 import type { OnlinePaymentStatus } from '@wa/shared/payments';
 import { getPlan } from '@wa/shared/plans';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { AlertTriangle, ArrowLeft, CheckCircle2, ExternalLink, Hourglass, Info, Loader2, Lock, ShieldCheck, Smartphone, X } from '../../icons';
+import { AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, ExternalLink, Hourglass, Info, Loader2, Lock, ShieldCheck, Smartphone, Wallet, X } from '../../icons';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { api, ApiRequestError, errorMessage } from '../../api';
 import { useI18n } from '../../i18n';
@@ -331,8 +331,7 @@ export function WalletPanel({
   test,
   onNeedsPhone,
   onDone,
-  onStarted,
-  onReset,
+  onLockedChange,
 }: {
   planId: string;
   months: number;
@@ -340,9 +339,8 @@ export function WalletPanel({
   test: boolean;
   onNeedsPhone: () => void;
   onDone: () => void;
-  /** The request was sent: the rest of the page should wait with the customer. */
-  onStarted?: () => void;
-  onReset?: () => void;
+  /** Keep the order and payment method fixed while sending or awaiting the payment. */
+  onLockedChange?: (locked: boolean) => void;
 }) {
   const { t } = useI18n();
   const p = t.subscription.payment;
@@ -358,17 +356,20 @@ export function WalletPanel({
     mutationFn: () => api<{ payment: OnlinePayment }>('/api/payments/kashier/wallet', { method: 'POST', body: { planId, months, mobile: digits }, timeoutMs: 30_000 }),
     onSuccess: ({ payment }) => {
       setPayment(payment);
-      onStarted?.();
     },
     onError: (err) => {
       if (err instanceof ApiRequestError && err.code === 'phone_unverified') onNeedsPhone();
       if (err instanceof ApiRequestError && err.code === 'unregistered_wallet') setFieldError(w.unregistered);
     },
   });
+  const locked = send.isPending || payment !== null;
+  useEffect(() => {
+    onLockedChange?.(locked);
+  }, [locked, onLockedChange]);
+
   const reset = () => {
     setPayment(null);
     send.reset();
-    onReset?.();
   };
 
   if (payment) {
@@ -413,7 +414,8 @@ export function WalletPanel({
 
   return (
     <form
-      className="space-y-4"
+      className="space-y-5"
+      noValidate
       onSubmit={(e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -421,36 +423,60 @@ export function WalletPanel({
         if (valid && !send.isPending) send.mutate();
       }}
     >
-      <Field
-        label={w.mobile}
-        value={mobile}
-        onChange={(e) => {
-          setMobile(e.target.value);
-          setFieldError(null);
-        }}
-        inputMode="tel"
-        autoComplete="tel-national"
-        dir="ltr"
-        placeholder="01xxxxxxxxx"
-        maxLength={14}
-        autoFocus
-        required
-        hint={test ? w.testHint(TEST_WALLET_NUMBER) : w.mobileHint}
-        error={fieldError ? [fieldError] : undefined}
-      />
+      <div className="checkout-form-well space-y-4 p-4 sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-bold text-ink sm:text-base">{w.title}</h3>
+          <span className="text-xs text-muted">{w.networks}</span>
+        </div>
+
+        <label className="grid gap-1.5">
+          <span className="text-xs font-semibold text-ink-2 sm:text-[13px]">{w.mobile}</span>
+          <span className="relative block" dir="ltr">
+            <span className="pointer-events-none absolute inset-y-0 start-0 flex w-10 items-center justify-center text-muted">
+              <Wallet className="size-4.5" />
+            </span>
+            <input
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel-national"
+              dir="ltr"
+              placeholder="01xxxxxxxxx"
+              maxLength={14}
+              required
+              disabled={send.isPending}
+              aria-invalid={fieldError ? true : undefined}
+              value={mobile}
+              onChange={(e) => {
+                setMobile(e.target.value);
+                setFieldError(null);
+              }}
+              className="checkout-input ps-10 pe-3.5 font-mono tracking-wider"
+            />
+          </span>
+          {fieldError ? (
+            <span className="text-xs font-medium text-destructive-ink">{fieldError}</span>
+          ) : (
+            <span className="text-xs text-muted">{test ? w.testHint(TEST_WALLET_NUMBER) : w.mobileHint}</span>
+          )}
+        </label>
+      </div>
 
       {send.isError && !fieldError && (
-        <p className="flex items-start gap-2 rounded-lg bg-destructive-ink/10 px-3 py-2 text-sm text-destructive-ink">
+        <p role="alert" className="flex items-start gap-2 rounded-xl border border-destructive-ink/25 bg-destructive-ink/10 px-3.5 py-2.5 text-sm text-destructive-ink">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" /> {errorMessage(send.error)}
         </p>
       )}
 
-      <Button type="submit" variant="brand" size="lg" className="w-full" loading={send.isPending} disabled={!valid} icon={send.isPending ? undefined : <Smartphone className="size-4" />}>
-        {send.isPending ? w.sending : w.send(amountLabel)}
-      </Button>
-      <div className="flex justify-center">
-        <KashierMark />
-      </div>
+      <button type="submit" disabled={!valid || send.isPending} className="checkout-cta group">
+        {send.isPending ? <Loader2 className="size-5 animate-spin" /> : <Smartphone className="size-4.5 shrink-0 opacity-90" />}
+        <span>{send.isPending ? w.sending : w.send(amountLabel)}</span>
+        {!send.isPending && (
+          <ArrowRight
+            aria-hidden="true"
+            className={cx('ms-1 size-4.5 shrink-0 opacity-90 transition-transform duration-150 group-hover:translate-x-0.5 rtl:group-hover:-translate-x-0.5', flip)}
+          />
+        )}
+      </button>
     </form>
   );
 }
@@ -582,10 +608,10 @@ export function CheckoutFrame({
   }, [finished]);
 
   return (
-    <div role="dialog" aria-modal aria-label={o.frameTitle} className="animate-fade-in fixed inset-0 z-50 flex flex-col bg-bg">
-      <header className="border-b border-line bg-card">
-        <div className="mx-auto flex w-full max-w-5xl items-center gap-3 px-4 py-3">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-brand/12 text-brand">
+    <div role="dialog" aria-modal aria-label={o.frameTitle} className="checkout-stage animate-fade-in fixed inset-0 z-50 flex flex-col">
+      <header className="checkout-header">
+        <div className="mx-auto flex w-full max-w-[1180px] items-center gap-3 px-4 py-3 sm:px-6">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#5B3DF5]/12 text-[var(--co-accent-ink)]">
             <ShieldCheck className="size-4.5" />
           </span>
           <span className="min-w-0 flex-1">
