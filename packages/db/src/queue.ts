@@ -8,6 +8,10 @@ export type QueuedMessage = {
   remote_jid: string;
   content: OutboundContent;
   attempts: number;
+  /** Set for gateway OTP jobs. Null on every other message. */
+  otp_challenge_id: string | null;
+  /** When the OTP must no longer be sent. Null for ordinary messages. */
+  expires_at: Date | null;
   /** Set for campaign messages, with the campaign's pace. */
   broadcast_id: string | null;
   pace: BroadcastPace | null;
@@ -28,14 +32,16 @@ export async function claimNextOutbound(sql: Sql, sessionId: string): Promise<Qu
       where id = (
         select id from messages
         where session_id = ${sessionId} and status = 'queued' and (not_before is null or not_before <= now())
-        order by id
+          and (expires_at is null or expires_at > now())
+        order by priority desc, id
         limit 1
         for update skip locked
       )
-      returning id, workspace_id, session_id, remote_jid, content, attempts, broadcast_id, not_before
+      returning id, workspace_id, session_id, remote_jid, content, attempts, broadcast_id, not_before, otp_challenge_id, expires_at
     )
     select c.id, c.workspace_id, c.session_id, c.remote_jid, c.content, c.attempts, c.broadcast_id, b.pace,
-      coalesce(extract(epoch from now() - c.not_before) * 1000, 0)::float8 as late_ms
+      coalesce(extract(epoch from now() - c.not_before) * 1000, 0)::float8 as late_ms,
+      c.otp_challenge_id, c.expires_at
     from claimed c left join broadcasts b on b.id = c.broadcast_id`;
   return row ?? null;
 }

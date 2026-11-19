@@ -108,11 +108,12 @@ function Delta({ now, before, label, flat }: { now: number; before: number; labe
 }
 
 /** A pulsing dot: green while something is live, grey otherwise. */
-function LiveDot({ on }: { on: boolean }) {
+function LiveDot({ on, light = false }: { on: boolean; light?: boolean }) {
+  const color = light ? (on ? 'bg-[#b6f3c1]' : 'bg-white/35') : on ? 'bg-brand' : 'bg-line-strong';
   return (
     <span className="relative flex size-2 shrink-0">
-      {on && <span className="absolute inset-0 animate-ping rounded-full bg-brand/60 motion-reduce:hidden" />}
-      <span className={cx('relative size-2 rounded-full', on ? 'bg-brand' : 'bg-line-strong')} />
+      {on && <span className={cx('absolute inset-0 animate-ping rounded-full motion-reduce:hidden', light ? 'bg-[#b6f3c1]/70' : 'bg-brand/60')} />}
+      <span className={cx('relative size-2 rounded-full', color)} />
     </span>
   );
 }
@@ -182,7 +183,7 @@ function initials(name: string) {
 // --- hero ----------------------------------------------------------------------------------------
 
 function OverviewHeader({ live }: { live: boolean }) {
-  const { t, fmt, lang } = useI18n();
+  const { t, fmt } = useI18n();
   const { account } = useAccount();
   const d = t.dashboard;
   const name = account?.user?.name || account?.workspace.name;
@@ -190,17 +191,27 @@ function OverviewHeader({ live }: { live: boolean }) {
   const hour = now.getHours();
   const greeting = hour < 5 ? d.greeting.night : hour < 12 ? d.greeting.morning : hour < 17 ? d.greeting.afternoon : hour < 22 ? d.greeting.evening : d.greeting.night;
   return (
-    <header className="workspace-masthead animate-fade-up relative isolate overflow-hidden rounded-[1.75rem] p-6 sm:p-8">
+    <header className="workspace-masthead animate-fade-up relative isolate overflow-hidden rounded-[1.75rem] px-6 py-6 sm:px-8 sm:py-7">
       <div aria-hidden className="workspace-signal" />
-      <div className="relative max-w-3xl">
-        <div className="flex flex-wrap items-center gap-3 text-xs font-medium text-white/80">
-          <span className="workspace-date capitalize">{fmt.dayLong.format(now)}</span>
-          <span className="inline-flex items-center gap-2"><LiveDot on={live} />{d.live}</span>
+      <div className="relative flex flex-col gap-6">
+        <div className="max-w-2xl">
+          <p className="inline-flex items-center gap-2.5 text-xs font-medium text-white/75">
+            <span className="capitalize">{fmt.dayLong.format(now)}</span>
+            <span aria-hidden className="size-1 rounded-full bg-white/40" />
+            <span className="inline-flex items-center gap-1.5"><LiveDot on={live} light />{d.live}</span>
+          </p>
+          {name ? (
+            <>
+              <p className="mt-4 text-sm font-medium text-white/75">{greeting}</p>
+              <h1 className="mt-1 text-[clamp(1.85rem,3vw,2.7rem)] leading-tight font-semibold tracking-[-0.02em] text-balance">
+                <bdi>{name}</bdi>
+              </h1>
+            </>
+          ) : (
+            <h1 className="mt-4 text-[clamp(1.85rem,3vw,2.7rem)] leading-tight font-semibold tracking-[-0.02em] text-balance">{d.overviewTitle}</h1>
+          )}
+          <p className="mt-3 max-w-xl text-sm leading-relaxed text-white/75 sm:text-base">{d.overviewSubtitle}</p>
         </div>
-        <h1 className="mt-4 text-[clamp(1.8rem,3.1vw,3rem)] leading-tight font-semibold text-balance">
-          {name ? <>{greeting}{lang === 'ar' ? '، ' : ', '}<bdi>{name}</bdi></> : d.overviewTitle}
-        </h1>
-        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-white/80 sm:text-base">{d.overviewSubtitle}</p>
         <Actions />
       </div>
     </header>
@@ -304,14 +315,14 @@ function Actions() {
     { href: '/guide', icon: BookOpen, label: d.quickDocs },
   ];
   return (
-    <nav aria-label={d.quickNewSession} className="mt-6 flex flex-wrap gap-2">
+    <nav aria-label={d.quickNewSession} className="flex flex-wrap gap-2 border-t border-white/15 pt-5">
       {actions.map((a) => (
         <Link
           key={a.href}
           href={a.href}
           className={cx(
             'inline-flex min-h-10 items-center gap-2 rounded-full px-4 py-1 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white',
-            a.primary ? 'bg-[#c5f2cb] text-[#123b27] hover:bg-white' : 'border border-white/25 bg-white/[0.06] text-white hover:bg-white/15',
+            a.primary ? 'bg-[#c8f5d0] text-[#12382a] hover:bg-white' : 'border border-white/20 bg-white/8 text-white hover:bg-white/16',
           )}
         >
           <a.icon className="size-4" />

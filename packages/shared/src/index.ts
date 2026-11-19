@@ -16,6 +16,7 @@ export * from './kashier';
 export * from './kashier-schema';
 export * from './phone';
 export * from './plans';
+export * from './otp-pool';
 export * from './plan-pricing';
 export * from './plan-pricing-schema';
 export * from './site';

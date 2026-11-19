@@ -1,7 +1,7 @@
 import { asciiDigits, phoneWithCountry } from '@wa/shared/phone';
 import { useQueryClient } from '@tanstack/react-query';
 import { MessageSquareText, RotateCw } from '../icons';
-import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
+import { type FormEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import { api, ApiRequestError, errorMessage } from '../api';
 import { useI18n } from '../i18n';
 import type { Dict } from '../i18n/ar';
@@ -84,6 +84,7 @@ export function CodeStep({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
+  const busy = useRef(false);
   const [resending, setResending] = useState(false);
   const [wait, setWait] = useState(initial.resendAfter);
 
@@ -100,28 +101,34 @@ export function CodeStep({
     setError(message);
   };
 
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (code.length !== 6 || verifying) return;
+  const submitCode = async (value: string) => {
+    if (value.length !== 6 || busy.current) return;
     const local = prepare?.() ?? null;
     if (local) {
       setError(local);
       setNotice(null);
       return;
     }
+    busy.current = true;
     setVerifying(true);
     setError(null);
     setNotice(null);
     try {
-      await onVerify(ticket.verificationId, code);
+      await onVerify(ticket.verificationId, value);
     } catch (err) {
       // A wrong code is cleared; a problem with the other fields (a weak password) keeps it.
       const codeProblem = err instanceof ApiRequestError && (err.code === 'code_invalid' || err.code === 'code_expired' || err.code === 'too_many_attempts');
       if (codeProblem) setCode('');
       fail(err);
     } finally {
+      busy.current = false;
       setVerifying(false);
     }
+  };
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    void submitCode(code);
   };
 
   const resend = async () => {
@@ -159,7 +166,11 @@ export function CodeStep({
       <Field
         label={v.code}
         value={code}
-        onChange={(e) => setCode(asciiDigits(e.target.value).replace(/\D/g, '').slice(0, 6))}
+        onChange={(e) => {
+          const next = asciiDigits(e.target.value).replace(/\D/g, '').slice(0, 6);
+          setCode(next);
+          if (next.length === 6) void submitCode(next);
+        }}
         inputMode="numeric"
         autoComplete="one-time-code"
         dir="ltr"

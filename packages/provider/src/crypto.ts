@@ -39,3 +39,8 @@ export function decrypt(key: Buffer, blob: Buffer, aad: string): Buffer {
 export function deriveKey(master: Buffer, salt: string): Buffer {
   return Buffer.from(hkdfSync('sha256', master, Buffer.from(salt, 'utf8'), Buffer.from('wa-ai', 'utf8'), 32));
 }
+
+/** Separate from session creds and AI keys. AAD is still `otp:{challengeId}` at each call. */
+export function otpDeliveryKey(master: Buffer): Buffer {
+  return Buffer.from(hkdfSync('sha256', master, Buffer.from('otp-delivery'), Buffer.from('otp-delivery-v1'), 32));
+}

@@ -11,6 +11,7 @@ export const qk = {
   messages: (id: string) => ['sessions', id, 'messages'] as const,
   templates: ['templates'] as const,
   keys: ['keys'] as const,
+  otp: ['otp'] as const,
   planRequests: ['plan-requests'] as const,
   /** Accepted payment methods and receiving accounts (what the admin set). */
   paymentMethods: ['payment-methods'] as const,

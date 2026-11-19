@@ -4,6 +4,7 @@ export const pageChunks = {
   '/sessions': () => import('./pages/Sessions'),
   '/templates': () => import('./pages/Templates'),
   '/keys': () => import('./pages/Keys'),
+  '/otp': () => import('./pages/Otp'),
   '/subscription': () => import('./pages/Subscription'),
   '/admin': () => import('./pages/Admin'),
   '/ads': () => import('./pages/Ads'),

@@ -3,7 +3,13 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import {
   advanceStatus,
   claimNextOutbound,
+  expireQueuedOtp,
   failInterrupted,
+  finishOtpDelivery,
+  loadOtpSeal,
+  markOtpSendStarted,
+  markInterruptedOtpUncertain,
+  noteOtpReceipt,
   isTransientDbError,
   loadOutboundRaw,
   markChatRead,
@@ -31,6 +37,7 @@ import {
 } from '@wa/db';
 import {
   BaileysProvider,
+  decrypt,
   type EchoMessage,
   type EncryptedAuthState,
   type HistoryAnchor,
@@ -38,6 +45,7 @@ import {
   type LidPair,
   type MediaFetcher,
   ProviderError,
+  otpDeliveryKey,
   readStoredSecretEdit,
   type ProviderEvents,
   useEncryptedAuthState,
@@ -229,6 +237,7 @@ export class SessionRunner {
     this.confirmingLogout = previous === 'logged_out';
     this.connecting = true; // starting counts as connecting (see `stalled`)
     const interrupted = await failInterrupted(this.ctx.sql, this.sessionId);
+    await markInterruptedOtpUncertain(this.ctx.sql, interrupted);
     for (const id of interrupted) {
       await this.publish({ type: 'messages.update', data: { id, status: 'failed', error: 'Interrupted while sending' } });
     }
@@ -675,6 +684,7 @@ export class SessionRunner {
       return Boolean(row);
     }
     const row = await advanceStatus(sql, this.sessionId, waMessageId, status);
+    if (row && (status === 'delivered' || status === 'read')) await noteOtpReceipt(sql, row.id, status);
     if (row) await this.publish({ type: 'messages.update', data: { id: row.id, status, error: null } });
     return Boolean(row);
   }
@@ -727,6 +737,7 @@ export class SessionRunner {
           do {
             this.drainRequested = false;
             while (!this.stopped && this.connected) {
+              await expireQueuedOtp(this.ctx.sql, this.sessionId);
               const job = await claimNextOutbound(this.ctx.sql, this.sessionId);
               if (!job) break;
               if (job.broadcast_id && job.late_ms > REPLAN_AFTER_MS) {
@@ -746,15 +757,42 @@ export class SessionRunner {
     );
   }
 
+  /** Plaintext stays in memory for this send. The queued row keeps the placeholder. */
+  private async openOtp(job: QueuedMessage): Promise<string | null> {
+    const id = job.otp_challenge_id;
+    if (!id) return null;
+    const seal = await loadOtpSeal(this.ctx.sql, id);
+    if (!seal || seal.verify_status !== 'open' || new Date(seal.expires_at).getTime() <= Date.now() || !seal.delivery_ciphertext) {
+      await finishOtpDelivery(this.ctx.sql, id, 'expired', 'expired');
+      await this.fail(job.id, 'OTP expired before it could be sent');
+      return null;
+    }
+    const blob = seal.delivery_ciphertext;
+    try {
+      const key = otpDeliveryKey(this.ctx.encryptionKey);
+      return decrypt(key, Buffer.from(blob), `otp:${id}`).toString('utf8');
+    } catch (err) {
+      this.log.warn({ err, messageId: job.id, challengeId: id }, 'otp payload could not be opened');
+      await finishOtpDelivery(this.ctx.sql, id, 'failed', 'unreadable');
+      await this.fail(job.id, 'OTP payload could not be opened');
+      return null;
+    }
+  }
+
   private async sendOne(job: QueuedMessage) {
     const { sql } = this.ctx;
     const provider = this.provider;
     if (!provider) return requeue(sql, job.id);
     const jid = job.remote_jid;
+    const otpText = job.otp_challenge_id ? await this.openOtp(job) : null;
+    if (job.otp_challenge_id && !otpText) return;
+    const content = otpText && job.content.type === 'text' ? { ...job.content, text: otpText } : job.content;
     // A campaign's buttons poll follows its card at once; recipients are what the campaign paces.
     const recipient = job.pace !== null && job.content.type !== 'poll';
     /** WhatsApp took the message: from here on, an error is ours to record, not a failed send. */
     let accepted = false;
+    /** True once provider.send is about to run. A later failure is uncertain and is not retried. */
+    let armed = false;
     /** Where the time of a send goes (logged per message; see SLOW_SEND_MS). */
     const started = performance.now();
     const at: Record<string, number> = {};
@@ -768,9 +806,13 @@ export class SessionRunner {
       lap('lookup');
       await this.pace(provider, job, recipient);
       lap('pace');
+      if (job.otp_challenge_id) {
+        await markOtpSendStarted(sql, job.otp_challenge_id);
+        armed = true;
+      }
       const media = MEDIA_TYPES.has(job.content.type);
       const { waMessageId, raw } = await withTimeout(
-        provider.send(jid, job.content),
+        provider.send(jid, content),
         media ? SEND_TIMEOUT_MS.media : isGroupJid(jid) ? SEND_TIMEOUT_MS.group : SEND_TIMEOUT_MS.other,
         'WhatsApp did not confirm this message in time. It may still be delivered — check before resending.',
       );
@@ -781,6 +823,7 @@ export class SessionRunner {
       this.storing.set(waMessageId, stored);
       setTimeout(() => this.storing.delete(waMessageId), EARLY_RECEIPT_TTL_MS).unref();
       await stored;
+      if (job.otp_challenge_id) await finishOtpDelivery(sql, job.otp_challenge_id, 'sent', null);
       if (recipient) {
         this.lastCampaignAt = Date.now();
         this.campaignFailures = 0;
@@ -797,6 +840,13 @@ export class SessionRunner {
         await this.applyReceipt(early);
       }
     } catch (err) {
+      if (job.otp_challenge_id && armed) {
+        const reason = err instanceof Error ? err.message : 'send failed';
+        await finishOtpDelivery(sql, job.otp_challenge_id, 'uncertain', reason.slice(0, 180));
+        if (!accepted) await this.fail(job.id, 'OTP delivery is uncertain and was not retried');
+        this.log.warn({ messageId: job.id, challengeId: job.otp_challenge_id }, 'otp delivery uncertain');
+        return;
+      }
       if (accepted) {
         // Sent, but recording it failed even after retries. Marking it failed would invite a duplicate
         // resend; the row stays `sending` and is flagged "interrupted, resend if needed" on the next start.

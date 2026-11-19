@@ -1,6 +1,6 @@
 import { asciiDigits, phoneWithCountry } from '@wa/shared/phone';
 import { Check, Code2, LayoutDashboard, LifeBuoy, Mail, Smartphone, Wallet } from '../icons';
-import { type FormEvent, type ReactNode, useState } from 'react';
+import { type FormEvent, type ReactNode, useRef, useState } from 'react';
 import { api, ApiRequestError, errorMessage } from '../api';
 import { useI18n } from '../i18n';
 import type { Dict } from '../i18n/ar';
@@ -136,23 +136,31 @@ function TotpStep({ login, onNext, onRestart }: { login: LoginRef; onNext: (res:
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const busy = useRef(false);
   const ready = recovery ? code.replace(/[\s-]/g, '').length >= 10 : code.length === 6;
 
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!ready || loading) return;
+  const send = async (value: string) => {
+    const complete = recovery ? value.replace(/[\s-]/g, '').length >= 10 : value.length === 6;
+    if (!complete || busy.current) return;
+    busy.current = true;
     setLoading(true);
     setError(null);
     try {
-      onNext(await api<LoginResponse>(recovery ? '/api/auth/login/recovery' : '/api/auth/login/totp', { method: 'POST', body: { ...login, code } }));
+      onNext(await api<LoginResponse>(recovery ? '/api/auth/login/recovery' : '/api/auth/login/totp', { method: 'POST', body: { ...login, code: value } }));
     } catch (err) {
       setCode('');
       const { message, restart } = codeError(err, t);
       if (restart) return onRestart(message);
       setError(message);
     } finally {
+      busy.current = false;
       setLoading(false);
     }
+  };
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    void send(code);
   };
 
   return (
@@ -176,7 +184,11 @@ function TotpStep({ login, onNext, onRestart }: { login: LoginRef; onNext: (res:
           key="app"
           label={s.code}
           value={code}
-          onChange={(e) => setCode(asciiDigits(e.target.value).replace(/\D/g, '').slice(0, 6))}
+          onChange={(e) => {
+            const next = asciiDigits(e.target.value).replace(/\D/g, '').slice(0, 6);
+            setCode(next);
+            if (next.length === 6) void send(next);
+          }}
           inputMode="numeric"
           autoComplete="one-time-code"
           dir="ltr"

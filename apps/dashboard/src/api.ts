@@ -56,7 +56,7 @@ export function onSessionProblem(listener: SessionListener) {
 }
 
 type RequestOptions = {
-  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   sessionId?: string;
   /** A bearer token, only for exchanging a workspace token for a session (`/api/auth/session`). */

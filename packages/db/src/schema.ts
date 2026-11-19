@@ -38,6 +38,7 @@ import {
   primaryKey,
   real,
   text,
+  date,
   timestamp,
   uniqueIndex,
   uuid,
@@ -442,6 +443,8 @@ export const apiKeys = pgTable(
     prefix: text().notNull(),
     /** `console` = a dashboard login token: hidden from the keys list, expires, revoked on logout. */
     scopes: text().array().notNull().default(sql`'{}'::text[]`),
+    /** When set, this key may address only that OTP sender pool. */
+    otpPoolId: uuid(),
     expiresAt: timestamp({ withTimezone: true }),
     lastUsedAt: timestamp({ withTimezone: true }),
     revokedAt: timestamp({ withTimezone: true }),
@@ -521,6 +524,12 @@ export const messages = pgTable(
     attempts: integer().notNull().default(0),
     /** Outbound: not sent before this time (a paced broadcast); null = as soon as possible. */
     notBefore: timestamp({ withTimezone: true }),
+    /** Higher is claimed first. OTP jobs use 10; everything else stays 0. */
+    priority: integer().notNull().default(0),
+    /** When set, a queued row is not sent after this time. */
+    expiresAt: timestamp({ withTimezone: true }),
+    /** Set for gateway OTP jobs. The code itself is not stored in `content`. */
+    otpChallengeId: uuid(),
     broadcastId: uuid().references(() => broadcasts.id, { onDelete: 'set null' }),
     sentAt: timestamp({ withTimezone: true }),
     createdAt: createdAt(),
@@ -528,6 +537,7 @@ export const messages = pgTable(
   },
   (t) => [
     index('messages_queue_idx').on(t.sessionId, t.id).where(sql`${t.status} = 'queued'`),
+    index('messages_otp_queue_idx').on(t.sessionId, t.priority, t.id).where(sql`${t.otpChallengeId} is not null and ${t.status} = 'queued'`),
     index().on(t.workspaceId, t.createdAt),
     index().on(t.sessionId, t.createdAt),
     index().on(t.broadcastId).where(sql`${t.broadcastId} is not null`),
@@ -973,6 +983,104 @@ export const autoReplyLog = pgTable(
     index().on(t.workspaceId, t.createdAt),
     index().on(t.status, t.createdAt),
   ],
+);
+
+/** One workspace's set of business-owned sessions used for OTP. Not shared across workspaces. */
+export const otpSenderPools = pgTable(
+  'otp_sender_pools',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    workspaceId: uuid()
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    name: text().notNull(),
+    status: text().$type<'active' | 'paused' | 'archived'>().notNull().default('active'),
+    isDefault: boolean().notNull().default(false),
+    codeLength: integer().notNull().default(6),
+    ttlSeconds: integer().notNull().default(300),
+    maxAttempts: integer().notNull().default(5),
+    resendCooldownSec: integer().notNull().default(60),
+    maxSends: integer().notNull().default(5),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index().on(t.workspaceId),
+    uniqueIndex('otp_sender_pools_one_default').on(t.workspaceId).where(sql`${t.isDefault} = true and ${t.status} <> 'archived'`),
+  ],
+);
+
+export const otpSenderPoolMembers = pgTable(
+  'otp_sender_pool_members',
+  {
+    poolId: uuid()
+      .notNull()
+      .references(() => otpSenderPools.id, { onDelete: 'cascade' }),
+    sessionId: uuid()
+      .notNull()
+      .references(() => sessions.id, { onDelete: 'cascade' }),
+    /** `draining`: no new OTP jobs; queued ones for this session may finish. */
+    membership: text().$type<'active' | 'draining'>().notNull().default('active'),
+    enabled: boolean().notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.poolId, t.sessionId] }), index().on(t.sessionId)],
+);
+
+/**
+ * A customer OTP challenge. `code_hash` is an HMAC. `delivery_ciphertext` is AES-GCM of the
+ * message text and is cleared once delivery reaches a terminal state.
+ */
+export const otpChallenges = pgTable(
+  'otp_challenges',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    workspaceId: uuid()
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    poolId: uuid().references(() => otpSenderPools.id, { onDelete: 'set null' }),
+    sessionId: uuid().references(() => sessions.id, { onDelete: 'set null' }),
+    phone: text().notNull(),
+    purpose: text().notNull(),
+    lang: text().notNull().default('ar'),
+    codeHash: text().notNull(),
+    deliveryCiphertext: bytea(),
+    expiresAt: timestamp({ withTimezone: true }).notNull(),
+    attempts: integer().notNull().default(0),
+    maxAttempts: integer().notNull().default(5),
+    sends: integer().notNull().default(1),
+    maxSends: integer().notNull().default(5),
+    resendCooldownSec: integer().notNull().default(60),
+    lastSentAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    consumedAt: timestamp({ withTimezone: true }),
+    verifyStatus: text().$type<'open' | 'verified' | 'expired' | 'locked'>().notNull().default('open'),
+    deliveryStatus: text().$type<'queued' | 'processing' | 'sent' | 'delivered' | 'failed' | 'expired' | 'uncertain'>().notNull().default('queued'),
+    /** True once provider.send has been called. Blocks reroute. */
+    sendStarted: boolean().notNull().default(false),
+    idempotencyKey: text(),
+    messageId: bigint({ mode: 'number' }),
+    failure: text(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index().on(t.workspaceId, t.createdAt),
+    index().on(t.poolId, t.createdAt),
+    uniqueIndex('otp_challenges_idem_idx').on(t.workspaceId, t.idempotencyKey).where(sql`${t.idempotencyKey} is not null`),
+  ],
+);
+
+/** Atomic daily OTP admissions per workspace. */
+export const otpUsageDaily = pgTable(
+  'otp_usage_daily',
+  {
+    workspaceId: uuid()
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    day: date().notNull(),
+    admitted: integer().notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.workspaceId, t.day] })],
 );
 
 export type AiProvider = typeof aiProviders.$inferSelect;

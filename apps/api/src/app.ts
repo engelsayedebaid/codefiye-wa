@@ -22,6 +22,7 @@ import {
 import type { Logger } from 'pino';
 import type { Deps } from './deps';
 import { recordAction } from './lib/activity';
+import { isOtpOnlyKey } from './lib/auth';
 import { ApiError, codeForStatus, forbidden, notFound, tooMany } from './lib/errors';
 import { twoFactorGraceUntil } from './lib/totp';
 import { accountRoutes, publicAccountRoutes } from './routes/account';
@@ -35,6 +36,7 @@ import { chatRoutes } from './routes/chats';
 import { eventRoutes } from './routes/events';
 import { keyRoutes } from './routes/keys';
 import { messageRoutes } from './routes/messages';
+import { otpGatewayRoutes } from './routes/otp-gateway';
 import { kashierWebhookRoutes, paymentRoutes, xpayWebhookRoutes } from './routes/payments';
 import { planPricingRoutes } from './routes/plan-pricing';
 import { sessionRoutes } from './routes/sessions';
@@ -276,6 +278,9 @@ export async function buildApp(deps: Deps, options: AppOptions) {
         // Prices, exchange rates and the explainer video are shown on the public landing page, before anyone is signed in.
         if (req.method === 'GET' && PUBLIC_READS.has(req.url.split('?')[0]!)) return;
         await deps.auth.authenticate(req);
+        if (isOtpOnlyKey(req.auth) && !req.url.split('?')[0]!.startsWith('/api/v1/otp')) {
+          throw forbidden('This key is limited to the OTP gateway', 'scope_required');
+        }
         // Two-factor is mandatory, with one 48-hour skip. After that a dashboard session can only set it up.
         const grace = twoFactorGraceUntil(req.auth.twoFactorSkippedAt);
         if (req.auth.console && req.auth.userId && !req.auth.twoFactorEnabled && !grace && !TWO_FACTOR_EXEMPT.test(req.url)) {
@@ -302,6 +307,7 @@ export async function buildApp(deps: Deps, options: AppOptions) {
       });
       await api.register(sessionRoutes(deps));
       await api.register(messageRoutes(deps));
+      await api.register(otpGatewayRoutes(deps));
       await api.register(keyRoutes(deps));
       await api.register(templateRoutes(deps));
       await api.register(eventRoutes(deps));

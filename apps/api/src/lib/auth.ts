@@ -28,6 +28,10 @@ export type AuthContext = {
   twoFactorSkippedAt: Date | null;
   /** Dashboard login token (scope `console`): expires and is revoked on logout. */
   console: boolean;
+  /** Raw scopes. Empty means a legacy full-access key. */
+  scopes: string[];
+  /** When set, OTP calls are pinned to this pool. */
+  otpPoolId: string | null;
   expiresAt: Date | null;
 };
 
@@ -92,6 +96,7 @@ export function createAuth(sql: Sql) {
         workspace_id: string;
         session_id: string | null;
         scopes: string[];
+        otp_pool_id: string | null;
         expires_at: Date | null;
         plan_id: string;
         trial_ends_at: Date | null;
@@ -105,7 +110,7 @@ export function createAuth(sql: Sql) {
         totp_skipped_at: Date | string | null;
       }[]
     >`
-      select k.id, k.workspace_id, k.session_id, k.scopes, k.expires_at, w.plan_id, w.trial_ends_at, w.plan_expires_at,
+      select k.id, k.workspace_id, k.session_id, k.scopes, k.otp_pool_id, k.expires_at, w.plan_id, w.trial_ends_at, w.plan_expires_at,
         u.id as user_id, u.role, u.status, u.suspended_reason, u.phone_verified_at is not null as phone_verified,
         u.totp_enabled_at is not null as two_factor, u.totp_skipped_at
       from api_keys k
@@ -129,6 +134,8 @@ export function createAuth(sql: Sql) {
           twoFactorEnabled: row.two_factor === true,
           twoFactorSkippedAt: row.totp_skipped_at ? new Date(row.totp_skipped_at) : null,
           console: row.scopes.includes('console'),
+          scopes: row.scopes,
+          otpPoolId: row.otp_pool_id,
           expiresAt: row.expires_at,
         }
       : null;
@@ -213,6 +220,17 @@ export function requirePat(req: FastifyRequest) {
 export function requireAdmin(req: FastifyRequest) {
   requirePat(req);
   if (!req.auth.isAdmin) throw forbidden('Admins only', 'admin_only');
+}
+
+/** Legacy keys have no scopes and keep full access. OTP-only keys must carry the scope. */
+export function assertScope(req: FastifyRequest, scope: string) {
+  const scopes = req.auth.scopes;
+  if (req.auth.console || scopes.length === 0 || scopes.includes(scope)) return;
+  throw forbidden('This key cannot perform that action', 'scope_required');
+}
+
+export function isOtpOnlyKey(auth: AuthContext) {
+  return !auth.console && auth.scopes.length > 0 && auth.scopes.every((s) => s.startsWith('otp:'));
 }
 
 export type ScopedSession = {

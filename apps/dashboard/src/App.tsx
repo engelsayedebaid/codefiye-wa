@@ -44,6 +44,7 @@ const SessionsPage = lazy(() => loadChunk(pageChunks['/sessions']).then((m) => (
 const SessionDetailPage = lazy(() => loadChunk(() => import('./pages/SessionDetail')).then((m) => ({ default: m.SessionDetailPage })));
 const TemplatesPage = lazy(() => loadChunk(pageChunks['/templates']).then((m) => ({ default: m.TemplatesPage })));
 const KeysPage = lazy(() => loadChunk(pageChunks['/keys']).then((m) => ({ default: m.KeysPage })));
+const OtpPage = lazy(() => loadChunk(pageChunks['/otp']).then((m) => ({ default: m.OtpPage })));
 const SubscriptionPage = lazy(() => loadChunk(pageChunks['/subscription']).then((m) => ({ default: m.SubscriptionPage })));
 const AdminPage = lazy(() => loadChunk(pageChunks['/admin']).then((m) => ({ default: m.AdminPage })));
 const AdsPage = lazy(() => loadChunk(pageChunks['/ads']).then((m) => ({ default: m.AdsPage })));
@@ -239,6 +240,8 @@ function AppPage({ path }: { path: string }) {
       return <TemplatesPage />;
     case '/keys':
       return <KeysPage />;
+    case '/otp':
+      return <OtpPage />;
     case '/subscription':
       return <SubscriptionPage />;
     case '/admin':

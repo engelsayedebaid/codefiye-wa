@@ -119,6 +119,7 @@ function useNav() {
       { href: '/chats', label: n.chats, icon: MessagesSquare, badge: chatsBadge, count: unread },
       { href: '/templates', label: n.templates, icon: FileText },
       { href: '/keys', label: n.keys, icon: KeyRound },
+      { href: '/otp', label: n.otp, icon: ShieldCheck },
       { href: '/ads', label: n.ads, icon: Megaphone, badge: adsBadge },
       { href: '/subscription', label: n.subscription, icon: CircleDollarSign },
     ] as NavItem[],

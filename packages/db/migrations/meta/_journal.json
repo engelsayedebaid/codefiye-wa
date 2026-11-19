@@ -225,6 +225,13 @@
       "when": 1793582639509,
       "tag": "0031_colossal_santa_claus",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1795050000000,
+      "tag": "0032_otp_sender_pools",
+      "breakpoints": true
     }
   ]
 }

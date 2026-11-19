@@ -684,7 +684,8 @@ export const Bubble = memo(function Bubble({
   // Not over a video: it would cover the player's controls.
   const overlaid = bare || (m.type === 'image' && framed && !caption);
   const time = (
-    <span className={cx('inline-flex shrink-0 items-center gap-1 text-[11px] leading-none whitespace-nowrap', overlaid ? 'rounded-full bg-black/50 px-1.5 py-1 text-white backdrop-blur-sm' : 'text-ink/50')}>
+    // The clock stays LTR ("2:39 PM") even when the message itself is Arabic.
+    <span dir="ltr" className={cx('inline-flex shrink-0 items-center gap-1 text-[11px] leading-none whitespace-nowrap', overlaid ? 'rounded-full bg-black/50 px-1.5 py-1 text-white backdrop-blur-sm' : 'text-ink/50')}>
       {m.broadcastId && <Megaphone className="size-3" aria-label={c.campaign} />}
       {m.content.sentFrom === 'phone' && <Smartphone className="size-3" aria-label={c.fromPhone} />}
       {m.content.edited && !revoked && <span className="italic">{c.edited}</span>}
@@ -699,6 +700,8 @@ export const Bubble = memo(function Bubble({
     <div
       id={m.waMessageId ? `msg-${m.waMessageId}` : undefined}
       // Room under a bubble for its reactions badge, which hangs below it.
+      // Sides follow the sender, never the language: yours on the right, theirs on the left.
+      dir="ltr"
       className={cx('group/msg flex w-full px-3 md:px-[6%]', out ? 'justify-end' : 'justify-start', first ? 'mt-3' : 'mt-[3px]', reactions && reactions.length > 0 && 'mb-3.5', picking && 'cursor-pointer select-none')}
       onClick={picking ? onToggleSelect : undefined}
     >
@@ -747,10 +750,14 @@ export const Bubble = memo(function Bubble({
           )}
           {body}
           {caption ? (
-            // The time sits on the text's last line when it fits: an invisible copy holds its place.
-            <div dir="auto" className={cx('relative', framed ? 'px-2 pt-1.5 pb-1' : isMedia && 'pt-1.5')}>
+            // Direction stays with the page here. dir=auto on this box used to follow the
+            // message language, so an Arabic line parked the clock on the other side ("PM 2:39").
+            // The words themselves still pick a direction; the clock always sits at the end.
+            <div className={cx('relative', framed ? 'px-2 pt-1.5 pb-1' : isMedia && 'pt-1.5')}>
               <p className="break-words whitespace-pre-wrap" style={{ overflowWrap: 'anywhere' }}>
-                <ChatText text={caption} highlight={highlight} />
+                <span dir="auto">
+                  <ChatText text={caption} highlight={highlight} />
+                </span>
                 <span aria-hidden className="invisible ps-3 align-bottom select-none">
                   {time}
                 </span>
